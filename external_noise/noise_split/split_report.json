@@ -1,0 +1,10 @@
+{
+  "root": "/home/ubuntu/LXT/RTC/external_noise/musan/noise",
+  "seed": 20260908,
+  "counts": {
+    "train": 744,
+    "dev": 186
+  },
+  "removed": [],
+  "note": "Keyword filtering is not speech detection. Check remaining ambiguous recordings. If multiple files derive from one recording, group them before splitting."
+}

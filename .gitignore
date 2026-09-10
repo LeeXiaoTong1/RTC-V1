@@ -1,0 +1,43 @@
+# 数据集
+dataset/
+data/
+*.wav
+*.flac
+*.mp3
+*.tar
+*.tar.gz
+*.zip
+
+# 模型权重
+*.pth
+*.pt
+*.ckpt
+*.bin
+pretrained/
+
+# 训练输出
+exp/
+outputs/
+checkpoints/
+runs/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# IDE / system
+.vscode/
+.idea/
+.DS_Store
+
+# 临时文件
+*.tmp
+*.log
+
+# 环境
+venv/
+.env/
+.venv/

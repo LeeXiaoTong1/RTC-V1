@@ -1,0 +1,13 @@
+Validation date: 2026-09-08
+PASS: SNR, clipping prevention, silence, short events, deterministic noise, F1 and patch guards.
+These checks do not train or validate XLS-R + AASIST on competition data.
+
+Additional local checks:
+- Compatible with downloaded official utils/data_utils.py (syntax and idempotence).
+- Original dataset class exercised with synthetic audio and substitutes for unavailable torch/librosa I/O.
+- Enabled training changes audio and preserves 64600 samples, class label and utterance ID.
+- Original Dev and disabled training match the original data pipeline output.
+- Train/dev noise split has no shared byte-identical recording.
+- Metadata keyword exclusion was exercised on a synthetic named crowd file.
+
+Not performed: real MUSAN content review, fairseq/XLS-R forward pass, GPU training, or competition scoring.

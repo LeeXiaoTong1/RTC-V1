@@ -1,0 +1,36 @@
+cd /home/ubuntu/LXT/RTC/xlsr_aasist
+
+cp run_train.sh "run_train.sh.bak.$(date +%Y%m%d_%H%M%S)"
+
+cat > run_train.sh <<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PATH="/home/ubuntu/.conda/envs/sdd/bin:$PATH"
+cd /home/ubuntu/LXT/RTC/xlsr_aasist
+
+DATA_ROOT="/home/ubuntu/LXT/RTC/xlsr_aasist/dataset/wav"
+DATASET_ROOT="/home/ubuntu/LXT/RTC/xlsr_aasist/dataset"
+
+export RTC_B_NOISE_MANIFEST="/home/ubuntu/LXT/RTC/external_noise/noise_split/train.jsonl"
+export RTC_B_NOISE_PROB=0.5
+export RTC_B_SNR_MIN=10
+export RTC_B_SNR_MAX=30
+
+CHECKPOINT="./exp/xlsr_aasist_offline_online_epoch100_bs40_20260908200934/ckpt/epoch_28_dev_loss_0.150122.pth"
+
+args=(
+  --track xlsr_aasist_B_noise_probe
+  --model_path "$CHECKPOINT"
+  --train_data_path "${DATA_ROOT}/train"
+  --dev_data_path "${DATA_ROOT}/dev"
+  --train_protocol "${DATASET_ROOT}/train_label.txt"
+  --dev_protocol "${DATASET_ROOT}/dev_label.txt"
+  --out_path ./exp
+  --device cuda:0
+  --batch_size 40
+  --num_epochs 10
+)
+
+python main_train.py "${args[@]}"
+BASH
