@@ -1,3 +1,4 @@
+import os
 import random
 from typing import Union
 
@@ -18,11 +19,12 @@ __email__ = "tak@eurecom.fr"
 
 
 class SSLModel(nn.Module):
-    def __init__(self,device):
+    def __init__(self,device, cp_path=None):
         super(SSLModel, self).__init__()
         
         #cp_path = '/path/to/pretrained/xlsr2_300m.pt'   # Change the pre-trained XLSR model path. 
-        cp_path = '/home/ubuntu/LXT/RTC/pretrained/xlsr2_300m.pt'
+        cp_path = cp_path or os.environ.get(
+            'XLSR_PRETRAINED', '/home/ubuntu/LXT/RTC/pretrained/xlsr2_300m.pt')
         model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task([cp_path])
         self.model = model[0]
         self.device=device
@@ -445,7 +447,7 @@ class Model(nn.Module):
         ####
         # create network wav2vec 2.0
         ####
-        self.ssl_model = SSLModel(self.device)
+        self.ssl_model = SSLModel(self.device, cp_path=getattr(args, 'ssl_path', None))
         self.LL = nn.Linear(self.ssl_model.out_dim, 128)
 
         self.first_bn = nn.BatchNorm2d(num_features=1)
@@ -504,7 +506,7 @@ class Model(nn.Module):
         
         self.out_layer = nn.Linear(5 * gat_dims[1], 2)
 
-    def forward(self, x):
+    def forward(self, x, return_features=False):
         #-------pre-trained Wav2vec model fine tunning ------------------------##
         x_ssl_feat = self.ssl_model.extract_feat(x.squeeze(-1))
         x = self.LL(x_ssl_feat) #(bs,frame_number,feat_out_dim)
@@ -592,7 +594,10 @@ class Model(nn.Module):
         last_hidden = torch.cat(
             [T_max, T_avg, S_max, S_avg, master.squeeze(1)], dim=1)
         
-        last_hidden = self.drop(last_hidden)
-        output = self.out_layer(last_hidden)
-        
+        # The existing dropout is in-place. Clone only for the optional feature
+        # return so the RTC loss sees the readout BEFORE this dropout.
+        classifier_input = self.drop(last_hidden.clone() if return_features else last_hidden)
+        output = self.out_layer(classifier_input)
+        if return_features:
+            return output, last_hidden
         return output

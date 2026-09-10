@@ -7,7 +7,6 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from model.model import Model
 from utils.data_utils import build_dataset_from_protocol, set_random_seed
 
 try:
@@ -82,7 +81,7 @@ def evaluate_dev(data_loader, model, device, criterion):
 
 
 
-def main():
+def build_arg_parser():
     parser = argparse.ArgumentParser(description="Train XLSR-AASIST spoof detector")
     parser.add_argument("--train_data_path", type=str, required=True)
     parser.add_argument("--dev_data_path", type=str, required=True)
@@ -119,7 +118,13 @@ def main():
     parser.add_argument("--g_sd", type=int, default=2)
     parser.add_argument("--SNRmin", type=int, default=10)
     parser.add_argument("--SNRmax", type=int, default=40)
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    from model.model import Model
+
+    args = build_arg_parser().parse_args()
 
     set_random_seed(args.seed, args)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
