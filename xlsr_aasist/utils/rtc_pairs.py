@@ -15,7 +15,7 @@ from pathlib import Path, PurePosixPath
 _LABELS = {"spoof": 0, "fake": 0, "bonafide": 1, "bona-fide": 1, "real": 1}
 _ALIASES = {
     side: {
-        side, f"{side}_path", f"{side}_file", f"{side}_filepath",
+        side, f"{side}_id", f"{side}_path", f"{side}_file", f"{side}_filepath",
         f"{side}_filename", f"{side}_audio", f"{side}_audio_path",
         f"{side}_wav", f"{side}_wav_path", f"path_{side}",
     }
@@ -173,6 +173,8 @@ def prepare_pairs(pairs_csv, train_protocol, train_data_path, output,
     labels = read_train_protocol(train_protocol, train_data_path)
     resolver = _PathResolver(labels)
     pairs, seen_pairs, online_sources = [], set(), {}
+    csv_rows = 0
+    skipped = Counter()
     with open(pairs_csv, encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
         headers = reader.fieldnames or []
@@ -183,11 +185,24 @@ def prepare_pairs(pairs_csv, train_protocol, train_data_path, output,
         if off_col == on_col:
             raise ValueError("Offline and Online columns must differ")
         for row_number, row in enumerate(reader, 2):
+            csv_rows += 1
             if None in row:
                 raise ValueError(f"Extra CSV values on row {row_number}; check the CSV delimiter")
             try:
-                offline = resolver.resolve(row.get(off_col), "offline")
-                online = resolver.resolve(row.get(on_col), "online")
+                off_value, on_value = row.get(off_col), row.get(on_col)
+                if off_value is None or on_value is None:
+                    raise ValueError("Missing CSV field; an unavailable counterpart must be an explicit empty field")
+                off_value, on_value = off_value.strip(), on_value.strip()
+                # Transmission can fail: an explicit empty counterpart is an
+                # unpaired record, not an invalid mapping. Validate any present
+                # endpoint so wrong paths or splits are never silently hidden.
+                offline = resolver.resolve(off_value, "offline") if off_value else None
+                online = resolver.resolve(on_value, "online") if on_value else None
+                if offline is None or online is None:
+                    reason = ("both_empty" if offline is None and online is None else
+                              "missing_offline" if offline is None else "missing_online")
+                    skipped[reason] += 1
+                    continue
                 pairs.append(_validate_pair(offline, online, None, labels, seen_pairs, online_sources))
             except (ValueError, FileNotFoundError) as exc:
                 raise ValueError(f"Invalid pair at CSV row {row_number}: {exc}") from exc
@@ -206,6 +221,9 @@ def prepare_pairs(pairs_csv, train_protocol, train_data_path, output,
         "offline_column": off_col,
         "online_column": on_col,
         "pair_count": len(pairs),
+        "csv_rows": csv_rows,
+        "skipped_unpaired_rows": sum(skipped.values()),
+        "skipped_unpaired_by_reason": dict(skipped),
         "pairs_by_label": {"fake_0": class_counts[0], "real_1": class_counts[1]},
         "unique_offline": len({pair["offline"] for pair in pairs}),
         "unique_online": len({pair["online"] for pair in pairs}),

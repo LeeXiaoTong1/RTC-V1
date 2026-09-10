@@ -79,6 +79,35 @@ class PairFixture(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "different truth labels"):
             self.prepare()
 
+    def test_official_id_headers_and_missing_transmissions(self):
+        pair = self.add_pair()
+        orphan_offline = self.add_audio("offline/en/failed_transmission.wav", 1)
+        orphan_online = self.add_audio("online/en/received_only.wav", 0)
+        before = self.protocol.read_bytes()
+        self.write_csv([pair, (orphan_offline, ""), ("  ", orphan_online), ("", "")],
+                       headers=("offline_id", "online_id"))
+        pairs, metadata = self.prepare()
+        self.assertEqual(len(pairs), 1)
+        self.assertEqual(metadata["csv_rows"], 4)
+        self.assertEqual(metadata["skipped_unpaired_rows"], 3)
+        self.assertEqual(metadata["skipped_unpaired_by_reason"],
+                         {"missing_online": 1, "missing_offline": 1, "both_empty": 1})
+        self.assertEqual(metadata["unpaired_utterances"], 2)
+        self.assertEqual(self.protocol.read_bytes(), before)
+        self.assertEqual(load_pairs(self.manifest, self.protocol, self.audio), pairs)
+
+    def test_missing_counterpart_does_not_hide_invalid_present_path(self):
+        pair = self.add_pair()
+        self.write_csv([pair, ("offline/en/unknown.wav", "")])
+        with self.assertRaisesRegex(ValueError, "Cannot uniquely map"):
+            self.prepare()
+
+    def test_truncated_csv_row_is_not_a_missing_transmission(self):
+        pair = self.add_pair()
+        self.write_csv([pair, (pair[0],)])
+        with self.assertRaisesRegex(ValueError, "Missing CSV field"):
+            self.prepare()
+
     def test_ambiguous_basename_rejected(self):
         offline, online = self.add_pair()
         self.add_audio("clean/online/zh/fake_on.wav", 0)

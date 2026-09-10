@@ -61,6 +61,10 @@ python prepare_rtc_pairs.py \
 没有重复配对或同一 Online 对应多个不同 Offline。允许一个 Offline 对应多个 Online。
 程序不会用编号、说话人或相同标签自行猜配对。输出旁的 `.meta.json` 记录来源哈希、配对数量和覆盖率。
 
+官方列名 `offline_id` / `online_id` 可自动识别。传输失败产生的空对应字段会被跳过，
+并计入 `skipped_unpaired_rows` 和 `skipped_unpaired_by_reason`；未配对音频仍留在原训练协议中，
+照常参与分类训练。非空但无效的路径、标签冲突仍报错，不会被当作传输失败跳过。
+
 常见且唯一的 `offline_path`/`online_path` 等列名可自动识别。若实际列名不同，程序会列出表头并停止。
 这时给同一命令补充 `--offline_column` 和 `--online_column`，值必须是官方 CSV 实际列名。
 不得将不明字段随意指定为路径列。
