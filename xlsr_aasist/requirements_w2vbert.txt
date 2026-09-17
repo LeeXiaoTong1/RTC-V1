@@ -1,0 +1,4 @@
+# Install this on top of the existing V2 sdd environment.
+transformers==4.38.2
+safetensors>=0.4.2
+huggingface-hub>=0.20.3
