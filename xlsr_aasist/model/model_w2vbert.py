@@ -1,14 +1,25 @@
 """V2 AASIST model with the XLS-R frontend replaced by Meta w2v-BERT 2.0.
 
-Only the SSL frontend is changed. The AASIST backend is the exact implementation
-from model/model.py, so V2 data augmentation, pair losses and backend structure
+Only the SSL frontend is changed. The AASIST backend is reused from
+model/model.py, so V2 data augmentation, pair losses and backend structure
 remain unchanged.
 """
 import os
+import sys
+import types
 from pathlib import Path
 
 import torch
 import torch.nn as nn
+
+# The legacy AASIST file imports fairseq at module import time because its old
+# XLS-R SSLModel needs it. The w2v-BERT path never instantiates that XLS-R
+# class, so fairseq is not a real dependency here. Provide a harmless stub only
+# when fairseq is absent, allowing us to reuse the unchanged AASIST classes.
+try:
+    import fairseq  # noqa: F401
+except ImportError:
+    sys.modules["fairseq"] = types.ModuleType("fairseq")
 
 from . import model as legacy
 
@@ -74,8 +85,8 @@ class SSLModel(nn.Module):
                 f"Expected waveform [B, L] or [B, L, 1], got {tuple(input_data.shape)}"
             )
 
-        # The official Wav2Vec2-BERT extractor performs 80-bin log-mel extraction
-        # and frame stacking to the 160-D input expected by the checkpoint.
+        # The official Wav2Vec2-BERT extractor performs log-mel extraction and
+        # frame stacking to the 160-D input expected by the checkpoint.
         wave_cpu = input_data.detach().float().cpu()
         batch = self.feature_extractor(
             wave_cpu.numpy(),
@@ -112,7 +123,6 @@ class SSLModel(nn.Module):
 
 
 # The legacy Model resolves SSLModel from model.model at construction time.
-# Rebinding only that symbol keeps the AASIST implementation byte-for-byte the
-# same while replacing the frontend.
+# Rebinding only that symbol keeps AASIST unchanged while replacing the frontend.
 legacy.SSLModel = SSLModel
 Model = legacy.Model
