@@ -34,11 +34,28 @@ def build_parser():
     parser.add_argument("--rtc_pairs_per_batch", type=int, default=4)
     parser.add_argument("--rtc_weight", type=float, default=0.1)
     parser.add_argument("--rtc_temperature", type=float, default=0.1)
-    parser.add_argument("--ssl_path", default=None, help="XLS-R pretrained .pt; no change to checkpoint keys")
+    parser.add_argument("--ssl_path", default=None, help="SSL pretrained model path")
+    parser.add_argument("--encoder_lr", type=float, default=None,
+                        help="SSL encoder LR; defaults to --lr when omitted")
+    parser.add_argument("--backend_lr", type=float, default=None,
+                        help="AASIST/backend LR; defaults to --lr when omitted")
     parser.add_argument("--amp", choices=["bf16", "none"], default="bf16")
     parser.add_argument("--selection_metric", choices=["online_f1", "dev_loss"], default="online_f1")
-    parser.add_argument("--check_data", action="store_true", help="Check data without loading fairseq, XLS-R or CUDA")
+    parser.add_argument("--check_data", action="store_true", help="Check data without loading the model")
     return parser
+
+
+def build_grouped_optimizer(model, encoder_lr, backend_lr, weight_decay):
+    encoder_params = [p for p in model.ssl_model.parameters() if p.requires_grad]
+    encoder_ids = {id(p) for p in encoder_params}
+    backend_params = [p for p in model.parameters() if p.requires_grad and id(p) not in encoder_ids]
+    if not encoder_params or not backend_params:
+        raise RuntimeError("Could not split SSL encoder and AASIST/backend parameters")
+    optimizer = torch.optim.Adam([
+        {"params": encoder_params, "lr": encoder_lr},
+        {"params": backend_params, "lr": backend_lr},
+    ], weight_decay=weight_decay)
+    return optimizer, encoder_params, backend_params
 
 
 def train_epoch(train_loader, pair_loader, model, optimizer, device, criterion,
@@ -61,12 +78,10 @@ def train_epoch(train_loader, pair_loader, model, optimizer, device, criterion,
         context = torch.autocast("cuda", dtype=torch.bfloat16) if amp and device.type == "cuda" else nullcontext()
         with context:
             logits, features = model(audio, return_features=True)
-        # CE and cosine/logsumexp are FP32 even when the network uses BF16.
         ce = criterion(logits.float(), labels)
         off_features = features[ordinary_count:ordinary_count + pair_count]
         on_features = features[ordinary_count + pair_count:]
         rtc, stats = rtc_pair_contrastive_loss(off_features, on_features, pair_labels, temperature)
-        # Compute/report the same metric at lambda=0; it has no gradient contribution.
         loss = ce + rtc_weight * rtc
         if not torch.isfinite(loss):
             raise FloatingPointError("Non-finite training loss; check the logged configuration and audio")
@@ -112,7 +127,6 @@ def evaluate_dev(loader, model, device, criterion):
     for audio, labels, ids in tqdm(loader, desc="Validating", unit="batch"):
         labels = labels.long().to(device)
         logits = model(audio.to(device, non_blocking=True)).float()
-        # Match the competition's spoof-score >= 0.5 rule, including ties.
         predicted = (logits.softmax(dim=1)[:, 0] < 0.5).long()
         mass = criterion.weight[labels].sum().item() if criterion.weight is not None else labels.numel()
         loss_numerator += criterion(logits, labels).item() * mass
@@ -148,10 +162,16 @@ def sha256_file(path):
 def main():
     parser = build_parser()
     args = parser.parse_args()
+    args.encoder_lr = args.lr if args.encoder_lr is None else args.encoder_lr
+    args.backend_lr = args.lr if args.backend_lr is None else args.backend_lr
     if not math.isfinite(args.rtc_weight) or args.rtc_weight < 0:
         parser.error("--rtc_weight must be finite and non-negative")
     if not math.isfinite(args.rtc_temperature) or args.rtc_temperature <= 0:
         parser.error("--rtc_temperature must be finite and positive")
+    if not math.isfinite(args.encoder_lr) or args.encoder_lr <= 0:
+        parser.error("--encoder_lr must be finite and positive")
+    if not math.isfinite(args.backend_lr) or args.backend_lr <= 0:
+        parser.error("--backend_lr must be finite and positive")
     if args.batch_size < 2 or args.num_epochs < 1 or args.num_workers < 0 or args.earlystop_epoch < 1:
         parser.error("Require batch_size >= 2, num_epochs/earlystop_epoch >= 1, num_workers >= 0")
     set_random_seed(args.seed, args)
@@ -168,12 +188,10 @@ def main():
     if args.selection_metric == "online_f1" and not any("online" in Path(utt).parts for utt in dev_ids):
         parser.error("Dev protocol has no Online subset for --selection_metric online_f1")
     train_loader = build_loader(train_set, args.batch_size, args.num_workers, shuffle=True)
-    # Keep dev batch size comparable to the total training audio batch.
     effective_batch = args.batch_size + 2 * args.rtc_pairs_per_batch
     dev_loader = build_loader(dev_set, effective_batch, args.num_workers, shuffle=False)
     pair_sampler = BalancedPairBatchSampler(pairs, pairs_per_batch=args.rtc_pairs_per_batch,
                                            steps_per_epoch=len(train_loader), seed=args.seed + 1)
-    # A small separate worker pool does not initialize MUSAN and reads clean pairs only.
     pair_workers = min(2, args.num_workers)
     pair_loader = DataLoader(RTCPairDataset(pairs, args.train_data_path), batch_sampler=pair_sampler,
                             num_workers=pair_workers, pin_memory=True,
@@ -197,6 +215,13 @@ def main():
     model = Model(args, device).to(device)
     model.load_state_dict(torch.load(args.model_path, map_location="cpu", weights_only=True), strict=True)
     print(f"Model loaded: {args.model_path}\nDevice: {device}")
+
+    criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.1, 0.9], device=device))
+    optimizer, encoder_params, backend_params = build_grouped_optimizer(
+        model, args.encoder_lr, args.backend_lr, args.weight_decay)
+    print(f"SSL encoder parameters: {sum(p.numel() for p in encoder_params)} | LR={args.encoder_lr:.2e}")
+    print(f"AASIST/backend parameters: {sum(p.numel() for p in backend_params)} | LR={args.backend_lr:.2e}")
+
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     exp_root = Path(args.out_path) / f"{args.track}_epoch{args.num_epochs}_bs{effective_batch}_{timestamp}"
     ckpt_dir = exp_root / "ckpt"
@@ -211,8 +236,6 @@ def main():
                   noise_environment={k: v for k, v in os.environ.items() if k.startswith("RTC_B_")},
                   noise_manifest_sha256=getattr(train_set.env_noise, "manifest_sha256", None))
     (exp_root / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
-    criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.1, 0.9], device=device))
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     initial_dev = evaluate_dev(dev_loader, model, device, criterion)
     best = selection_key(initial_dev, args.selection_metric)
     best_path = ckpt_dir / "best_model.pth"
@@ -234,7 +257,8 @@ def main():
             log.flush()
             online_f1 = "N/A" if dev["online"] is None else f"{100 * dev['online']['macro_f1']:.4f}%"
             print(f"Epoch {epoch}/{args.num_epochs} CE={train['ce']:.6f} RTC={train['rtc']:.6f} "
-                  f"TrainAcc={train['acc']:.2f}% DevLoss={dev['loss']:.6f} DevOnlineF1={online_f1}")
+                  f"TrainAcc={train['acc']:.2f}% DevLoss={dev['loss']:.6f} DevOnlineF1={online_f1} "
+                  f"EncoderLR={args.encoder_lr:.2e} BackendLR={args.backend_lr:.2e}")
             torch.save(model.state_dict(), ckpt_dir / "last_model.pth")
             if improved:
                 best, no_improve = key, 0
