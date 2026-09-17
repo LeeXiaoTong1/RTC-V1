@@ -34,6 +34,10 @@ args=(
   --num_epochs "${NUM_EPOCHS:-30}" --earlystop_epoch "${EARLYSTOP_EPOCH:-10}"
   --encoder_lr "${ENCODER_LR:-5e-7}"
   --backend_lr "${BACKEND_LR:-5e-6}"
+  --lr_factor "${LR_FACTOR:-0.1}"
+  --lr_patience "${LR_PATIENCE:-1}"
+  --min_encoder_lr "${MIN_ENCODER_LR:-5e-9}"
+  --min_backend_lr "${MIN_BACKEND_LR:-5e-8}"
   --weight_decay "${WEIGHT_DECAY:-1e-4}" --algo "${RAWBOOST_ALGO:-5}"
   --num_workers "${NUM_WORKERS:-8}" --device "${DEVICE:-cuda:0}" --amp "${AMP:-bf16}"
 )
