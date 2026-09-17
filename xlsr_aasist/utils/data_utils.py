@@ -43,6 +43,23 @@ def normalize_label(label):
     return LABEL_TO_ID[key]
 
 
+def class_weights_from_labels(labels):
+    """Return inverse-frequency CE weights [fake, real] from a protocol label map.
+
+    Formula: w_c = N / (2 * N_c). Only the relative ratio matters for mean CE.
+    Both classes must be present; silently inventing a weight would hide a data bug.
+    """
+    if not labels:
+        raise ValueError("Training labels are required to compute class weights")
+    values = torch.tensor(list(labels.values()), dtype=torch.long)
+    counts = torch.bincount(values, minlength=2)
+    if counts.numel() != 2 or (counts <= 0).any():
+        raise ValueError(f"Both fake and real classes are required, got counts={counts.tolist()}")
+    total = counts.sum().float()
+    weights = total / (2.0 * counts.float())
+    return weights, counts
+
+
 def read_protocol(protocol_path, require_label=None):
     file_list = []
     labels = {}
@@ -157,4 +174,3 @@ def process_rawboost_feature(feature, sr, args, algo):
         feature_2 = process_rawboost_feature(feature, sr, args, 2)
         return normWav(feature_1 + feature_2, 0)
     return feature
-
