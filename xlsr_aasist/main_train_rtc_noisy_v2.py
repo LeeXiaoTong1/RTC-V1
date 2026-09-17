@@ -30,7 +30,24 @@ def build_parser():
     p.add_argument("--dev_heldout_cache", required=True)
     p.add_argument("--extra_train_noisy_cache", action="append", default=[],
                    help="Optional fresh bank with another generation; one view per source remains")
+    p.add_argument("--encoder_lr", type=float, default=None,
+                   help="SSL encoder LR; defaults to --lr when omitted")
+    p.add_argument("--backend_lr", type=float, default=None,
+                   help="AASIST/backend LR; defaults to --lr when omitted")
     return p
+
+
+def build_grouped_optimizer(model, encoder_lr, backend_lr, weight_decay):
+    encoder_params = [p for p in model.ssl_model.parameters() if p.requires_grad]
+    encoder_ids = {id(p) for p in encoder_params}
+    backend_params = [p for p in model.parameters() if p.requires_grad and id(p) not in encoder_ids]
+    if not encoder_params or not backend_params:
+        raise RuntimeError("Could not split SSL encoder and AASIST/backend parameters")
+    optimizer = torch.optim.Adam([
+        {"params": encoder_params, "lr": encoder_lr},
+        {"params": backend_params, "lr": backend_lr},
+    ], weight_decay=weight_decay)
+    return optimizer, encoder_params, backend_params
 
 
 def summarize_dev(metrics):
@@ -43,13 +60,16 @@ def summarize_dev(metrics):
 def main():
     p = build_parser()
     args = p.parse_args()
+    args.encoder_lr = args.lr if args.encoder_lr is None else args.encoder_lr
+    args.backend_lr = args.lr if args.backend_lr is None else args.backend_lr
     for name in ("rtc_weight", "noisy_weight", "noisy_warmup_epochs", "grad_clip", "weight_decay"):
         if not math.isfinite(getattr(args, name)) or getattr(args, name) < 0:
             p.error(f"{name} must be finite and nonnegative")
     if not 0 <= args.noisy_ce_weight <= 1:
         p.error("noisy_ce_weight must lie in [0,1]")
-    if not math.isfinite(args.lr) or args.lr <= 0 or not math.isfinite(args.rtc_temperature) or args.rtc_temperature <= 0:
-        p.error("lr and rtc_temperature must be finite and positive")
+    for name in ("encoder_lr", "backend_lr", "rtc_temperature"):
+        if not math.isfinite(getattr(args, name)) or getattr(args, name) <= 0:
+            p.error(f"{name} must be finite and positive")
     if args.batch_size < 2 or args.num_workers < 0 or args.num_epochs < 1 or args.earlystop_epoch < 1:
         p.error("Invalid batch size, workers, epochs or patience")
     for name in ("rtc_pairs_per_batch", "noisy_pairs_per_batch"):
@@ -115,9 +135,11 @@ def main():
     clean_loader = DataLoader(clean_dev, **dev_kwargs)
     seen_loader = DataLoader(NoisyDevDataset(seen[0]), **dev_kwargs)
     heldout_loader = DataLoader(NoisyDevDataset(heldout[0]), **dev_kwargs)
-    # Keep reported Dev CE comparable to V1. It does not define the training loss.
     dev_criterion = nn.CrossEntropyLoss(weight=torch.tensor([.1, .9], device=device))
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer, encoder_params, backend_params = build_grouped_optimizer(
+        model, args.encoder_lr, args.backend_lr, args.weight_decay)
+    print(f"SSL encoder parameters: {sum(p.numel() for p in encoder_params)} | LR={args.encoder_lr:.2e}")
+    print(f"AASIST/backend parameters: {sum(p.numel() for p in backend_params)} | LR={args.backend_lr:.2e}")
     stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     output = Path(args.out_path)/f"{args.track}_epoch{args.num_epochs}_bs{effective}_{stamp}"
     ckpt = output/"ckpt"
@@ -163,7 +185,8 @@ def main():
                   f"CERef={train['ce_noisy_reference']:.6f} CENoisy={train['ce_noisy_processed']:.6f} "
                   f"RTCReal={train['rtc_real']:.6f} RTCNoisy={train['rtc_noisy']:.6f} "
                   f"NoisyCEWeight={args.noisy_ce_weight:.3f} NoisyWeight={train['noise_weight']:.4f} "
-                  f"TrainAcc={train['acc']:.2f}% TrainMinutes={train['seconds']/60:.2f}", flush=True)
+                  f"TrainAcc={train['acc']:.2f}% EncoderLR={args.encoder_lr:.2e} "
+                  f"BackendLR={args.backend_lr:.2e} TrainMinutes={train['seconds']/60:.2f}", flush=True)
             print("Dev V2:", json.dumps(summarize_dev(dev)), flush=True)
             for role in ("noisy_seen", "noisy_heldout"):
                 print(role + " bands:", json.dumps({name:{"F1":100*v["macro_f1"],
@@ -178,7 +201,7 @@ def main():
             if no_improve >= args.earlystop_epoch:
                 print(f"Early stopping at epoch {epoch}")
                 break
-    print(f"Best checkpoint: {ckpt/'best_model.pth'}; use the existing run_eval_rtc_noisy.sh")
+    print(f"Best checkpoint: {ckpt/'best_model.pth'}; use the w2v-BERT evaluation script")
 
 
 if __name__ == "__main__":
