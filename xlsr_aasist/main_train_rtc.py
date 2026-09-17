@@ -2,7 +2,6 @@
 
 One forward: [V1 augmented examples, clean Offline pairs, clean Online pairs].
 One CE over all examples, plus an optional RTC loss on the clean pairs only.
---rtc_weight 0 is the matched-sampling CE control, NOT the original V1 run.
 """
 import hashlib
 import json
@@ -19,7 +18,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from main_train import build_arg_parser, build_loader
-from utils.data_utils import build_dataset_from_protocol, set_random_seed
+from utils.data_utils import build_dataset_from_protocol, class_weights_from_labels, set_random_seed
 from utils.rtc_data import BalancedPairBatchSampler, RTCPairDataset
 from utils.rtc_loss import rtc_pair_contrastive_loss
 from utils.rtc_pairs import load_pairs
@@ -35,10 +34,12 @@ def build_parser():
     parser.add_argument("--rtc_weight", type=float, default=0.1)
     parser.add_argument("--rtc_temperature", type=float, default=0.1)
     parser.add_argument("--ssl_path", default=None, help="SSL pretrained model path")
-    parser.add_argument("--encoder_lr", type=float, default=None,
-                        help="SSL encoder LR; defaults to --lr when omitted")
-    parser.add_argument("--backend_lr", type=float, default=None,
-                        help="AASIST/backend LR; defaults to --lr when omitted")
+    parser.add_argument("--encoder_lr", type=float, default=None)
+    parser.add_argument("--backend_lr", type=float, default=None)
+    parser.add_argument("--lr_factor", type=float, default=0.1)
+    parser.add_argument("--lr_patience", type=int, default=1)
+    parser.add_argument("--min_encoder_lr", type=float, default=1e-8)
+    parser.add_argument("--min_backend_lr", type=float, default=1e-7)
     parser.add_argument("--amp", choices=["bf16", "none"], default="bf16")
     parser.add_argument("--selection_metric", choices=["online_f1", "dev_loss"], default="online_f1")
     parser.add_argument("--check_data", action="store_true", help="Check data without loading the model")
@@ -52,8 +53,8 @@ def build_grouped_optimizer(model, encoder_lr, backend_lr, weight_decay):
     if not encoder_params or not backend_params:
         raise RuntimeError("Could not split SSL encoder and AASIST/backend parameters")
     optimizer = torch.optim.Adam([
-        {"params": encoder_params, "lr": encoder_lr},
-        {"params": backend_params, "lr": backend_lr},
+        {"params": encoder_params, "lr": encoder_lr, "name": "ssl"},
+        {"params": backend_params, "lr": backend_lr, "name": "backend"},
     ], weight_decay=weight_decay)
     return optimizer, encoder_params, backend_params
 
@@ -151,6 +152,10 @@ def selection_key(dev, metric):
     return (dev["online"]["macro_f1"], -dev["loss"])
 
 
+def scheduler_value(dev, metric):
+    return dev["loss"] if metric == "dev_loss" else dev["online"]["macro_f1"]
+
+
 def sha256_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as stream:
@@ -172,14 +177,19 @@ def main():
         parser.error("--encoder_lr must be finite and positive")
     if not math.isfinite(args.backend_lr) or args.backend_lr <= 0:
         parser.error("--backend_lr must be finite and positive")
+    if not 0 < args.lr_factor < 1 or args.lr_patience < 0:
+        parser.error("Require 0 < lr_factor < 1 and lr_patience >= 0")
     if args.batch_size < 2 or args.num_epochs < 1 or args.num_workers < 0 or args.earlystop_epoch < 1:
         parser.error("Require batch_size >= 2, num_epochs/earlystop_epoch >= 1, num_workers >= 0")
+
     set_random_seed(args.seed, args)
     pairs = load_pairs(args.rtc_pairs, args.train_protocol, args.train_data_path)
-    train_set, train_ids, _ = build_dataset_from_protocol(
+    train_set, train_ids, train_labels = build_dataset_from_protocol(
         args.train_protocol, args.train_data_path, mode="train", args=args, algo=args.algo)
     dev_set, dev_ids, _ = build_dataset_from_protocol(
         args.dev_protocol, args.dev_data_path, mode="dev", args=args)
+    class_weights, class_counts = class_weights_from_labels(train_labels)
+
     for root, ids in ((args.train_data_path, train_ids), (args.dev_data_path, dev_ids)):
         for utt in ids:
             path = Path(root) / utt
@@ -187,6 +197,7 @@ def main():
                 raise FileNotFoundError(path)
     if args.selection_metric == "online_f1" and not any("online" in Path(utt).parts for utt in dev_ids):
         parser.error("Dev protocol has no Online subset for --selection_metric online_f1")
+
     train_loader = build_loader(train_set, args.batch_size, args.num_workers, shuffle=True)
     effective_batch = args.batch_size + 2 * args.rtc_pairs_per_batch
     dev_loader = build_loader(dev_set, effective_batch, args.num_workers, shuffle=False)
@@ -196,8 +207,11 @@ def main():
     pair_loader = DataLoader(RTCPairDataset(pairs, args.train_data_path), batch_sampler=pair_sampler,
                             num_workers=pair_workers, pin_memory=True,
                             **({"persistent_workers": True} if pair_workers else {}))
+
     print(f"Train trials: {len(train_ids)}; Dev trials: {len(dev_ids)}; official RTC pairs: {len(pairs)}")
     print(f"Batch: {args.batch_size} V1 samples + {args.rtc_pairs_per_batch} clean pairs x 2 = {effective_batch} audios")
+    print(f"Class counts [fake, real]: {class_counts.tolist()}")
+    print(f"Auto CE weights [fake, real]: {[round(x, 6) for x in class_weights.tolist()]}")
     print(f"RTC weight={args.rtc_weight}; temperature={args.rtc_temperature}; selection={args.selection_metric}")
     if train_set.env_noise is None:
         print("MUSAN augmentation is disabled: set RTC_B_NOISE_MANIFEST to retain V1 noise augmentation.")
@@ -206,21 +220,34 @@ def main():
         return
     if not args.model_path or not Path(args.model_path).is_file():
         parser.error("Provide an existing V1 checkpoint with --model_path")
+
     device = torch.device(args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is unavailable; fix the PyTorch/driver environment or explicitly use --device cpu")
     if device.type == "cuda" and args.amp == "bf16" and not torch.cuda.is_bf16_supported():
         parser.error("This GPU does not support BF16; use --amp none")
+
     from model.model import Model
     model = Model(args, device).to(device)
     model.load_state_dict(torch.load(args.model_path, map_location="cpu", weights_only=True), strict=True)
     print(f"Model loaded: {args.model_path}\nDevice: {device}")
 
-    criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.1, 0.9], device=device))
+    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
     optimizer, encoder_params, backend_params = build_grouped_optimizer(
         model, args.encoder_lr, args.backend_lr, args.weight_decay)
+    scheduler_mode = "min" if args.selection_metric == "dev_loss" else "max"
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode=scheduler_mode,
+        factor=args.lr_factor,
+        patience=args.lr_patience,
+        threshold=1e-4,
+        threshold_mode="rel",
+        min_lr=[args.min_encoder_lr, args.min_backend_lr],
+    )
     print(f"SSL encoder parameters: {sum(p.numel() for p in encoder_params)} | LR={args.encoder_lr:.2e}")
     print(f"AASIST/backend parameters: {sum(p.numel() for p in backend_params)} | LR={args.backend_lr:.2e}")
+    print(f"LR scheduler: monitor={args.selection_metric}, factor={args.lr_factor}, patience={args.lr_patience}")
 
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     exp_root = Path(args.out_path) / f"{args.track}_epoch{args.num_epochs}_bs{effective_batch}_{timestamp}"
@@ -228,6 +255,7 @@ def main():
     ckpt_dir.mkdir(parents=True)
     config = vars(args).copy()
     config.update(effective_audio_batch=effective_batch, pair_count=len(pairs),
+                  class_counts=class_counts.tolist(), class_weights=class_weights.tolist(),
                   train_protocol_sha256=sha256_file(args.train_protocol),
                   dev_protocol_sha256=sha256_file(args.dev_protocol),
                   pair_manifest_sha256=sha256_file(args.rtc_pairs),
@@ -236,29 +264,27 @@ def main():
                   noise_environment={k: v for k, v in os.environ.items() if k.startswith("RTC_B_")},
                   noise_manifest_sha256=getattr(train_set.env_noise, "manifest_sha256", None))
     (exp_root / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+
     initial_dev = evaluate_dev(dev_loader, model, device, criterion)
     best = selection_key(initial_dev, args.selection_metric)
+    scheduler.step(scheduler_value(initial_dev, args.selection_metric))
     best_path = ckpt_dir / "best_model.pth"
     torch.save(model.state_dict(), best_path)
     no_improve = 0
+
     with (exp_root / "metrics.jsonl").open("a", encoding="utf-8") as log:
         log.write(json.dumps({"epoch": 0, "dev": initial_dev, "best": True}) + "\n")
         log.flush()
         print("Initial dev: " + json.dumps(initial_dev))
         for epoch in range(1, args.num_epochs + 1):
+            used_encoder_lr, used_backend_lr = optimizer.param_groups[0]["lr"], optimizer.param_groups[1]["lr"]
             pair_sampler.set_epoch(epoch)
             train = train_epoch(train_loader, pair_loader, model, optimizer, device, criterion,
                                 args.rtc_weight, args.rtc_temperature, args.amp == "bf16")
             dev = evaluate_dev(dev_loader, model, device, criterion)
             key = selection_key(dev, args.selection_metric)
             improved = key > best
-            row = {"epoch": epoch, "train": train, "dev": dev, "best": improved}
-            log.write(json.dumps(row) + "\n")
-            log.flush()
-            online_f1 = "N/A" if dev["online"] is None else f"{100 * dev['online']['macro_f1']:.4f}%"
-            print(f"Epoch {epoch}/{args.num_epochs} CE={train['ce']:.6f} RTC={train['rtc']:.6f} "
-                  f"TrainAcc={train['acc']:.2f}% DevLoss={dev['loss']:.6f} DevOnlineF1={online_f1} "
-                  f"EncoderLR={args.encoder_lr:.2e} BackendLR={args.backend_lr:.2e}")
+
             torch.save(model.state_dict(), ckpt_dir / "last_model.pth")
             if improved:
                 best, no_improve = key, 0
@@ -267,6 +293,23 @@ def main():
                 print(f"Saved best model: {best_path}")
             else:
                 no_improve += 1
+
+            scheduler.step(scheduler_value(dev, args.selection_metric))
+            next_encoder_lr, next_backend_lr = optimizer.param_groups[0]["lr"], optimizer.param_groups[1]["lr"]
+            reduced = next_encoder_lr < used_encoder_lr or next_backend_lr < used_backend_lr
+            online_f1 = "N/A" if dev["online"] is None else f"{100 * dev['online']['macro_f1']:.4f}%"
+            print(f"Epoch {epoch}/{args.num_epochs} CE={train['ce']:.6f} RTC={train['rtc']:.6f} "
+                  f"TrainAcc={train['acc']:.2f}% DevLoss={dev['loss']:.6f} DevOnlineF1={online_f1} "
+                  f"EncoderLR={used_encoder_lr:.2e}->{next_encoder_lr:.2e} "
+                  f"BackendLR={used_backend_lr:.2e}->{next_backend_lr:.2e}")
+            if reduced:
+                print("LR reduced automatically because the validation target stopped improving.")
+
+            row = {"epoch": epoch, "train": train, "dev": dev, "best": improved,
+                   "lr": {"encoder": next_encoder_lr, "backend": next_backend_lr}}
+            log.write(json.dumps(row) + "\n")
+            log.flush()
+
             if no_improve >= args.earlystop_epoch:
                 print(f"Early stopping at epoch {epoch}")
                 break
