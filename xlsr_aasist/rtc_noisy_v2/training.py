@@ -29,7 +29,8 @@ def paired_objective(model, batch, real_batch, noisy_batch, device, args, noisy_
         logits, features = model(waveforms, return_features=True)
     if features.ndim != 2 or len(features) != len(waveforms):
         raise ValueError("Expected one pre-classifier representation per waveform")
-    ce, parts, coefficients = grouped_classification(logits, labels, n, r, s, args.noisy_ce_weight)
+    ce, parts, coefficients = grouped_classification(
+        logits, labels, n, r, s, args.noisy_ce_weight, args.class_weights)
     real_loss, real_stats = rtc_pair_contrastive_loss(features[n:n+r], features[n+r:n+2*r],
                                                     real_labels.to(device), args.rtc_temperature)
     a = n + 2*r
@@ -95,7 +96,6 @@ def train_epoch(loaders, model, optimizer, device, args, epoch):
 
 def combine_validation(clean, seen, heldout):
     clean_f1 = clean["online"]["macro_f1"]
-    # V1 proxy remains visible, while V2 selection explicitly includes heldout Dev.
     legacy = .3*clean_f1 + .7*seen["macro_f1"]
     robust = .3*clean_f1 + .35*seen["macro_f1"] + .35*heldout["macro_f1"]
     return {"clean": clean, "noisy_seen": seen, "noisy_heldout": heldout,
