@@ -13,6 +13,7 @@ export RTC_B_SNR_MAX=${RTC_B_SNR_MAX:-30}
 
 args=(
   --track "${TRACK:-w2vbert_aasist_base}"
+  --ssl_path "$W2VBERT_PRETRAINED"
   --train_data_path "$DATA_ROOT/train"
   --dev_data_path "$DATA_ROOT/dev"
   --train_protocol "$DATASET_ROOT/train_label.txt"
@@ -22,7 +23,8 @@ args=(
   --batch_size "${BATCH_SIZE:-40}"
   --num_epochs "${NUM_EPOCHS:-100}"
   --earlystop_epoch "${EARLYSTOP_EPOCH:-10}"
-  --lr "${LR:-1e-6}"
+  --encoder_lr "${ENCODER_LR:-1e-6}"
+  --backend_lr "${BACKEND_LR:-1e-4}"
   --weight_decay "${WEIGHT_DECAY:-1e-4}"
   --num_workers "${NUM_WORKERS:-12}"
   --algo "${RAWBOOST_ALGO:-5}"
