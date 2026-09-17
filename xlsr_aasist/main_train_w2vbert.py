@@ -1,4 +1,9 @@
-"""Stage-1 trainer for w2v-BERT 2.0 + AASIST with differential learning rates."""
+"""Stage-1 trainer for w2v-BERT 2.0 + AASIST.
+
+- Separate encoder/backend learning rates.
+- Class weights are derived from the actual Train protocol.
+- ReduceLROnPlateau lowers both learning rates automatically when DevLoss stops improving.
+"""
 import os
 from datetime import datetime
 
@@ -7,7 +12,7 @@ from torch import nn
 
 from main_train import build_arg_parser, build_loader, train_epoch, evaluate_dev
 from model.model_w2vbert import Model
-from utils.data_utils import build_dataset_from_protocol, set_random_seed
+from utils.data_utils import build_dataset_from_protocol, class_weights_from_labels, set_random_seed
 
 try:
     from tensorboardX import SummaryWriter
@@ -17,13 +22,16 @@ except ImportError:
 
 def build_parser():
     parser = build_arg_parser()
-    parser.description = "Train w2v-BERT 2.0 + AASIST with separate encoder/backend learning rates"
+    parser.description = "Train w2v-BERT 2.0 + AASIST with adaptive LR and protocol-derived class weights"
     parser.set_defaults(track="w2vbert_aasist_base")
     parser.add_argument("--ssl_path", default=None)
-    parser.add_argument("--encoder_lr", type=float, default=1e-6,
-                        help="Learning rate for pretrained w2v-BERT 2.0")
-    parser.add_argument("--backend_lr", type=float, default=1e-4,
-                        help="Learning rate for AASIST and classifier")
+    parser.add_argument("--encoder_lr", type=float, default=1e-6)
+    parser.add_argument("--backend_lr", type=float, default=1e-4)
+    parser.add_argument("--lr_factor", type=float, default=0.1)
+    parser.add_argument("--lr_patience", type=int, default=0,
+                        help="Bad validation epochs before reducing LR; 0 reacts after the first bad epoch")
+    parser.add_argument("--min_encoder_lr", type=float, default=1e-8)
+    parser.add_argument("--min_backend_lr", type=float, default=1e-6)
     return parser
 
 
@@ -31,6 +39,8 @@ def main():
     args = build_parser().parse_args()
     if args.encoder_lr <= 0 or args.backend_lr <= 0:
         raise ValueError("encoder_lr and backend_lr must be positive")
+    if not 0 < args.lr_factor < 1 or args.lr_patience < 0:
+        raise ValueError("Require 0 < lr_factor < 1 and lr_patience >= 0")
 
     set_random_seed(args.seed, args)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
@@ -48,7 +58,7 @@ def main():
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, "train.log")
 
-    train_set, train_files, _ = build_dataset_from_protocol(
+    train_set, train_files, train_labels = build_dataset_from_protocol(
         args.train_protocol, args.train_data_path, mode="train", args=args, algo=args.algo
     )
     dev_set, dev_files, _ = build_dataset_from_protocol(
@@ -56,6 +66,9 @@ def main():
     )
     train_loader = build_loader(train_set, args.batch_size, args.num_workers, shuffle=True)
     dev_loader = build_loader(dev_set, args.batch_size, args.num_workers, shuffle=False)
+
+    class_weights, class_counts = class_weights_from_labels(train_labels)
+    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
     model = Model(args, device).to(device)
     if args.model_path:
@@ -70,40 +83,35 @@ def main():
         {"params": encoder_params, "lr": args.encoder_lr, "name": "w2vbert"},
         {"params": backend_params, "lr": args.backend_lr, "name": "aasist"},
     ], weight_decay=args.weight_decay)
-
-    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 0.9]).to(device))
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=args.lr_factor,
+        patience=args.lr_patience,
+        threshold=1e-4,
+        threshold_mode="rel",
+        min_lr=[args.min_encoder_lr, args.min_backend_lr],
+    )
     writer = SummaryWriter(log_dir=log_dir) if SummaryWriter else None
 
     print(f"Device: {device}")
     print(f"Train trials: {len(train_files)}")
     print(f"Dev trials: {len(dev_files)}")
+    print(f"Class counts [fake, real]: {class_counts.tolist()}")
+    print(f"Auto CE weights [fake, real]: {[round(x, 6) for x in class_weights.tolist()]}")
     print(f"Parameters: {sum(p.numel() for p in model.parameters())}")
     print(f"w2v-BERT parameters: {sum(p.numel() for p in encoder_params)} | LR={args.encoder_lr:.2e}")
     print(f"AASIST parameters: {sum(p.numel() for p in backend_params)} | LR={args.backend_lr:.2e}")
+    print(f"LR scheduler: ReduceLROnPlateau(DevLoss, factor={args.lr_factor}, patience={args.lr_patience})")
 
     best_dev_loss = float("inf")
     best_model_path = None
     no_improve_count = 0
 
     for epoch in range(1, args.num_epochs + 1):
+        used_encoder_lr, used_backend_lr = optimizer.param_groups[0]["lr"], optimizer.param_groups[1]["lr"]
         train_loss, train_acc = train_epoch(train_loader, model, optimizer, device, criterion)
         dev_loss, dev_acc = evaluate_dev(dev_loader, model, device, criterion)
-
-        message = (
-            f"Epoch {epoch}/{args.num_epochs} "
-            f"TrainLoss={train_loss:.6f} TrainAcc={train_acc:.2f}% "
-            f"DevLoss={dev_loss:.6f} DevAcc={dev_acc:.2f}% "
-            f"EncoderLR={args.encoder_lr:.2e} BackendLR={args.backend_lr:.2e}"
-        )
-        print(message)
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().replace(microsecond=0)}] {message}\n")
-
-        if writer:
-            writer.add_scalar("Loss/train", train_loss, epoch)
-            writer.add_scalar("Acc/train", train_acc, epoch)
-            writer.add_scalar("Loss/dev", dev_loss, epoch)
-            writer.add_scalar("Acc/dev", dev_acc, epoch)
 
         if dev_loss < best_dev_loss:
             best_dev_loss = dev_loss
@@ -114,6 +122,31 @@ def main():
             print(f"Saved best model: {best_model_path}")
         else:
             no_improve_count += 1
+
+        scheduler.step(dev_loss)
+        next_encoder_lr, next_backend_lr = optimizer.param_groups[0]["lr"], optimizer.param_groups[1]["lr"]
+        reduced = (next_encoder_lr < used_encoder_lr) or (next_backend_lr < used_backend_lr)
+
+        message = (
+            f"Epoch {epoch}/{args.num_epochs} "
+            f"TrainLoss={train_loss:.6f} TrainAcc={train_acc:.2f}% "
+            f"DevLoss={dev_loss:.6f} DevAcc={dev_acc:.2f}% "
+            f"EncoderLR={used_encoder_lr:.2e}->{next_encoder_lr:.2e} "
+            f"BackendLR={used_backend_lr:.2e}->{next_backend_lr:.2e}"
+        )
+        print(message)
+        if reduced:
+            print("LR reduced automatically because validation stopped improving.")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().replace(microsecond=0)}] {message}\n")
+
+        if writer:
+            writer.add_scalar("Loss/train", train_loss, epoch)
+            writer.add_scalar("Acc/train", train_acc, epoch)
+            writer.add_scalar("Loss/dev", dev_loss, epoch)
+            writer.add_scalar("Acc/dev", dev_acc, epoch)
+            writer.add_scalar("LR/encoder", next_encoder_lr, epoch)
+            writer.add_scalar("LR/backend", next_backend_lr, epoch)
 
         if no_improve_count >= args.earlystop_epoch:
             print(f"Early stopping at epoch {epoch}. Best dev_loss={best_dev_loss:.6f}")
