@@ -17,7 +17,7 @@ def error_rates(confusion):
             "real_as_fake_rate": confusion[1][0] / real_total if real_total else None}
 
 
-def paired_objective(model, batch, real_batch, noisy_batch, device, args, noisy_weight):
+def paired_objective(model, batch, real_batch, noisy_batch, device, args, real_weight, noisy_weight):
     ordinary, ordinary_labels, _ = batch
     real_off, real_on, real_labels = real_batch
     noise_off, noise_on, noise_labels, bands, banks = noisy_batch
@@ -38,13 +38,14 @@ def paired_objective(model, batch, real_batch, noisy_batch, device, args, noisy_
                                                        noise_labels.to(device), args.rtc_temperature)
     if real_stats["valid_anchors"] != 2*r or noisy_stats["valid_anchors"] != 2*s:
         raise ValueError("Both pair batches must contain both authenticity classes")
-    loss = ce + args.rtc_weight * real_loss + noisy_weight * noisy_loss
+    loss = ce + real_weight * real_loss + noisy_weight * noisy_loss
     predicted = logits.float().argmax(1)
     codes = (2 * labels[-s:] + predicted[-s:]).detach().cpu()
     stats = {"loss": float(loss.detach()), "ce": float(ce.detach()),
              **{f"ce_{k}": float(v.detach()) for k, v in parts.items()},
              "rtc_real": float(real_loss.detach()), "rtc_noisy": float(noisy_loss.detach()),
-             "noise_weight": noisy_weight, "noisy_ce_weight": args.noisy_ce_weight,
+             "rtc_weight": real_weight, "noise_weight": noisy_weight,
+             "noisy_ce_weight": args.noisy_ce_weight,
              "examples": len(labels), "correct": int((predicted == labels).sum()),
              "ordinary_examples": n, "real_pairs": r, "noisy_pairs": s,
              "snr_counts": torch.bincount(bands, minlength=4).tolist(),
@@ -60,7 +61,7 @@ def train_epoch(loaders, model, optimizer, device, args, epoch):
         raise ValueError("All training streams must have equal nonzero steps")
     model.train()
     names = ("loss", "ce", "ce_ordinary", "ce_real_pair", "ce_noisy_reference", "ce_noisy_processed",
-             "rtc_real", "rtc_noisy", "noise_weight", "noisy_ce_weight")
+             "rtc_real", "rtc_noisy", "rtc_weight", "noise_weight", "noisy_ce_weight")
     totals = dict.fromkeys(names, 0.)
     counts = dict.fromkeys(("examples", "correct", "ordinary_examples", "real_pairs", "noisy_pairs"), 0)
     snr, banks = [0]*4, [0]*args.cache_banks
@@ -68,9 +69,16 @@ def train_epoch(loaders, model, optimizer, device, args, epoch):
     start = time.perf_counter()
     done = 0
     for step, batches in enumerate(tqdm(zip(*loaders), total=steps, desc="Training RTC+Noisy V2", unit="batch")):
-        weight = linear_weight(args.noisy_weight, epoch, step, steps, args.noisy_warmup_epochs)
+        real_weight = linear_weight(
+            args.rtc_weight, epoch, step, steps, args.rtc_warmup_epochs
+        )
+        noisy_weight = linear_weight(
+            args.noisy_weight, epoch, step, steps, args.noisy_warmup_epochs
+        )
         optimizer.zero_grad(set_to_none=True)
-        loss, stats = paired_objective(model, *batches, device, args, weight)
+        loss, stats = paired_objective(
+            model, *batches, device, args, real_weight, noisy_weight
+        )
         if not torch.isfinite(loss):
             raise FloatingPointError("Non-finite total loss")
         loss.backward()
