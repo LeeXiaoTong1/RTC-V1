@@ -31,11 +31,11 @@ def build_parser():
     parser = build_arg_parser()
     parser.description = __doc__
     parser.set_defaults(track="xlsr_aasist_V1_RTC_pair", batch_size=32,
-                        num_epochs=8, earlystop_epoch=4)
+                        num_epochs=10, earlystop_epoch=5)
     parser.add_argument("--rtc_pairs", required=True, help="Validated train pair JSONL")
     parser.add_argument("--rtc_pairs_per_batch", type=int, default=4)
-    parser.add_argument("--rtc_weight", type=float, default=0.1)
-    parser.add_argument("--rtc_warmup_epochs", type=float, default=2.0,
+    parser.add_argument("--rtc_weight", type=float, default=0.05)
+    parser.add_argument("--rtc_warmup_epochs", type=float, default=3.0,
                         help="Linearly ramp RTC contrastive weight from 0 to rtc_weight")
     parser.add_argument("--rtc_temperature", type=float, default=0.1)
     parser.add_argument("--ssl_path", default=None, help="SSL pretrained model path")
@@ -44,11 +44,12 @@ def build_parser():
     parser.add_argument("--lr_factor", type=float, default=0.5)
     parser.add_argument("--lr_patience", type=int, default=2,
                         help="Consecutive bad validation epochs before reducing LR")
-    parser.add_argument("--min_encoder_lr", type=float, default=2.5e-8)
-    parser.add_argument("--min_backend_lr", type=float, default=5e-7)
-    parser.add_argument("--encoder_trainable_layers", type=int, default=8,
+    parser.add_argument("--min_encoder_lr", type=float, default=1e-8)
+    parser.add_argument("--min_backend_lr", type=float, default=1e-7)
+    parser.add_argument("--encoder_trainable_layers", type=int, default=4,
                         help="Fine-tune only the final N of 24 w2v-BERT layers")
     parser.add_argument("--grad_clip", type=float, default=1.0)
+    parser.add_argument("--class_weight_power", type=float, default=0.5)
     parser.add_argument("--amp", choices=["bf16", "none"], default="bf16")
     parser.add_argument("--selection_metric", choices=["online_f1", "dev_loss"], default="online_f1")
     parser.add_argument("--check_data", action="store_true", help="Check data without loading the model")
@@ -226,6 +227,8 @@ def main():
         parser.error("--rtc_warmup_epochs must be finite and non-negative")
     if not math.isfinite(args.grad_clip) or args.grad_clip < 0:
         parser.error("--grad_clip must be finite and non-negative")
+    if not 0 <= args.class_weight_power <= 1:
+        parser.error("--class_weight_power must lie in [0,1]")
     if not math.isfinite(args.encoder_lr) or args.encoder_lr <= 0:
         parser.error("--encoder_lr must be finite and positive")
     if not math.isfinite(args.backend_lr) or args.backend_lr <= 0:
@@ -241,7 +244,9 @@ def main():
         args.train_protocol, args.train_data_path, mode="train", args=args, algo=args.algo)
     dev_set, dev_ids, _ = build_dataset_from_protocol(
         args.dev_protocol, args.dev_data_path, mode="dev", args=args)
-    class_weights, class_counts = class_weights_from_labels(train_labels)
+    class_weights, class_counts = class_weights_from_labels(
+        train_labels, power=args.class_weight_power
+    )
 
     for root, ids in ((args.train_data_path, train_ids), (args.dev_data_path, dev_ids)):
         for utt in ids:
@@ -264,7 +269,8 @@ def main():
     print(f"Train trials: {len(train_ids)}; Dev trials: {len(dev_ids)}; official RTC pairs: {len(pairs)}")
     print(f"Batch: {args.batch_size} V1 samples + {args.rtc_pairs_per_batch} clean pairs x 2 = {effective_batch} audios")
     print(f"Class counts [fake, real]: {class_counts.tolist()}")
-    print(f"Auto CE weights [fake, real]: {[round(x, 6) for x in class_weights.tolist()]}")
+    print(f"CE weights power={args.class_weight_power} [fake, real]: "
+          f"{[round(x, 6) for x in class_weights.tolist()]}")
     print(f"RTC weight={args.rtc_weight}; temperature={args.rtc_temperature}; selection={args.selection_metric}")
     if train_set.env_noise is None:
         print("MUSAN augmentation is disabled: set RTC_B_NOISE_MANIFEST to retain V1 noise augmentation.")
@@ -305,6 +311,8 @@ def main():
     config = vars(args).copy()
     config.update(effective_audio_batch=effective_batch, pair_count=len(pairs),
                   class_counts=class_counts.tolist(), class_weights=class_weights.tolist(),
+                  class_weight_power=args.class_weight_power,
+                  w2vbert_tuning=tuning,
                   train_protocol_sha256=sha256_file(args.train_protocol),
                   dev_protocol_sha256=sha256_file(args.dev_protocol),
                   pair_manifest_sha256=sha256_file(args.rtc_pairs),
