@@ -75,10 +75,14 @@ class SSLModel(nn.Module):
         if int(getattr(self.feature_extractor, "sampling_rate", 16000)) != 16000:
             raise ValueError("w2v-BERT feature extractor must use 16 kHz audio")
 
-        # Full fine-tuning is the closest counterpart to the original V2 XLS-R
-        # training. Activation checkpointing reduces memory usage on the 40 GB A100.
-        if hasattr(self.model, "gradient_checkpointing_enable"):
-            self.model.gradient_checkpointing_enable()
+        # Do NOT enable gradient checkpointing here. In our staged fine-tuning
+        # recipe the lower Conformer layers are frozen while only final layers are
+        # trainable. Re-entrant checkpointing can then receive hidden states with
+        # requires_grad=False and silently drop gradients for the trainable top
+        # layers ("None of the inputs have requires_grad=True"). With only a few
+        # final layers trainable, activation memory is already manageable.
+        if hasattr(self.model, "gradient_checkpointing_disable"):
+            self.model.gradient_checkpointing_disable()
 
     def _preprocess(self, input_data):
         if input_data.ndim == 3:
