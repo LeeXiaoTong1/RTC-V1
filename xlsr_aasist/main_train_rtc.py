@@ -30,7 +30,7 @@ from utils.w2vbert_tuning import configure_trainable_top_layers, split_trainable
 def build_parser():
     parser = build_arg_parser()
     parser.description = __doc__
-    parser.set_defaults(track="xlsr_aasist_V1_RTC_pair", batch_size=32,
+    parser.set_defaults(track="xlsr_aasist_V1_RTC_pair", batch_size=24,
                         num_epochs=10, earlystop_epoch=5)
     parser.add_argument("--rtc_pairs", required=True, help="Validated train pair JSONL")
     parser.add_argument("--rtc_pairs_per_batch", type=int, default=4)
