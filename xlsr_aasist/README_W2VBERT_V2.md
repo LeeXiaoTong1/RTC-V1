@@ -20,7 +20,7 @@ w2v-BERT 2.0 is a 24-layer, ~580M-parameter Conformer model. Later RTC adaptatio
 
 The Train protocol is also strongly imbalanced. Ordinary examples use square-root inverse-frequency CE weights by default (class_weight_power=0.5), while RTC/noisy pair branches are already 1:1 balanced and therefore use equal CE weights.
 
-For all fine-tuning stages, the w2v-BERT forward pass is deterministic: dropout/layerdrop are disabled through eval-mode on the SSL backbone while autograd remains enabled for the selected top layers. Gradient checkpointing is disabled because partial layer freezing otherwise breaks gradient flow when checkpoint inputs do not require gradients.
+Gradient checkpointing is disabled because partial layer freezing otherwise breaks gradient flow when checkpoint inputs do not require gradients. In Stage 1, LayerDrop is set to 0 while normal Conformer dropout remains active as regularization. Stage 2/3 use a fully deterministic SSL forward so pair-consistency losses are not contaminated by encoder randomness.
 
 ## Stage 1: learn Deepfake detection
 
@@ -29,13 +29,14 @@ Purpose: learn the base real/fake detector without immediately rewriting the pre
 Default:
 - batch = 40 ordinary examples
 - w2v-BERT trainable layers = final 8 / 24
-- first 2 epochs: encoder LR = 0, AASIST learns on frozen pretrained features
-- after warmup: encoder LR = 2e-7
-- AASIST LR = 5e-5 during warmup, then 1e-5
+- joint fine-tuning starts from epoch 1
+- encoder LR = 1e-7
+- AASIST LR = 1e-5
+- LayerDrop = 0; normal Conformer dropout remains active
 - class weight power = 0.5
 - gradient clip = 1.0
 - selection = Dev Online Macro-F1
-- maximum 30 epochs, early-stop patience 6
+- maximum 20 epochs, early-stop patience 5
 - validation plateau: 2 bad epochs -> LR x0.5 -> restore best checkpoint -> clear Adam state
 
 Command:
@@ -106,7 +107,7 @@ official w2v-BERT 2.0
        |
        v
 Stage 1: base Deepfake detector
-  top 8 layers, encoder warmup
+  top 8 layers, joint conservative fine-tuning
        |
        v
 Stage 2: real RTC adaptation
