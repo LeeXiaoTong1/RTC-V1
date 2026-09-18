@@ -20,7 +20,7 @@ w2v-BERT 2.0 is a 24-layer, ~580M-parameter Conformer model. Later RTC adaptatio
 
 The Train protocol is also strongly imbalanced. Ordinary examples use square-root inverse-frequency CE weights by default (class_weight_power=0.5), while RTC/noisy pair branches are already 1:1 balanced and therefore use equal CE weights.
 
-For Stage 2/3, the w2v-BERT forward pass is deterministic: dropout/layerdrop are disabled through eval-mode on the SSL backbone while autograd remains enabled for the selected top layers.
+For all fine-tuning stages, the w2v-BERT forward pass is deterministic: dropout/layerdrop are disabled through eval-mode on the SSL backbone while autograd remains enabled for the selected top layers. Gradient checkpointing is disabled because partial layer freezing otherwise breaks gradient flow when checkpoint inputs do not require gradients.
 
 ## Stage 1: learn Deepfake detection
 
@@ -30,8 +30,8 @@ Default:
 - batch = 40 ordinary examples
 - w2v-BERT trainable layers = final 8 / 24
 - first 2 epochs: encoder LR = 0, AASIST learns on frozen pretrained features
-- after warmup: encoder LR = 5e-7
-- AASIST LR = 5e-5
+- after warmup: encoder LR = 2e-7
+- AASIST LR = 5e-5 during warmup, then 1e-5
 - class weight power = 0.5
 - gradient clip = 1.0
 - selection = Dev Online Macro-F1
@@ -49,7 +49,7 @@ bash run_train_w2vbert_base.sh
 Purpose: keep Stage-1 detection ability while learning verified Offline/Online invariance.
 
 Default:
-- 32 ordinary + 4 RTC pairs x2 = 40 waveforms
+- 24 ordinary + 4 RTC pairs x2 = 32 waveforms
 - only final 4 / 24 w2v-BERT layers trainable
 - w2v-BERT deterministic forward
 - encoder LR = 5e-8
@@ -79,7 +79,7 @@ Default:
 - AASIST LR = 2e-7
 - ordinary CE: square-root inverse-frequency weighting
 - real/noisy pair CE: equal
-- real RTC contrastive weight = 0.05
+- real RTC contrastive weight = 0 -> 0.05 over first 3 epochs
 - noisy RTC contrastive weight = 0 -> 0.1 over first 3 epochs
 - noisy processed CE coefficient = 0.3
 - gradient clip = 1.0
@@ -121,3 +121,20 @@ submission model
 ```
 
 Do not pass an XLS-R detector checkpoint into this branch. Detector checkpoints transferred between stages must all have been produced by the w2v-BERT model.
+
+
+## Mandatory gradient-flow check
+
+Before a new full training run, verify that partial w2v-BERT fine-tuning really propagates gradients:
+
+```bash
+python check_w2vbert_tuning.py --device cuda:0 --top_layers 8
+```
+
+The command must end with:
+
+```text
+PASS: partial w2v-BERT gradient flow is valid
+```
+
+If it prints the old warning `None of the inputs have requires_grad=True`, do not start training.
