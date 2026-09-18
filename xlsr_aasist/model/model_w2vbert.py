@@ -62,6 +62,9 @@ class SSLModel(nn.Module):
         )
         self.device = device
         self.out_dim = int(self.model.config.hidden_size)
+        # Later RTC adaptation stages can disable stochastic layerdrop/dropout
+        # without disabling gradients. This is intentionally False for Stage 1.
+        self.deterministic_finetune = False
 
         if self.out_dim != 1024:
             raise ValueError(f"Expected hidden_size=1024, got {self.out_dim}")
@@ -105,6 +108,10 @@ class SSLModel(nn.Module):
 
     def extract_feat(self, input_data):
         input_features, attention_mask = self._preprocess(input_data)
+        if self.deterministic_finetune:
+            # eval() disables layerdrop/dropout but does NOT disable autograd.
+            # This is important for pair-consistency training.
+            self.model.eval()
         target_device = next(self.model.parameters()).device
         input_features = input_features.to(target_device, non_blocking=True)
         attention_mask = attention_mask.to(target_device, non_blocking=True)
