@@ -1,7 +1,8 @@
 """Fine-tune V1 with clean, officially matched Offline/Online utterances.
 
-One forward: [V1 augmented examples, clean Offline pairs, clean Online pairs].
-One CE over all examples, plus an optional RTC loss on the clean pairs only.
+One forward: [ordinary augmented examples, clean Offline pairs, clean Online pairs].
+Ordinary CE uses protocol-derived class weights; balanced RTC-pair CE is unweighted.
+A warm-started RTC contrastive loss aligns verified Offline/Online counterparts.
 """
 import hashlib
 import json
