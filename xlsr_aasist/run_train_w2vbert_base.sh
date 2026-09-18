@@ -25,6 +25,8 @@ args=(
   --earlystop_epoch "${EARLYSTOP_EPOCH:-10}"
   --encoder_lr "${ENCODER_LR:-1e-6}"
   --backend_lr "${BACKEND_LR:-1e-4}"
+  --encoder_trainable_layers "${ENCODER_TRAINABLE_LAYERS:-24}"
+  --grad_clip "${GRAD_CLIP:-1.0}"
   --lr_factor "${LR_FACTOR:-0.5}"
   --lr_patience "${LR_PATIENCE:-2}"
   --min_encoder_lr "${MIN_ENCODER_LR:-1e-7}"
