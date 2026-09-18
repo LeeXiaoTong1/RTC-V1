@@ -36,10 +36,11 @@ def build_parser():
     parser.add_argument("--ssl_path", default=None, help="SSL pretrained model path")
     parser.add_argument("--encoder_lr", type=float, default=None)
     parser.add_argument("--backend_lr", type=float, default=None)
-    parser.add_argument("--lr_factor", type=float, default=0.1)
-    parser.add_argument("--lr_patience", type=int, default=1)
-    parser.add_argument("--min_encoder_lr", type=float, default=1e-8)
-    parser.add_argument("--min_backend_lr", type=float, default=1e-7)
+    parser.add_argument("--lr_factor", type=float, default=0.5)
+    parser.add_argument("--lr_patience", type=int, default=2,
+                        help="Consecutive bad validation epochs before reducing LR")
+    parser.add_argument("--min_encoder_lr", type=float, default=1e-7)
+    parser.add_argument("--min_backend_lr", type=float, default=1e-6)
     parser.add_argument("--amp", choices=["bf16", "none"], default="bf16")
     parser.add_argument("--selection_metric", choices=["online_f1", "dev_loss"], default="online_f1")
     parser.add_argument("--check_data", action="store_true", help="Check data without loading the model")
@@ -235,19 +236,11 @@ def main():
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
     optimizer, encoder_params, backend_params = build_grouped_optimizer(
         model, args.encoder_lr, args.backend_lr, args.weight_decay)
-    scheduler_mode = "min" if args.selection_metric == "dev_loss" else "max"
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode=scheduler_mode,
-        factor=args.lr_factor,
-        patience=args.lr_patience,
-        threshold=1e-4,
-        threshold_mode="rel",
-        min_lr=[args.min_encoder_lr, args.min_backend_lr],
-    )
     print(f"SSL encoder parameters: {sum(p.numel() for p in encoder_params)} | LR={args.encoder_lr:.2e}")
     print(f"AASIST/backend parameters: {sum(p.numel() for p in backend_params)} | LR={args.backend_lr:.2e}")
-    print(f"LR scheduler: monitor={args.selection_metric}, factor={args.lr_factor}, patience={args.lr_patience}")
+    print(f"Adaptive LR: monitor={args.selection_metric}; bad_epochs={args.lr_patience}; "
+          f"factor={args.lr_factor}; min=[{args.min_encoder_lr:.2e}, {args.min_backend_lr:.2e}]; "
+          "restore_best=True")
 
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     exp_root = Path(args.out_path) / f"{args.track}_epoch{args.num_epochs}_bs{effective_batch}_{timestamp}"
@@ -267,10 +260,11 @@ def main():
 
     initial_dev = evaluate_dev(dev_loader, model, device, criterion)
     best = selection_key(initial_dev, args.selection_metric)
-    scheduler.step(scheduler_value(initial_dev, args.selection_metric))
+    best_monitor = scheduler_value(initial_dev, args.selection_metric)
     best_path = ckpt_dir / "best_model.pth"
     torch.save(model.state_dict(), best_path)
     no_improve = 0
+    lr_bad_epochs = 0
 
     with (exp_root / "metrics.jsonl").open("a", encoding="utf-8") as log:
         log.write(json.dumps({"epoch": 0, "dev": initial_dev, "best": True}) + "\n")
@@ -294,16 +288,36 @@ def main():
             else:
                 no_improve += 1
 
-            scheduler.step(scheduler_value(dev, args.selection_metric))
-            next_encoder_lr, next_backend_lr = optimizer.param_groups[0]["lr"], optimizer.param_groups[1]["lr"]
-            reduced = next_encoder_lr < used_encoder_lr or next_backend_lr < used_backend_lr
+            monitor = scheduler_value(dev, args.selection_metric)
+            monitor_improved = (monitor < best_monitor) if args.selection_metric == "dev_loss" else (monitor > best_monitor)
+            if monitor_improved:
+                best_monitor = monitor
+                lr_bad_epochs = 0
+            else:
+                lr_bad_epochs += 1
+
+            next_encoder_lr, next_backend_lr = used_encoder_lr, used_backend_lr
+            reduced = False
+            if lr_bad_epochs >= args.lr_patience:
+                next_encoder_lr = max(used_encoder_lr * args.lr_factor, args.min_encoder_lr)
+                next_backend_lr = max(used_backend_lr * args.lr_factor, args.min_backend_lr)
+                reduced = next_encoder_lr < used_encoder_lr or next_backend_lr < used_backend_lr
+                if reduced:
+                    optimizer.param_groups[0]["lr"] = next_encoder_lr
+                    optimizer.param_groups[1]["lr"] = next_backend_lr
+                    model.load_state_dict(torch.load(best_path, map_location=device, weights_only=True), strict=True)
+                    optimizer.state.clear()
+                    lr_bad_epochs = 0
+                    no_improve = 0
             online_f1 = "N/A" if dev["online"] is None else f"{100 * dev['online']['macro_f1']:.4f}%"
             print(f"Epoch {epoch}/{args.num_epochs} CE={train['ce']:.6f} RTC={train['rtc']:.6f} "
                   f"TrainAcc={train['acc']:.2f}% DevLoss={dev['loss']:.6f} DevOnlineF1={online_f1} "
                   f"EncoderLR={used_encoder_lr:.2e}->{next_encoder_lr:.2e} "
                   f"BackendLR={used_backend_lr:.2e}->{next_backend_lr:.2e}")
             if reduced:
-                print("LR reduced automatically because the validation target stopped improving.")
+                print("LR reduced after consecutive bad validation epochs; restored best_model.pth and reset Adam state.")
+            elif lr_bad_epochs >= args.lr_patience:
+                print("Validation plateaued, but both learning rates are already at their configured minimum.")
 
             row = {"epoch": epoch, "train": train, "dev": dev, "best": improved,
                    "lr": {"encoder": next_encoder_lr, "backend": next_backend_lr}}
