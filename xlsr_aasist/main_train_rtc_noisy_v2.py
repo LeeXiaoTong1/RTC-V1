@@ -20,6 +20,7 @@ from rtc_noisy_v2.training import selection_key, train_epoch, validate
 from utils.data_utils import build_dataset_from_protocol, class_weights_from_labels, set_random_seed
 from utils.rtc_data import BalancedPairBatchSampler, RTCPairDataset
 from utils.rtc_pairs import load_pairs
+from utils.w2vbert_tuning import configure_trainable_top_layers, split_trainable_params
 
 
 def build_parser():
@@ -35,17 +36,17 @@ def build_parser():
     p.add_argument("--lr_factor", type=float, default=0.5)
     p.add_argument("--lr_patience", type=int, default=2,
                    help="Consecutive bad DevRobustProxy epochs before reducing LR")
-    p.add_argument("--min_encoder_lr", type=float, default=5e-8)
-    p.add_argument("--min_backend_lr", type=float, default=5e-7)
+    p.add_argument("--min_encoder_lr", type=float, default=1e-8)
+    p.add_argument("--min_backend_lr", type=float, default=2e-7)
+    p.add_argument("--encoder_trainable_layers", type=int, default=4,
+                   help="Fine-tune only the final N of 24 w2v-BERT layers")
     return p
 
 
 def build_grouped_optimizer(model, encoder_lr, backend_lr, weight_decay):
-    encoder_params = [p for p in model.ssl_model.parameters() if p.requires_grad]
-    encoder_ids = {id(p) for p in encoder_params}
-    backend_params = [p for p in model.parameters() if p.requires_grad and id(p) not in encoder_ids]
-    if not encoder_params or not backend_params:
-        raise RuntimeError("Could not split SSL encoder and AASIST/backend parameters")
+    encoder_params, backend_params = split_trainable_params(model)
+    if not encoder_params:
+        raise RuntimeError("Stage 3 expects at least one trainable w2v-BERT layer")
     optimizer = torch.optim.Adam([
         {"params": encoder_params, "lr": encoder_lr, "name": "ssl"},
         {"params": backend_params, "lr": backend_lr, "name": "backend"},
@@ -138,7 +139,10 @@ def main():
     from model.model import Model
     model = Model(args, device).to(device)
     model.load_state_dict(torch.load(args.model_path, map_location="cpu", weights_only=True), strict=True)
+    tuning = configure_trainable_top_layers(model, args.encoder_trainable_layers)
     print(f"Model loaded: {args.model_path}\nDevice: {device}")
+    print(f"w2v-BERT trainable layers: {tuning['trainable_layers']}/{tuning['total_layers']} "
+          f"({tuning['trainable_params']}/{tuning['total_params']} params)")
 
     ordinary_loader = build_loader(ordinary, args.batch_size, args.num_workers, shuffle=True)
     worker_count = min(2, args.num_workers)
@@ -169,6 +173,7 @@ def main():
     config.update(plan_id=PLAN_ID, initial_checkpoint_sha256=sha256(args.model_path),
                   initialization_history=history, effective_audio_batch=effective,
                   class_counts=class_counts.tolist(), class_weights=class_weights.tolist(),
+                  w2vbert_tuning=tuning,
                   train_cache_configs=[cfg for _, cfg in banks], dev_seen_config=seen[1],
                   dev_heldout_config=heldout[1],
                   train_manifest_hashes=[sha256(Path(path)/"manifest.jsonl") for path in folders],
