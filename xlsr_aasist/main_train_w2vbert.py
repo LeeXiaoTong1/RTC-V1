@@ -13,6 +13,7 @@ from torch import nn
 from main_train import build_arg_parser, build_loader, train_epoch, evaluate_dev
 from model.model_w2vbert import Model
 from utils.data_utils import build_dataset_from_protocol, class_weights_from_labels, set_random_seed
+from utils.w2vbert_tuning import configure_trainable_top_layers, split_trainable_params
 
 try:
     from tensorboardX import SummaryWriter
@@ -32,6 +33,9 @@ def build_parser():
                         help="Consecutive bad validation epochs before reducing LR")
     parser.add_argument("--min_encoder_lr", type=float, default=1e-7)
     parser.add_argument("--min_backend_lr", type=float, default=1e-5)
+    parser.add_argument("--encoder_trainable_layers", type=int, default=24,
+                        help="How many final w2v-BERT Conformer layers are trainable")
+    parser.add_argument("--grad_clip", type=float, default=1.0)
     return parser
 
 
@@ -41,6 +45,8 @@ def main():
         raise ValueError("encoder_lr and backend_lr must be positive")
     if not 0 < args.lr_factor < 1 or args.lr_patience < 0:
         raise ValueError("Require 0 < lr_factor < 1 and lr_patience >= 0")
+    if args.grad_clip < 0:
+        raise ValueError("grad_clip must be nonnegative")
 
     set_random_seed(args.seed, args)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
@@ -75,9 +81,8 @@ def main():
         model.load_state_dict(torch.load(args.model_path, map_location=device, weights_only=True))
         print(f"Model loaded: {args.model_path}")
 
-    encoder_params = list(model.ssl_model.parameters())
-    encoder_ids = {id(p) for p in encoder_params}
-    backend_params = [p for p in model.parameters() if id(p) not in encoder_ids]
+    tuning = configure_trainable_top_layers(model, args.encoder_trainable_layers)
+    encoder_params, backend_params = split_trainable_params(model)
 
     optimizer = torch.optim.Adam([
         {"params": encoder_params, "lr": args.encoder_lr, "name": "w2vbert"},
@@ -91,7 +96,8 @@ def main():
     print(f"Class counts [fake, real]: {class_counts.tolist()}")
     print(f"Auto CE weights [fake, real]: {[round(x, 6) for x in class_weights.tolist()]}")
     print(f"Parameters: {sum(p.numel() for p in model.parameters())}")
-    print(f"w2v-BERT parameters: {sum(p.numel() for p in encoder_params)} | LR={args.encoder_lr:.2e}")
+    print(f"w2v-BERT trainable layers: {tuning['trainable_layers']}/{tuning['total_layers']} | "
+          f"trainable params={tuning['trainable_params']} | LR={args.encoder_lr:.2e}")
     print(f"AASIST parameters: {sum(p.numel() for p in backend_params)} | LR={args.backend_lr:.2e}")
     print(f"Adaptive LR: monitor=DevLoss; bad_epochs={args.lr_patience}; factor={args.lr_factor}; "
           f"min=[{args.min_encoder_lr:.2e}, {args.min_backend_lr:.2e}]; restore_best=True")
@@ -103,7 +109,9 @@ def main():
 
     for epoch in range(1, args.num_epochs + 1):
         used_encoder_lr, used_backend_lr = optimizer.param_groups[0]["lr"], optimizer.param_groups[1]["lr"]
-        train_loss, train_acc = train_epoch(train_loader, model, optimizer, device, criterion)
+        train_loss, train_acc = train_epoch(
+            train_loader, model, optimizer, device, criterion, grad_clip=args.grad_clip
+        )
         dev_loss, dev_acc = evaluate_dev(dev_loader, model, device, criterion)
 
         improved = dev_loss < best_dev_loss
