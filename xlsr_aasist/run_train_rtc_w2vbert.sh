@@ -28,7 +28,7 @@ args=(
   --dev_protocol "$DATASET_ROOT/dev_label.txt"
   --out_path "${OUT_PATH:-./exp}"
   --device "${DEVICE:-cuda:0}"
-  --batch_size "${BATCH_SIZE:-32}"
+  --batch_size "${BATCH_SIZE:-24}"
   --rtc_pairs_per_batch "${RTC_PAIRS_PER_BATCH:-4}"
   --rtc_weight "${RTC_WEIGHT:-0.05}"
   --rtc_warmup_epochs "${RTC_WARMUP_EPOCHS:-3}"
