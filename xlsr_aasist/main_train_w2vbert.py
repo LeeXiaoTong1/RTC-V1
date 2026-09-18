@@ -37,17 +37,13 @@ def build_parser():
     parser.set_defaults(
         track="w2vbert_aasist_base",
         batch_size=40,
-        num_epochs=30,
-        earlystop_epoch=6,
+        num_epochs=20,
+        earlystop_epoch=5,
     )
     parser.add_argument("--ssl_path", default=None)
     parser.add_argument("--encoder_trainable_layers", type=int, default=8)
-    parser.add_argument("--encoder_warmup_epochs", type=int, default=2)
-    parser.add_argument("--encoder_lr", type=float, default=2e-7)
-    parser.add_argument("--backend_lr", type=float, default=5e-5,
-                        help="AASIST LR during frozen-encoder warmup")
-    parser.add_argument("--backend_finetune_lr", type=float, default=1e-5,
-                        help="AASIST LR after w2v-BERT top layers are enabled")
+    parser.add_argument("--encoder_lr", type=float, default=1e-7)
+    parser.add_argument("--backend_lr", type=float, default=1e-5)
     parser.add_argument("--class_weight_power", type=float, default=0.5)
     parser.add_argument("--grad_clip", type=float, default=1.0)
     parser.add_argument("--lr_factor", type=float, default=0.5)
@@ -80,10 +76,8 @@ def main():
     args = build_parser().parse_args()
     if not 0 <= args.class_weight_power <= 1:
         raise ValueError("class_weight_power must lie in [0,1]")
-    if args.encoder_warmup_epochs < 0:
-        raise ValueError("encoder_warmup_epochs must be >= 0")
-    if args.encoder_lr <= 0 or args.backend_lr <= 0 or args.backend_finetune_lr <= 0:
-        raise ValueError("encoder_lr/backend_lr/backend_finetune_lr must be positive")
+    if args.encoder_lr <= 0 or args.backend_lr <= 0:
+        raise ValueError("encoder_lr and backend_lr must be positive")
     if args.grad_clip < 0:
         raise ValueError("grad_clip must be nonnegative")
     if not 0 < args.lr_factor < 1 or args.lr_patience < 1:
@@ -110,21 +104,18 @@ def main():
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
     model = Model(args, device).to(device)
-    # Fine-tuning uses deterministic w2v-BERT forward (dropout/layerdrop off)
-    # while AASIST remains in train mode.
-    model.ssl_model.deterministic_finetune = True
+    # Stage 1 keeps normal Conformer dropout as regularization but disables
+    # stochastic LayerDrop. Pair-consistency stages use fully deterministic SSL
+    # forward instead.
+    model.ssl_model.model.config.layerdrop = 0.0
     tuning = configure_trainable_top_layers(model, args.encoder_trainable_layers)
     encoder_params, backend_params = split_trainable_params(model)
     if not encoder_params:
         raise RuntimeError("Stage 1 requires trainable final w2v-BERT layers")
 
-    # During the first epochs the encoder parameters exist in the optimizer but
-    # LR=0. AASIST learns how to read pretrained features before the SSL
-    # representation is allowed to move.
-    initial_encoder_lr = 0.0 if args.encoder_warmup_epochs > 0 else args.encoder_lr
     optimizer = torch.optim.Adam(
         [
-            {"params": encoder_params, "lr": initial_encoder_lr, "name": "w2vbert"},
+            {"params": encoder_params, "lr": args.encoder_lr, "name": "w2vbert"},
             {"params": backend_params, "lr": args.backend_lr, "name": "aasist"},
         ],
         weight_decay=args.weight_decay,
@@ -153,9 +144,8 @@ def main():
         f"({tuning['trainable_params']}/{tuning['total_params']} params)"
     )
     print(
-        f"Stage1 LR: warmup encoder=0, AASIST={args.backend_lr:.2e} for "
-        f"{args.encoder_warmup_epochs} epochs; then encoder={args.encoder_lr:.2e}, "
-        f"AASIST={args.backend_finetune_lr:.2e}"
+        f"Stage1 joint fine-tuning from epoch 1: encoder={args.encoder_lr:.2e}, "
+        f"AASIST={args.backend_lr:.2e}; LayerDrop=0"
     )
     print(
         f"Adaptive LR: monitor={args.selection_metric}, bad_epochs={args.lr_patience}, "
@@ -180,15 +170,6 @@ def main():
     no_improve = 0
 
     for epoch in range(1, args.num_epochs + 1):
-        if epoch == args.encoder_warmup_epochs + 1 and optimizer.param_groups[0]["lr"] == 0:
-            optimizer.param_groups[0]["lr"] = args.encoder_lr
-            optimizer.param_groups[1]["lr"] = args.backend_finetune_lr
-            optimizer.state.clear()
-            print(
-                f"Encoder warmup finished: w2v-BERT LR={args.encoder_lr:.2e}, "
-                f"AASIST LR={args.backend_finetune_lr:.2e}; reset Adam state."
-            )
-
         used_encoder_lr = optimizer.param_groups[0]["lr"]
         used_backend_lr = optimizer.param_groups[1]["lr"]
 
@@ -227,8 +208,7 @@ def main():
         next_encoder_lr = optimizer.param_groups[0]["lr"]
         next_backend_lr = optimizer.param_groups[1]["lr"]
         reduced = False
-        # Do not trigger LR rollback during the frozen-encoder warmup.
-        if epoch > args.encoder_warmup_epochs and bad_epochs >= args.lr_patience:
+        if bad_epochs >= args.lr_patience:
             next_encoder_lr = max(
                 optimizer.param_groups[0]["lr"] * args.lr_factor,
                 args.min_encoder_lr,
