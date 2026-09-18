@@ -14,6 +14,7 @@ from pathlib import Path
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -22,16 +23,19 @@ from utils.data_utils import build_dataset_from_protocol, class_weights_from_lab
 from utils.rtc_data import BalancedPairBatchSampler, RTCPairDataset
 from utils.rtc_loss import rtc_pair_contrastive_loss
 from utils.rtc_pairs import load_pairs
+from utils.w2vbert_tuning import configure_trainable_top_layers, split_trainable_params
 
 
 def build_parser():
     parser = build_arg_parser()
     parser.description = __doc__
     parser.set_defaults(track="xlsr_aasist_V1_RTC_pair", batch_size=32,
-                        num_epochs=5, earlystop_epoch=3)
+                        num_epochs=8, earlystop_epoch=4)
     parser.add_argument("--rtc_pairs", required=True, help="Validated train pair JSONL")
     parser.add_argument("--rtc_pairs_per_batch", type=int, default=4)
     parser.add_argument("--rtc_weight", type=float, default=0.1)
+    parser.add_argument("--rtc_warmup_epochs", type=float, default=2.0,
+                        help="Linearly ramp RTC contrastive weight from 0 to rtc_weight")
     parser.add_argument("--rtc_temperature", type=float, default=0.1)
     parser.add_argument("--ssl_path", default=None, help="SSL pretrained model path")
     parser.add_argument("--encoder_lr", type=float, default=None)
@@ -39,8 +43,11 @@ def build_parser():
     parser.add_argument("--lr_factor", type=float, default=0.5)
     parser.add_argument("--lr_patience", type=int, default=2,
                         help="Consecutive bad validation epochs before reducing LR")
-    parser.add_argument("--min_encoder_lr", type=float, default=1e-7)
-    parser.add_argument("--min_backend_lr", type=float, default=1e-6)
+    parser.add_argument("--min_encoder_lr", type=float, default=2.5e-8)
+    parser.add_argument("--min_backend_lr", type=float, default=5e-7)
+    parser.add_argument("--encoder_trainable_layers", type=int, default=8,
+                        help="Fine-tune only the final N of 24 w2v-BERT layers")
+    parser.add_argument("--grad_clip", type=float, default=1.0)
     parser.add_argument("--amp", choices=["bf16", "none"], default="bf16")
     parser.add_argument("--selection_metric", choices=["online_f1", "dev_loss"], default="online_f1")
     parser.add_argument("--check_data", action="store_true", help="Check data without loading the model")
@@ -48,11 +55,9 @@ def build_parser():
 
 
 def build_grouped_optimizer(model, encoder_lr, backend_lr, weight_decay):
-    encoder_params = [p for p in model.ssl_model.parameters() if p.requires_grad]
-    encoder_ids = {id(p) for p in encoder_params}
-    backend_params = [p for p in model.parameters() if p.requires_grad and id(p) not in encoder_ids]
-    if not encoder_params or not backend_params:
-        raise RuntimeError("Could not split SSL encoder and AASIST/backend parameters")
+    encoder_params, backend_params = split_trainable_params(model)
+    if not encoder_params:
+        raise RuntimeError("Stage 2 expects at least one trainable w2v-BERT layer")
     optimizer = torch.optim.Adam([
         {"params": encoder_params, "lr": encoder_lr, "name": "ssl"},
         {"params": backend_params, "lr": backend_lr, "name": "backend"},
@@ -61,52 +66,94 @@ def build_grouped_optimizer(model, encoder_lr, backend_lr, weight_decay):
 
 
 def train_epoch(train_loader, pair_loader, model, optimizer, device, criterion,
-                rtc_weight=0.1, temperature=0.1, amp=True):
+                rtc_weight=0.1, rtc_warmup_epochs=2.0, temperature=0.1,
+                amp=True, grad_clip=1.0, epoch=1):
+    """Stage-2 objective with condition-aware classification.
+
+    Ordinary samples follow protocol-derived class weights because that stream is
+    imbalanced. RTC pair batches are deliberately 1:1 real/fake, so their CE is
+    unweighted. This avoids multiplying real RTC gradients by the global class
+    imbalance ratio.
+    """
     if len(train_loader) != len(pair_loader):
         raise ValueError("Pair and main loaders must have the same number of steps")
     model.train()
-    totals = dict(loss=0., ce=0., rtc=0., correct=0, examples=0, pairs=0,
+    totals = dict(loss=0., ce=0., ce_ordinary=0., ce_pair=0., rtc=0.,
+                  rtc_weight=0., correct=0, examples=0, pairs=0,
                   valid_anchors=0, steps=0)
-    start = time.perf_counter()
-    for batch, pair_batch in tqdm(zip(train_loader, pair_loader), total=len(train_loader),
-                                 desc="Training RTC", unit="batch"):
+    start_time = time.perf_counter()
+    steps = len(train_loader)
+
+    for step, (batch, pair_batch) in enumerate(
+        tqdm(zip(train_loader, pair_loader), total=steps, desc="Training RTC", unit="batch")
+    ):
         audio, labels, _ = batch
         offline, online, pair_labels = pair_batch
         ordinary_count, pair_count = audio.shape[0], offline.shape[0]
         audio = torch.cat([audio, offline, online], dim=0).to(device, non_blocking=True)
         labels = torch.cat([labels, pair_labels, pair_labels]).long().to(device, non_blocking=True)
         pair_labels = pair_labels.long().to(device, non_blocking=True)
+
         optimizer.zero_grad(set_to_none=True)
         context = torch.autocast("cuda", dtype=torch.bfloat16) if amp and device.type == "cuda" else nullcontext()
         with context:
             logits, features = model(audio, return_features=True)
-        ce = criterion(logits.float(), labels)
+
+        per_sample_ce = F.cross_entropy(logits.float(), labels, reduction="none")
+        ordinary_labels = labels[:ordinary_count]
+        ordinary_weights = criterion.weight[ordinary_labels]
+        ce_ordinary = (per_sample_ce[:ordinary_count] * ordinary_weights).sum() / ordinary_weights.sum()
+        ce_pair = per_sample_ce[ordinary_count:].mean()
+        ce = (
+            ordinary_count * ce_ordinary + (2 * pair_count) * ce_pair
+        ) / (ordinary_count + 2 * pair_count)
+
         off_features = features[ordinary_count:ordinary_count + pair_count]
         on_features = features[ordinary_count + pair_count:]
-        rtc, stats = rtc_pair_contrastive_loss(off_features, on_features, pair_labels, temperature)
-        loss = ce + rtc_weight * rtc
+        rtc, stats = rtc_pair_contrastive_loss(
+            off_features, on_features, pair_labels, temperature
+        )
+        if rtc_warmup_epochs <= 0:
+            current_rtc_weight = rtc_weight
+        else:
+            progress = ((epoch - 1) * steps + step + 1) / (rtc_warmup_epochs * steps)
+            current_rtc_weight = rtc_weight * min(1.0, progress)
+
+        loss = ce + current_rtc_weight * rtc
         if not torch.isfinite(loss):
-            raise FloatingPointError("Non-finite training loss; check the logged configuration and audio")
+            raise FloatingPointError("Non-finite training loss; check configuration and audio")
         loss.backward()
+        if grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
         optimizer.step()
+
         count = labels.numel()
         totals["loss"] += loss.detach().item() * count
-        totals["ce"] += ce.detach().item() * count
+        totals["ce"] += ce.detach().item()
+        totals["ce_ordinary"] += ce_ordinary.detach().item()
+        totals["ce_pair"] += ce_pair.detach().item()
         totals["rtc"] += rtc.detach().item()
+        totals["rtc_weight"] += current_rtc_weight
         totals["correct"] += (logits.argmax(dim=1) == labels).sum().item()
         totals["examples"] += count
         totals["pairs"] += pair_count
         totals["valid_anchors"] += stats["valid_anchors"]
         totals["steps"] += 1
+
     if not totals["steps"]:
         raise ValueError("Empty training loader")
-    return {"loss": totals["loss"] / totals["examples"],
-            "ce": totals["ce"] / totals["examples"],
-            "rtc": totals["rtc"] / totals["steps"],
-            "acc": 100 * totals["correct"] / totals["examples"],
-            "examples": totals["examples"], "pairs": totals["pairs"],
-            "valid_anchors": totals["valid_anchors"], "steps": totals["steps"],
-            "seconds": time.perf_counter() - start}
+    return {
+        "loss": totals["loss"] / totals["examples"],
+        "ce": totals["ce"] / totals["steps"],
+        "ce_ordinary": totals["ce_ordinary"] / totals["steps"],
+        "ce_pair": totals["ce_pair"] / totals["steps"],
+        "rtc": totals["rtc"] / totals["steps"],
+        "rtc_weight": totals["rtc_weight"] / totals["steps"],
+        "acc": 100 * totals["correct"] / totals["examples"],
+        "examples": totals["examples"], "pairs": totals["pairs"],
+        "valid_anchors": totals["valid_anchors"], "steps": totals["steps"],
+        "seconds": time.perf_counter() - start_time,
+    }
 
 
 def confusion_metrics(cm):
@@ -174,6 +221,10 @@ def main():
         parser.error("--rtc_weight must be finite and non-negative")
     if not math.isfinite(args.rtc_temperature) or args.rtc_temperature <= 0:
         parser.error("--rtc_temperature must be finite and positive")
+    if not math.isfinite(args.rtc_warmup_epochs) or args.rtc_warmup_epochs < 0:
+        parser.error("--rtc_warmup_epochs must be finite and non-negative")
+    if not math.isfinite(args.grad_clip) or args.grad_clip < 0:
+        parser.error("--grad_clip must be finite and non-negative")
     if not math.isfinite(args.encoder_lr) or args.encoder_lr <= 0:
         parser.error("--encoder_lr must be finite and positive")
     if not math.isfinite(args.backend_lr) or args.backend_lr <= 0:
@@ -231,7 +282,10 @@ def main():
     from model.model import Model
     model = Model(args, device).to(device)
     model.load_state_dict(torch.load(args.model_path, map_location="cpu", weights_only=True), strict=True)
+    tuning = configure_trainable_top_layers(model, args.encoder_trainable_layers)
     print(f"Model loaded: {args.model_path}\nDevice: {device}")
+    print(f"w2v-BERT trainable layers: {tuning['trainable_layers']}/{tuning['total_layers']} "
+          f"({tuning['trainable_params']}/{tuning['total_params']} params)")
 
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
     optimizer, encoder_params, backend_params = build_grouped_optimizer(
@@ -273,8 +327,15 @@ def main():
         for epoch in range(1, args.num_epochs + 1):
             used_encoder_lr, used_backend_lr = optimizer.param_groups[0]["lr"], optimizer.param_groups[1]["lr"]
             pair_sampler.set_epoch(epoch)
-            train = train_epoch(train_loader, pair_loader, model, optimizer, device, criterion,
-                                args.rtc_weight, args.rtc_temperature, args.amp == "bf16")
+            train = train_epoch(
+                train_loader, pair_loader, model, optimizer, device, criterion,
+                rtc_weight=args.rtc_weight,
+                rtc_warmup_epochs=args.rtc_warmup_epochs,
+                temperature=args.rtc_temperature,
+                amp=args.amp == "bf16",
+                grad_clip=args.grad_clip,
+                epoch=epoch,
+            )
             dev = evaluate_dev(dev_loader, model, device, criterion)
             key = selection_key(dev, args.selection_metric)
             improved = key > best
@@ -310,7 +371,9 @@ def main():
                     lr_bad_epochs = 0
                     no_improve = 0
             online_f1 = "N/A" if dev["online"] is None else f"{100 * dev['online']['macro_f1']:.4f}%"
-            print(f"Epoch {epoch}/{args.num_epochs} CE={train['ce']:.6f} RTC={train['rtc']:.6f} "
+            print(f"Epoch {epoch}/{args.num_epochs} CE={train['ce']:.6f} "
+                  f"CEOrd={train['ce_ordinary']:.6f} CEPair={train['ce_pair']:.6f} "
+                  f"RTC={train['rtc']:.6f} RTCWeight={train['rtc_weight']:.4f} "
                   f"TrainAcc={train['acc']:.2f}% DevLoss={dev['loss']:.6f} DevOnlineF1={online_f1} "
                   f"EncoderLR={used_encoder_lr:.2e}->{next_encoder_lr:.2e} "
                   f"BackendLR={used_backend_lr:.2e}->{next_backend_lr:.2e}")
