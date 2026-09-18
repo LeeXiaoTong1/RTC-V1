@@ -43,20 +43,25 @@ def normalize_label(label):
     return LABEL_TO_ID[key]
 
 
-def class_weights_from_labels(labels):
-    """Return inverse-frequency CE weights [fake, real] from a protocol label map.
+def class_weights_from_labels(labels, power=0.5):
+    """Return softened inverse-frequency CE weights [fake, real].
 
-    Formula: w_c = N / (2 * N_c). Only the relative ratio matters for mean CE.
-    Both classes must be present; silently inventing a weight would hide a data bug.
+    Base inverse-frequency weights are N/(2*N_c). Raising them to power controls
+    how strongly imbalance is corrected: 0 -> equal, 0.5 -> square-root
+    inverse-frequency, 1 -> full inverse-frequency.
     """
     if not labels:
         raise ValueError("Training labels are required to compute class weights")
+    power = float(power)
+    if not 0.0 <= power <= 1.0:
+        raise ValueError("class-weight power must lie in [0,1]")
     values = torch.tensor(list(labels.values()), dtype=torch.long)
     counts = torch.bincount(values, minlength=2)
     if counts.numel() != 2 or (counts <= 0).any():
         raise ValueError(f"Both fake and real classes are required, got counts={counts.tolist()}")
     total = counts.sum().float()
-    weights = total / (2.0 * counts.float())
+    base = total / (2.0 * counts.float())
+    weights = base.pow(power)
     return weights, counts
 
 
