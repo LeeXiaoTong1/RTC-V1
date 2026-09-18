@@ -32,10 +32,11 @@ def build_parser():
                    help="Optional fresh bank with another generation; one view per source remains")
     p.add_argument("--encoder_lr", type=float, default=None)
     p.add_argument("--backend_lr", type=float, default=None)
-    p.add_argument("--lr_factor", type=float, default=0.1)
-    p.add_argument("--lr_patience", type=int, default=1)
-    p.add_argument("--min_encoder_lr", type=float, default=5e-9)
-    p.add_argument("--min_backend_lr", type=float, default=5e-8)
+    p.add_argument("--lr_factor", type=float, default=0.5)
+    p.add_argument("--lr_patience", type=int, default=2,
+                   help="Consecutive bad DevRobustProxy epochs before reducing LR")
+    p.add_argument("--min_encoder_lr", type=float, default=5e-8)
+    p.add_argument("--min_backend_lr", type=float, default=5e-7)
     return p
 
 
@@ -155,18 +156,10 @@ def main():
     dev_criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
     optimizer, encoder_params, backend_params = build_grouped_optimizer(
         model, args.encoder_lr, args.backend_lr, args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode="max",
-        factor=args.lr_factor,
-        patience=args.lr_patience,
-        threshold=1e-4,
-        threshold_mode="rel",
-        min_lr=[args.min_encoder_lr, args.min_backend_lr],
-    )
     print(f"SSL encoder parameters: {sum(p.numel() for p in encoder_params)} | LR={args.encoder_lr:.2e}")
     print(f"AASIST/backend parameters: {sum(p.numel() for p in backend_params)} | LR={args.backend_lr:.2e}")
-    print(f"LR scheduler: monitor=DevRobustProxy, factor={args.lr_factor}, patience={args.lr_patience}")
+    print(f"Adaptive LR: monitor=DevRobustProxy; bad_epochs={args.lr_patience}; factor={args.lr_factor}; "
+          f"min=[{args.min_encoder_lr:.2e}, {args.min_backend_lr:.2e}]; restore_best=True")
 
     stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     output = Path(args.out_path)/f"{args.track}_epoch{args.num_epochs}_bs{effective}_{stamp}"
@@ -191,7 +184,8 @@ def main():
     dev = validate(clean_loader, seen_loader, heldout_loader, model, device, dev_criterion)
     print("Initial dev V2:", json.dumps(summarize_dev(dev)), flush=True)
     best, no_improve = selection_key(dev), 0
-    scheduler.step(dev["robust_proxy"])
+    best_monitor = dev["robust_proxy"]
+    lr_bad_epochs = 0
 
     def save_named(name, epoch, metrics):
         save_weights(ckpt/f"{name}.pth", model)
@@ -221,9 +215,29 @@ def main():
             else:
                 no_improve += 1
 
-            scheduler.step(dev["robust_proxy"])
-            next_encoder_lr, next_backend_lr = optimizer.param_groups[0]["lr"], optimizer.param_groups[1]["lr"]
-            reduced = next_encoder_lr < used_encoder_lr or next_backend_lr < used_backend_lr
+            monitor = dev["robust_proxy"]
+            if monitor > best_monitor:
+                best_monitor = monitor
+                lr_bad_epochs = 0
+            else:
+                lr_bad_epochs += 1
+
+            next_encoder_lr, next_backend_lr = used_encoder_lr, used_backend_lr
+            reduced = False
+            if lr_bad_epochs >= args.lr_patience:
+                next_encoder_lr = max(used_encoder_lr * args.lr_factor, args.min_encoder_lr)
+                next_backend_lr = max(used_backend_lr * args.lr_factor, args.min_backend_lr)
+                reduced = next_encoder_lr < used_encoder_lr or next_backend_lr < used_backend_lr
+                if reduced:
+                    optimizer.param_groups[0]["lr"] = next_encoder_lr
+                    optimizer.param_groups[1]["lr"] = next_backend_lr
+                    model.load_state_dict(
+                        torch.load(ckpt/"best_model.pth", map_location=device, weights_only=True),
+                        strict=True,
+                    )
+                    optimizer.state.clear()
+                    lr_bad_epochs = 0
+                    no_improve = 0
 
             print(f"Epoch {epoch}/{args.num_epochs} CE={train['ce']:.6f} "
                   f"CEOrd={train['ce_ordinary']:.6f} CEReal={train['ce_real_pair']:.6f} "
@@ -236,7 +250,9 @@ def main():
                   f"TrainMinutes={train['seconds']/60:.2f}", flush=True)
             print("Dev V2:", json.dumps(summarize_dev(dev)), flush=True)
             if reduced:
-                print("LR reduced automatically because DevRobustProxy stopped improving.", flush=True)
+                print("LR reduced after consecutive bad DevRobustProxy epochs; restored best_model.pth and reset Adam state.", flush=True)
+            elif lr_bad_epochs >= args.lr_patience:
+                print("DevRobustProxy plateaued, but both learning rates are already at their configured minimum.", flush=True)
             for role in ("noisy_seen", "noisy_heldout"):
                 print(role + " bands:", json.dumps({name:{"F1":100*v["macro_f1"],
                       "FakeAsReal":100*v["fake_as_real_rate"], "RealAsFake":100*v["real_as_fake_rate"]}
