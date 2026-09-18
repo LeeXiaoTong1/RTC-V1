@@ -26,7 +26,15 @@ from utils.w2vbert_tuning import configure_trainable_top_layers, split_trainable
 def build_parser():
     p = v1_parser()
     p.description = __doc__
-    p.set_defaults(track="xlsr_aasist_RTC_noisy_v2")
+    p.set_defaults(
+        track="xlsr_aasist_RTC_noisy_v2",
+        batch_size=16,
+        num_epochs=20,
+        earlystop_epoch=6,
+        rtc_weight=0.05,
+        noisy_weight=0.1,
+        noisy_warmup_epochs=3.0,
+    )
     p.add_argument("--noisy_ce_weight", type=float, default=.3)
     p.add_argument("--dev_heldout_cache", required=True)
     p.add_argument("--extra_train_noisy_cache", action="append", default=[],
@@ -36,10 +44,11 @@ def build_parser():
     p.add_argument("--lr_factor", type=float, default=0.5)
     p.add_argument("--lr_patience", type=int, default=2,
                    help="Consecutive bad DevRobustProxy epochs before reducing LR")
-    p.add_argument("--min_encoder_lr", type=float, default=1e-8)
-    p.add_argument("--min_backend_lr", type=float, default=2e-7)
-    p.add_argument("--encoder_trainable_layers", type=int, default=4,
+    p.add_argument("--min_encoder_lr", type=float, default=2.5e-9)
+    p.add_argument("--min_backend_lr", type=float, default=5e-8)
+    p.add_argument("--encoder_trainable_layers", type=int, default=2,
                    help="Fine-tune only the final N of 24 w2v-BERT layers")
+    p.add_argument("--class_weight_power", type=float, default=0.5)
     return p
 
 
@@ -76,6 +85,8 @@ def main():
             p.error(f"{name} must be finite and positive")
     if not 0 < args.lr_factor < 1 or args.lr_patience < 0:
         p.error("Require 0 < lr_factor < 1 and lr_patience >= 0")
+    if not 0 <= args.class_weight_power <= 1:
+        p.error("--class_weight_power must lie in [0,1]")
     if args.batch_size < 2 or args.num_workers < 0 or args.num_epochs < 1 or args.earlystop_epoch < 1:
         p.error("Invalid batch size, workers, epochs or patience")
     for name in ("rtc_pairs_per_batch", "noisy_pairs_per_batch"):
@@ -98,7 +109,9 @@ def main():
         args.train_protocol, args.train_data_path, mode="train", args=args, algo=args.algo)
     clean_dev, dev_ids, _ = build_dataset_from_protocol(
         args.dev_protocol, args.dev_data_path, mode="dev", args=args)
-    class_weights, class_counts = class_weights_from_labels(train_labels)
+    class_weights, class_counts = class_weights_from_labels(
+        train_labels, power=args.class_weight_power
+    )
     args.class_weights = class_weights.tolist()
 
     noisy_train = RotatingNoisyDataset([rows for rows, _ in banks], args.train_data_path)
@@ -113,7 +126,8 @@ def main():
           f"{args.noisy_pairs_per_batch} noisy pairs x2 = {effective} waveforms; steps={steps}")
     print(f"Train trials={len(train_ids)}; Dev trials={len(dev_ids)}; noisy sources={len(noisy_train)}; banks={len(banks)}")
     print(f"Class counts [fake, real]: {class_counts.tolist()}")
-    print(f"Auto ordinary CE weights [fake, real]: {[round(x, 6) for x in class_weights.tolist()]}; paired CE=equal")
+    print(f"Ordinary CE weights power={args.class_weight_power} [fake, real]: "
+          f"{[round(x, 6) for x in class_weights.tolist()]}; paired CE=equal")
     print("CE coefficients [ordinary, real pair, noisy reference, noisy processed]: " +
           str(group_coefficients(args.batch_size, 2*args.rtc_pairs_per_batch, args.noisy_pairs_per_batch, args.noisy_ce_weight)))
     print("One noisy view/source; 21 training combinations / 6 held-out combinations")
@@ -174,6 +188,7 @@ def main():
     config.update(plan_id=PLAN_ID, initial_checkpoint_sha256=sha256(args.model_path),
                   initialization_history=history, effective_audio_batch=effective,
                   class_counts=class_counts.tolist(), class_weights=class_weights.tolist(),
+                  class_weight_power=args.class_weight_power,
                   w2vbert_tuning=tuning,
                   train_cache_configs=[cfg for _, cfg in banks], dev_seen_config=seen[1],
                   dev_heldout_config=heldout[1],
