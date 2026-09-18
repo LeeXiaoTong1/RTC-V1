@@ -32,12 +32,14 @@ args=(
   --rtc_weight "${RTC_WEIGHT:-0.1}" --noisy_weight "${NOISY_WEIGHT:-0.1}"
   --noisy_warmup_epochs 2 --rtc_temperature 0.1
   --num_epochs "${NUM_EPOCHS:-30}" --earlystop_epoch "${EARLYSTOP_EPOCH:-10}"
-  --encoder_lr "${ENCODER_LR:-5e-7}"
-  --backend_lr "${BACKEND_LR:-5e-6}"
+  --encoder_lr "${ENCODER_LR:-5e-8}"
+  --backend_lr "${BACKEND_LR:-1e-6}"
+  --encoder_trainable_layers "${ENCODER_TRAINABLE_LAYERS:-4}"
+  --grad_clip "${GRAD_CLIP:-1.0}"
   --lr_factor "${LR_FACTOR:-0.5}"
   --lr_patience "${LR_PATIENCE:-2}"
-  --min_encoder_lr "${MIN_ENCODER_LR:-5e-8}"
-  --min_backend_lr "${MIN_BACKEND_LR:-5e-7}"
+  --min_encoder_lr "${MIN_ENCODER_LR:-1e-8}"
+  --min_backend_lr "${MIN_BACKEND_LR:-2e-7}"
   --weight_decay "${WEIGHT_DECAY:-1e-4}" --algo "${RAWBOOST_ALGO:-5}"
   --num_workers "${NUM_WORKERS:-8}" --device "${DEVICE:-cuda:0}" --amp "${AMP:-bf16}"
 )
