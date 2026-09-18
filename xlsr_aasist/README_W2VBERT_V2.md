@@ -1,74 +1,78 @@
 # V2 + w2v-BERT 2.0
 
-This branch is based directly on the original V2 code that produced the 88.7144 weighted submission. It does not include V3 Adapter/Nes2Net-X/WebRTC architecture changes.
+This branch is based directly on the original V2 code that produced the 88.7144 weighted submission. It does not include the later V3 Adapter/Nes2Net-X architecture.
 
-## What is unchanged
+## Core design
 
-- AASIST backend in `model/model.py`
-- V2 ordinary/real-pair/noisy-pair data composition
-- 24 ordinary + 4 real Offline/Online pairs + 4 noisy pairs = 40 waveforms
-- RawBoost and MUSAN ordinary-branch augmentation
-- FFmpeg V2 noisy cache and 21/6 seen/held-out combinations
-- V2 classification weighting and pair losses
-- V2 validation/selection logic
-- 64600-sample waveform convention and inference score format
+The detector remains:
 
-## What is changed
+`waveform -> w2v-BERT 2.0 -> AASIST -> real/fake`
 
-Only the generic speech frontend is replaced:
+The V2 data recipe remains intact:
 
-`XLS-R 300M -> facebook/w2v-bert-2.0`
+- ordinary Train audio with RawBoost + MUSAN
+- verified real RTC Offline/Online pairs
+- Offline/noisy-RTC simulated pairs
+- V2 21 seen / 6 held-out FFmpeg combinations
+- 64600-sample crop/repeat convention
+- Stage 3 batch = 24 ordinary + 4 real pairs x2 + 4 noisy pairs x2 = 40
 
-The original AASIST implementation is reused. `model/model_w2vbert.py` only rebinds the legacy `SSLModel`; it does not replace AASIST.
+What changed is the optimization strategy required by the much larger 24-layer, ~580M-parameter w2v-BERT 2.0 backbone.
 
-The official w2v-BERT feature extractor converts 16 kHz waveform into stacked log-mel input features before the 24-layer, 1024-dimensional encoder. Gradient checkpointing is enabled to reduce full-fine-tuning memory use.
+## w2v-BERT-specific stability changes
 
-Old XLS-R checkpoints cannot be loaded into this model. To preserve the original V2 training history, train the w2v-BERT version through the same three logical stages:
+1. Stage 1 may train all 24 layers, but uses a separate encoder/backend LR and gradient clipping.
+2. Stage 2 trains only the final 8 w2v-BERT layers.
+3. Stage 3 trains only the final 4 w2v-BERT layers.
+4. Stage 2/3 force the w2v-BERT backbone to eval-mode during forward passes. Gradients remain enabled, but internal layerdrop/dropout is disabled so pair-consistency losses are not contaminated by stochastic encoder noise.
+5. Stage 2 no longer applies global class weights to the balanced RTC-pair branch. Only the ordinary imbalanced stream uses protocol-derived class weights; RTC pair CE is unweighted.
+6. Stage 2 ramps the RTC contrastive weight from 0 to 0.1 during the first 2 epochs.
+7. All stages use gradient clipping (default 1.0).
+8. Adaptive LR uses 2 consecutive bad validation epochs, then halves LR, restores `best_model.pth`, clears Adam state, and continues from the best representation.
 
-1. base w2v-BERT + AASIST training
-2. clean real RTC-pair fine-tuning
-3. V2 noisy RTC-pair fine-tuning
+## Default learning rates
 
-## Server setup
+| Stage | trainable w2v-BERT layers | encoder LR | AASIST LR | monitored metric |
+|---|---:|---:|---:|---|
+| Stage 1 | 24 | 1e-6 | 1e-4 | DevLoss |
+| Stage 2 | final 8 | 1e-7 | 2e-6 | Dev Online Macro-F1 |
+| Stage 3 | final 4 | 5e-8 | 1e-6 | DevRobustProxy |
 
-```bash
-conda activate sdd
-cd /home/ubuntu/LXT/RTC/xlsr_aasist
-pip install -r requirements_w2vbert.txt
-python download_w2vbert.py
-python check_w2vbert_v2.py --device cuda:0
-```
-
-The default checkpoint directory is:
-
-```text
-/home/ubuntu/LXT/RTC/pretrained/w2v-bert-2.0
-```
-
-## Stage 1: base model
+## Stage 1
 
 ```bash
 bash run_train_w2vbert_base.sh
 ```
 
-Use the resulting `best_model.pth` as Stage 2 input.
-
-## Stage 2: clean RTC pair
+## Stage 2: real RTC adaptation
 
 ```bash
 bash run_train_rtc_w2vbert.sh ./exp/<stage1>/ckpt/best_model.pth
 ```
 
-Use the resulting `best_model.pth` as Stage 3 input.
+Default batch:
 
-## Stage 3: the original V2 recipe
+```text
+32 ordinary + 4 Offline/Online pairs x2 = 40 waveforms
+```
+
+Classification loss:
+
+```text
+ordinary stream: protocol-derived weighted CE
+RTC pair stream: unweighted CE because the pair sampler is 1:1 real/fake
+combined CE: sample-count weighted
+total loss = CE + warmup(rtc_weight) * RTC_pair_loss
+```
+
+## Stage 3: V2 noisy RTC adaptation
 
 ```bash
 bash run_train_rtc_noisy_v2_w2vbert.sh ./exp/<stage2>/ckpt/best_model.pth --check_data
 bash run_train_rtc_noisy_v2_w2vbert.sh ./exp/<stage2>/ckpt/best_model.pth
 ```
 
-This stage keeps the original V2 defaults: 24 ordinary, 4 real pairs, 4 noisy pairs, noisy CE 0.3, real/noisy pair weights 0.1, LR 1e-6, weight decay 1e-4, BF16, up to 30 epochs, patience 10.
+Stage 3 preserves the original V2 group logic: ordinary CE uses the Train class weights, while real-pair and noisy-pair CE remain equal-weight because both pair samplers are balanced.
 
 ## Evaluation
 
@@ -76,6 +80,4 @@ This stage keeps the original V2 defaults: 24 ordinary, 4 real pairs, 4 noisy pa
 bash run_eval_rtc_noisy_w2vbert.sh ./exp/<stage3>/ckpt/best_model.pth
 ```
 
-## Important
-
-Do not pass an XLS-R `.pth` training checkpoint to any w2v-BERT stage. Stage-to-stage checkpoints must all have been produced by this w2v-BERT model. The generic Meta pretrained directory is supplied through `W2VBERT_PRETRAINED` / `--ssl_path`; that directory is not a Deepfake detector checkpoint.
+Do not load an XLS-R detector checkpoint into this branch. Every detector checkpoint passed between stages must have been produced by the w2v-BERT model.
