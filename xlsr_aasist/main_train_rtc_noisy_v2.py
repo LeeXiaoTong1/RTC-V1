@@ -32,10 +32,12 @@ def build_parser():
         num_epochs=20,
         earlystop_epoch=6,
         rtc_weight=0.05,
+        rtc_warmup_epochs=3.0,
         noisy_weight=0.1,
         noisy_warmup_epochs=3.0,
     )
     p.add_argument("--noisy_ce_weight", type=float, default=.3)
+    p.add_argument("--rtc_warmup_epochs", type=float, default=3.0)
     p.add_argument("--dev_heldout_cache", required=True)
     p.add_argument("--extra_train_noisy_cache", action="append", default=[],
                    help="Optional fresh bank with another generation; one view per source remains")
@@ -75,7 +77,7 @@ def main():
     args = p.parse_args()
     args.encoder_lr = args.lr if args.encoder_lr is None else args.encoder_lr
     args.backend_lr = args.lr if args.backend_lr is None else args.backend_lr
-    for name in ("rtc_weight", "noisy_weight", "noisy_warmup_epochs", "grad_clip", "weight_decay"):
+    for name in ("rtc_weight", "rtc_warmup_epochs", "noisy_weight", "noisy_warmup_epochs", "grad_clip", "weight_decay"):
         if not math.isfinite(getattr(args, name)) or getattr(args, name) < 0:
             p.error(f"{name} must be finite and nonnegative")
     if not 0 <= args.noisy_ce_weight <= 1:
@@ -264,6 +266,7 @@ def main():
                   f"CEOrd={train['ce_ordinary']:.6f} CEReal={train['ce_real_pair']:.6f} "
                   f"CERef={train['ce_noisy_reference']:.6f} CENoisy={train['ce_noisy_processed']:.6f} "
                   f"RTCReal={train['rtc_real']:.6f} RTCNoisy={train['rtc_noisy']:.6f} "
+                  f"RTCWeight={train['rtc_weight']:.4f} "
                   f"NoisyCEWeight={args.noisy_ce_weight:.3f} NoisyWeight={train['noise_weight']:.4f} "
                   f"TrainAcc={train['acc']:.2f}% "
                   f"EncoderLR={used_encoder_lr:.2e}->{next_encoder_lr:.2e} "
