@@ -27,11 +27,11 @@ def build_parser():
     parser.add_argument("--ssl_path", default=None)
     parser.add_argument("--encoder_lr", type=float, default=1e-6)
     parser.add_argument("--backend_lr", type=float, default=1e-4)
-    parser.add_argument("--lr_factor", type=float, default=0.1)
-    parser.add_argument("--lr_patience", type=int, default=0,
-                        help="Bad validation epochs before reducing LR; 0 reacts after the first bad epoch")
-    parser.add_argument("--min_encoder_lr", type=float, default=1e-8)
-    parser.add_argument("--min_backend_lr", type=float, default=1e-6)
+    parser.add_argument("--lr_factor", type=float, default=0.5)
+    parser.add_argument("--lr_patience", type=int, default=2,
+                        help="Consecutive bad validation epochs before reducing LR")
+    parser.add_argument("--min_encoder_lr", type=float, default=1e-7)
+    parser.add_argument("--min_backend_lr", type=float, default=1e-5)
     return parser
 
 
@@ -83,15 +83,6 @@ def main():
         {"params": encoder_params, "lr": args.encoder_lr, "name": "w2vbert"},
         {"params": backend_params, "lr": args.backend_lr, "name": "aasist"},
     ], weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode="min",
-        factor=args.lr_factor,
-        patience=args.lr_patience,
-        threshold=1e-4,
-        threshold_mode="rel",
-        min_lr=[args.min_encoder_lr, args.min_backend_lr],
-    )
     writer = SummaryWriter(log_dir=log_dir) if SummaryWriter else None
 
     print(f"Device: {device}")
@@ -102,30 +93,48 @@ def main():
     print(f"Parameters: {sum(p.numel() for p in model.parameters())}")
     print(f"w2v-BERT parameters: {sum(p.numel() for p in encoder_params)} | LR={args.encoder_lr:.2e}")
     print(f"AASIST parameters: {sum(p.numel() for p in backend_params)} | LR={args.backend_lr:.2e}")
-    print(f"LR scheduler: ReduceLROnPlateau(DevLoss, factor={args.lr_factor}, patience={args.lr_patience})")
+    print(f"Adaptive LR: monitor=DevLoss; bad_epochs={args.lr_patience}; factor={args.lr_factor}; "
+          f"min=[{args.min_encoder_lr:.2e}, {args.min_backend_lr:.2e}]; restore_best=True")
 
     best_dev_loss = float("inf")
     best_model_path = None
     no_improve_count = 0
+    lr_bad_epochs = 0
 
     for epoch in range(1, args.num_epochs + 1):
         used_encoder_lr, used_backend_lr = optimizer.param_groups[0]["lr"], optimizer.param_groups[1]["lr"]
         train_loss, train_acc = train_epoch(train_loader, model, optimizer, device, criterion)
         dev_loss, dev_acc = evaluate_dev(dev_loader, model, device, criterion)
 
-        if dev_loss < best_dev_loss:
+        improved = dev_loss < best_dev_loss
+        if improved:
             best_dev_loss = dev_loss
             no_improve_count = 0
+            lr_bad_epochs = 0
             best_model_path = os.path.join(ckpt_dir, f"epoch_{epoch}_dev_loss_{dev_loss:.6f}.pth")
             torch.save(model.state_dict(), best_model_path)
             torch.save(model.state_dict(), os.path.join(ckpt_dir, "best_model.pth"))
             print(f"Saved best model: {best_model_path}")
         else:
             no_improve_count += 1
+            lr_bad_epochs += 1
 
-        scheduler.step(dev_loss)
-        next_encoder_lr, next_backend_lr = optimizer.param_groups[0]["lr"], optimizer.param_groups[1]["lr"]
-        reduced = (next_encoder_lr < used_encoder_lr) or (next_backend_lr < used_backend_lr)
+        next_encoder_lr, next_backend_lr = used_encoder_lr, used_backend_lr
+        reduced = False
+        restored = False
+        if lr_bad_epochs >= args.lr_patience:
+            next_encoder_lr = max(used_encoder_lr * args.lr_factor, args.min_encoder_lr)
+            next_backend_lr = max(used_backend_lr * args.lr_factor, args.min_backend_lr)
+            reduced = next_encoder_lr < used_encoder_lr or next_backend_lr < used_backend_lr
+            if reduced:
+                optimizer.param_groups[0]["lr"] = next_encoder_lr
+                optimizer.param_groups[1]["lr"] = next_backend_lr
+                best_path = os.path.join(ckpt_dir, "best_model.pth")
+                model.load_state_dict(torch.load(best_path, map_location=device, weights_only=True), strict=True)
+                optimizer.state.clear()
+                lr_bad_epochs = 0
+                no_improve_count = 0
+                restored = True
 
         message = (
             f"Epoch {epoch}/{args.num_epochs} "
@@ -136,7 +145,9 @@ def main():
         )
         print(message)
         if reduced:
-            print("LR reduced automatically because validation stopped improving.")
+            print("LR reduced after consecutive bad DevLoss epochs; restored best_model.pth and reset Adam state.")
+        elif lr_bad_epochs >= args.lr_patience:
+            print("Validation plateaued, but both learning rates are already at their configured minimum.")
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().replace(microsecond=0)}] {message}\n")
 
