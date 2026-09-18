@@ -2,7 +2,7 @@
 
 - Separate encoder/backend learning rates.
 - Class weights are derived from the actual Train protocol.
-- ReduceLROnPlateau lowers both learning rates automatically when DevLoss stops improving.
+- Validation-driven LR reduction restores the best checkpoint before continuing.
 """
 import os
 from datetime import datetime
