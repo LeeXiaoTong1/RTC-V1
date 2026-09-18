@@ -139,6 +139,7 @@ def main():
     from model.model import Model
     model = Model(args, device).to(device)
     model.load_state_dict(torch.load(args.model_path, map_location="cpu", weights_only=True), strict=True)
+    model.ssl_model.deterministic_finetune = True
     tuning = configure_trainable_top_layers(model, args.encoder_trainable_layers)
     print(f"Model loaded: {args.model_path}\nDevice: {device}")
     print(f"w2v-BERT trainable layers: {tuning['trainable_layers']}/{tuning['total_layers']} "
