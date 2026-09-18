@@ -27,7 +27,7 @@ def build_loader(dataset, batch_size, num_workers, shuffle):
     return DataLoader(dataset, **kwargs)
 
 
-def train_epoch(data_loader, model, optimizer, device, criterion):
+def train_epoch(data_loader, model, optimizer, device, criterion, grad_clip=0.0):
     model.train()
     running_loss = 0.0
     correct = 0
@@ -49,6 +49,8 @@ def train_epoch(data_loader, model, optimizer, device, criterion):
             batch_loss = criterion(batch_out, batch_y)
         
         batch_loss.backward()
+        if grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
         optimizer.step()
         
         running_loss += batch_loss.item() * batch_size
