@@ -29,7 +29,7 @@ args=(
   --rtc_pairs_per_batch "${RTC_PAIRS_PER_BATCH:-4}"
   --noisy_pairs_per_batch "${NOISY_PAIRS_PER_BATCH:-4}"
   --noisy_ce_weight "${NOISY_CE_WEIGHT:-0.3}"
-  --rtc_weight "${RTC_WEIGHT:-0.05}" --noisy_weight "${NOISY_WEIGHT:-0.1}"
+  --rtc_weight "${RTC_WEIGHT:-0.05}" --rtc_warmup_epochs "${RTC_WARMUP_EPOCHS:-3}" --noisy_weight "${NOISY_WEIGHT:-0.1}"
   --noisy_warmup_epochs "${NOISY_WARMUP_EPOCHS:-3}" --rtc_temperature 0.1
   --num_epochs "${NUM_EPOCHS:-20}" --earlystop_epoch "${EARLYSTOP_EPOCH:-6}"
   --encoder_lr "${ENCODER_LR:-1e-8}"
