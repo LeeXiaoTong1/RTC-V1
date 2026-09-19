@@ -1,0 +1,9 @@
+2026-09-19 local validation
+Environment: Python 3.13; PyTorch 2.10.0+cpu; no CUDA; transformers unavailable.
+python -m w2v_rebuild.tests: 26 tests, 25 passed, 1 skipped.
+Optional skipped test: test_real_hf_random_small_encoder (library unavailable).
+Core and three-stage integration tests use a 24-layer toy encoder, not pretrained w2v-BERT.
+python -m compileall -q w2v_rebuild: PASS
+bash -n run_w2v_rebuild.sh run_eval_w2v_rebuild.sh: PASS
+No official 580M-weight run, real-data training, GPU-memory test, or benchmark score performed locally.
+Server preflight: bash run_w2v_rebuild.sh 1 RUN_DIR --preflight
