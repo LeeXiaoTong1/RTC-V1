@@ -181,10 +181,28 @@ class Detector(nn.Module):
         return self.head(h)
 
 
-def forward_chunks(model, features, mask, microbatch):
-    """Keep one logical loss/optimizer step; do not split the contrastive negative set."""
+def forward_chunks(model, features, mask, microbatch, pad_last=False):
+    """Run fixed-size chunks while keeping one logical loss/optimizer step.
+
+    Training uses logical batches divisible by microbatch and normally leaves
+    pad_last=False. Validation/inference uses pad_last=True so every kernel sees
+    the same batch shape, including the final partial chunk. Padded copies are
+    discarded before metrics/losses.
+    """
     if microbatch < 1:
         raise ValueError('microbatch must be positive')
-    outputs = [model(features[i:i + microbatch], mask[i:i + microbatch])
-               for i in range(0, len(features), microbatch)]
-    return torch.cat([x[0] for x in outputs]), torch.cat([x[1] for x in outputs])
+    if len(features) != len(mask) or not len(features):
+        raise ValueError('features/mask must contain the same nonzero batch size')
+    logits, reps = [], []
+    for i in range(0, len(features), microbatch):
+        f = features[i:i + microbatch]
+        m = mask[i:i + microbatch]
+        keep = len(f)
+        if pad_last and keep < microbatch:
+            pad = microbatch - keep
+            f = torch.cat((f, f[-1:].expand(pad, *f.shape[1:])), 0)
+            m = torch.cat((m, m[-1:].expand(pad, *m.shape[1:])), 0)
+        z, h = model(f, m)
+        logits.append(z[:keep])
+        reps.append(h[:keep])
+    return torch.cat(logits), torch.cat(reps)
