@@ -132,6 +132,15 @@ class Tests(unittest.TestCase):
             self.assertIsNotNone(pa.grad)
             torch.testing.assert_close(pa.grad, pb.grad, rtol=.003, atol=3e-4)
 
+    def test_fixed_shape_eval_padding_and_companion_independence(self):
+        m = no_dropout(Detector(ToyEncoder(2))).eval()
+        x = torch.randn(3, 24, 160)
+        mask = torch.ones(3, 24, dtype=torch.long)
+        group, _ = forward_chunks(m, x, mask, 4, pad_last=True)
+        single, _ = forward_chunks(m, x[:1], mask[:1], 4, pad_last=True)
+        self.assertEqual(tuple(group.shape), (3, 2))
+        torch.testing.assert_close(group[:1], single, rtol=1e-5, atol=1e-6)
+
     def test_full24_actual_updates(self):
         m = Detector(ToyEncoder(24, checkpointing=True))
         opt = build_optimizer(m, 1e-6, 1e-4, 1e-4)
