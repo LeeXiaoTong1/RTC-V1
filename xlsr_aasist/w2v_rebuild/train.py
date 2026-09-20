@@ -70,7 +70,7 @@ def validate(model, bundle, device, microbatch):
     model.eval()
     meters = {k: Metrics() for k in ['all', 'online', 'offline']}
     for b in tqdm(bundle.dev['clean'], desc='Dev clean', leave=False):
-        logits, _ = forward_chunks(model, b['features'].to(device), b['mask'].to(device), microbatch)
+        logits, _ = forward_chunks(model, b['features'].to(device), b['mask'].to(device), microbatch, pad_last=True)
         z, y = logits.cpu(), b['labels']
         meters['all'].update(z, y)
         for kind in ('online', 'offline'):
@@ -80,7 +80,7 @@ def validate(model, bundle, device, microbatch):
     for kind in ('seen', 'heldout'):
         bands = [Metrics() for _ in range(4)]
         for b in tqdm(bundle.dev[kind], desc='Dev '+kind, leave=False):
-            logits, _ = forward_chunks(model, b['features'].to(device), b['mask'].to(device), microbatch)
+            logits, _ = forward_chunks(model, b['features'].to(device), b['mask'].to(device), microbatch, pad_last=True)
             z, y, labels = logits.cpu(), b['labels'], torch.tensor(b['bands'])
             for i, m in enumerate(bands):
                 pick = labels == i
@@ -223,17 +223,23 @@ def main():
                                  round(bundle.steps*args.pair_warmup_epochs), audit=True)
         model.eval()
         with torch.no_grad():
-            f, m = b['features'][:2].to(device), b['mask'][:2].to(device)
-            a, _ = forward_chunks(model, f, m, 2)
-            z, _ = forward_chunks(model, f, m, 1)
-        gap = float((a-z).abs().max())
-        if not torch.allclose(a, z, rtol=1e-4, atol=1e-5):
-            raise RuntimeError('Evaluation depends on microbatch: investigate normalization / masking')
-        stats['eval_chunk_max_abs_difference'] = gap
+            # Evaluate the same first sample with a fixed kernel batch shape:
+            # once alongside real companions and once padded with copies of itself.
+            # This detects cross-sample normalization without requiring different
+            # CUDA batch shapes to be numerically identical through GraphPool top-k.
+            take = min(args.microbatch, len(b['features']))
+            f = b['features'][:take].to(device)
+            m = b['mask'][:take].to(device)
+            group, _ = forward_chunks(model, f, m, args.microbatch, pad_last=True)
+            single, _ = forward_chunks(model, f[:1], m[:1], args.microbatch, pad_last=True)
+        gap = float((group[:1]-single).abs().max())
+        if not torch.allclose(group[:1], single, rtol=1e-4, atol=1e-5):
+            raise RuntimeError('Evaluation has cross-sample dependence despite fixed batch shape')
+        stats['eval_fixed_shape_companion_gap'] = gap
         if device.type == 'cuda':
             stats['peak_cuda_GiB'] = torch.cuda.max_memory_allocated()/1024**3
         atomic_json(stats, out/'preflight.json')
-        print('PASS: real Train batch, feature projection + all 24 layers updated; evaluation chunk invariance checked.')
+        print('PASS: real Train batch, feature projection + all 24 layers updated; fixed-shape evaluation independence checked.')
         return
 
     if not args.resume and args.stage > 1:
