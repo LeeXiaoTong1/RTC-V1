@@ -84,7 +84,7 @@ def main():
     scores, written = [], []
     with torch.inference_mode():
         for b in tqdm(loader, desc='Inference only'):
-            z, _ = forward_chunks(model, b['features'].to(device), b['mask'].to(device), args.microbatch)
+            z, _ = forward_chunks(model, b['features'].to(device), b['mask'].to(device), args.microbatch, pad_last=True)
             prob = z.float().softmax(1)[:, 0]
             if not torch.isfinite(prob).all():
                 raise FloatingPointError('Non-finite scores')
