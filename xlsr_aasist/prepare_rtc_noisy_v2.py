@@ -13,6 +13,7 @@ from tqdm import tqdm
 from rtc_noisy.common import (CACHE_FORMAT, CUT, SR, atomic_json, audio_domain,
                               noise_catalog, read_labels, read_wave, sha256)
 from rtc_noisy.simulator import LocalRTC, RTCSettings
+from rtc_noisy.diverse import DiverseRTC, PROFILES, profile_definition
 from rtc_noisy_v2.plan import (BANDS, PLAN_ID, SCHEMA, digest_json, plan_definition,
                                settings_for, stable_seed)
 from utils.data_utils import pad_audio
@@ -20,6 +21,9 @@ from utils.data_utils import pad_audio
 
 def prepare(args):
     role, split = args.role, "train" if args.role == "train" else "dev"
+    profile = getattr(args, 'processing_profile', 'legacy')
+    if profile == 'unseen' and role != 'dev_heldout' or profile == 'diverse' and role == 'dev_heldout':
+        raise ValueError('diverse is Train/Dev-seen only; unseen is Dev-heldout only')
     if role != "train" and args.generation != 0:
         raise ValueError("Dev caches must remain fixed at generation=0")
     root = Path(args.dataset_root)
@@ -31,12 +35,18 @@ def prepare(args):
     if not ids:
         raise ValueError("No Offline sources")
     augment, catalog = noise_catalog(args.noise_manifest, split)
-    rtc = LocalRTC(args.ffmpeg)
+    rtc = LocalRTC(args.ffmpeg) if profile == 'legacy' else DiverseRTC(args.ffmpeg, profile)
+    if profile != 'legacy':
+        augment.intermittent_probability = profile_definition(profile)['intermittent_probability']
     allowed = settings_for(role)
     # Strict codec/filter-length check remains in LocalRTC. No manual padding fix.
     probe = .05 * np.random.RandomState(3).normal(size=70321).astype(np.float32)
     for cfg in allowed:
-        rtc(probe, RTCSettings(*cfg))
+        if profile == 'legacy':
+            rtc(probe, RTCSettings(*cfg))
+        else:
+            for family in PROFILES[profile]:
+                rtc(probe, RTCSettings(*cfg), np.random.RandomState(7), family=family)
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     config = {"format": CACHE_FORMAT, "optimization_schema": SCHEMA,
@@ -49,6 +59,12 @@ def prepare(args):
               "engine": "FFmpeg afftdn + dynaudnorm + libopus (NOT WebRTC)",
               "order": "full utterance -> noise -> local RTC -> first crop/repeat",
               "mix_rule": "same seed/split/source/band/generation; Dev role excluded from noise RNG"}
+    if profile != 'legacy':
+        config.update(processing=profile_definition(profile), webrtc_version=rtc.webrtc_version,
+                      processing_code_sha256=sha256(Path(__file__).parent/'rtc_noisy'/'diverse.py'),
+                      noise_code_sha256=sha256(Path(__file__).parent/'utils'/'env_noise.py'),
+                      engine='Local '+profile+' processing + Opus; no platform upload',
+                      order='full utterance -> optional intermittent noise -> optional synthetic room -> local DSP/Opus -> crop')
     config_path = output / "config.json"
     if config_path.exists():
         if json.loads(config_path.read_text()) != config:
@@ -86,7 +102,11 @@ def prepare(args):
             settings_rng = np.random.RandomState(stable_seed(args.seed, "settings", split, utt, band,
                                                             args.generation) % (2**32))
             settings = RTCSettings(*allowed[int(settings_rng.randint(len(allowed)))])
-            processed = rtc(noisy, settings)
+            processing = None
+            if profile == 'legacy':
+                processed = rtc(noisy, settings)
+            else:
+                processed, processing = rtc(noisy, settings, settings_rng)
             cached = np.asarray(pad_audio(processed, CUT), np.float32)
             tmp_audio = folder / f"{key}_b{band}.tmp.wav"
             sf.write(tmp_audio, cached, SR, subtype="FLOAT")
@@ -99,6 +119,8 @@ def prepare(args):
                    "role": role, "generation": args.generation, "rtc": settings.as_dict(),
                    "source_samples": len(waveform), "output_samples_before_crop": len(processed),
                    "audio": str(audio_path.relative_to(output))}
+            if processing is not None:
+                row['processing'] = processing
             atomic_json(record_path, row)
             rows.append(row)
         return rows
@@ -123,6 +145,7 @@ def main():
     p.add_argument("--generation", type=int, default=0)
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--ffmpeg", default="ffmpeg")
+    p.add_argument('--processing_profile', choices=['legacy', 'diverse', 'unseen'], default='legacy')
     p.add_argument("--limit", type=int, default=0, help="Smoke check only; separate directory required")
     args = p.parse_args()
     if args.workers < 1 or args.limit < 0 or args.generation < 0:

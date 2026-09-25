@@ -6,6 +6,8 @@ Noise probability and SNR are independent of the real/spoof label.
 import hashlib
 import json
 import os
+from collections import OrderedDict
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -29,13 +31,13 @@ def active_mask(audio, sample_rate):
     return mask
 
 
-def mix_at_snr(audio, noise, sample_rate, snr_db):
+def mix_at_snr(audio, noise, sample_rate, snr_db, speech_mask=None):
     """Measure powers on jointly active frames; do not over-amplify sparse events."""
     x = np.asarray(audio, dtype=np.float64)
     n = np.asarray(noise, dtype=np.float64)
     if x.shape != n.shape or not np.isfinite(n).all():
         raise ValueError("Speech and noise must have the same finite 1-D shape")
-    mask = active_mask(x, sample_rate)
+    mask = active_mask(x, sample_rate) if speech_mask is None else speech_mask.copy()
     if not mask.any():
         return x.astype(np.float32), {"applied": False, "reason": "silent_speech"}
     mask &= active_mask(n, sample_rate)
@@ -93,6 +95,40 @@ class NoiseAugment:
                 raise FileNotFoundError(row["path"])
         self.probability, self.snr_min, self.snr_max = probability, snr_min, snr_max
         self.manifest_sha256 = hashlib.sha256(raw).hexdigest()
+        self.cache_bytes = max(0, int(os.environ.get('RTC_NOISE_CACHE_MB', '128'))) * 1024**2
+        self._cache, self._bytes, self._lock = OrderedDict(), 0, threading.Lock()
+        self.intermittent_probability = 0.
+
+    def __getstate__(self):
+        state = vars(self).copy()
+        state.pop('_lock')
+        state['_cache'], state['_bytes'] = OrderedDict(), 0
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._lock = threading.Lock()
+
+    def _read_noise(self, path, sample_rate):
+        if not self.cache_bytes:
+            return read_noise(path, sample_rate)
+        stat = Path(path).stat()
+        key = (path, sample_rate, stat.st_size, stat.st_mtime_ns)
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+                return self._cache[key]
+        value = read_noise(path, sample_rate)
+        if value.nbytes <= self.cache_bytes:
+            value.setflags(write=False)
+            with self._lock:
+                if key not in self._cache:
+                    while self._cache and self._bytes + value.nbytes > self.cache_bytes:
+                        _, old = self._cache.popitem(last=False)
+                        self._bytes -= old.nbytes
+                    self._cache[key] = value
+                    self._bytes += value.nbytes
+        return value
 
     @classmethod
     def from_env(cls):
@@ -123,12 +159,13 @@ class NoiseAugment:
             result = (audio, {"applied": False, "reason": "probability"})
             return result if return_info else result[0]
         x = np.asarray(audio)
-        if not active_mask(x, sample_rate).any():
+        speech_mask = active_mask(x, sample_rate)
+        if not speech_mask.any():
             result = (audio, {"applied": False, "reason": "silent_speech"})
             return result if return_info else result[0]
         for _ in range(20):
             row = self.records[int(rng.randint(len(self.records)))]
-            n = read_noise(row["path"], sample_rate)
+            n = self._read_noise(row["path"], sample_rate)
             if len(n) >= len(x):
                 start = int(rng.randint(len(n) - len(x) + 1))
                 n = n[start:start + len(x)].copy()
@@ -138,13 +175,29 @@ class NoiseAugment:
                 event = np.zeros(len(x), dtype=np.float32)
                 event[start:start + len(n)] = n
                 n = event
+            event = None
+            if self.intermittent_probability and rng.random_sample() < self.intermittent_probability:
+                # A smooth amplitude envelope produces intermittent environmental
+                # events from the same permitted non-speech recording.
+                envelope = np.full(len(n), .05, dtype=np.float32)
+                events = []
+                for _ in range(int(rng.randint(1, 5))):
+                    width = min(len(n), int(rng.uniform(.08, .7) * sample_rate))
+                    offset = int(rng.randint(len(n) - width + 1))
+                    envelope[offset:offset+width] = np.maximum(envelope[offset:offset+width],
+                                                              np.hanning(width).astype(np.float32))
+                    events.append([offset, width])
+                n = n * envelope
+                event = events
             level = float(rng.uniform(self.snr_min, self.snr_max)) if snr_db is None else float(snr_db)
             try:
-                mixed, info = mix_at_snr(x, n, sample_rate, level)
+                mixed, info = mix_at_snr(x, n, sample_rate, level, speech_mask=speech_mask)
             except ValueError as exc:
                 if "Noise is silent" in str(exc):
                     continue
                 raise
             info.update({"noise_path": row["path"], "offset": start})
+            if event is not None:
+                info['intermittent_events'] = event
             return (mixed, info) if return_info else mixed
         raise RuntimeError("20 silent noise draws; inspect or remove silent noise files")

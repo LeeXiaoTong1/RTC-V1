@@ -14,7 +14,7 @@ from . import SCHEMA
 from .model import Detector, forward_chunks
 from .data import DataBundle, combine_batches
 from .core import (Metrics, Schedule, objective, build_optimizer, rng_state, restore_rng,
-                   atomic_save, atomic_json, sha256, load_checkpoint, gradient_audit, finish_audit)
+                   atomic_save, atomic_json, sha256, load_checkpoint, gradient_audit, finish_audit, materialize_stats)
 
 DEFAULTS = {1: (30, 1e-6, 1e-4), 2: (10, 5e-7, 1e-5), 3: (20, 5e-7, 1e-5)}
 
@@ -28,10 +28,19 @@ def parser():
     p.add_argument('--extra_train_noisy_cache', action='append', default=[])
     p.add_argument('--init', help='Previous-stage rebuild best_model.pt; NOT an old experiment')
     p.add_argument('--resume', help='Same-stage rebuild last.pt; restores optimizer/scheduler/RNG/rotation')
+    p.add_argument('--finetune_from', help='Stage3 weights for a NEW Stage3 experiment; resets optimizer/scheduler')
+    p.add_argument('--ordinary_sampling', choices=['legacy', 'balanced'], default='legacy')
+    p.add_argument('--noisy_bank_policy', choices=['cycle', 'mixed'], default='cycle')
+    p.add_argument('--consistency_weight', type=float, default=0.)
+    p.add_argument('--consistency_confidence', type=float, default=.8)
+    p.add_argument('--feature_cache', help='Optional lossless fixed-waveform feature cache directory')
+    p.add_argument('--noise_cache_mb', type=int, default=128, help='Bounded decoded-noise cache per worker; 0 disables')
+    p.add_argument('--profile_steps', type=int, default=0, help='Synchronize/time this many training steps (diagnostic only)')
     p.add_argument('--device', default='cuda:0')
     p.add_argument('--amp', choices=['bf16', 'none'], default='bf16')
     p.add_argument('--microbatch', type=int, default=4)
     p.add_argument('--eval_batch', type=int, default=16)
+    p.add_argument('--eval_microbatch', type=int, default=4, help='Reference inference kernel batch size; default unchanged')
     p.add_argument('--num_workers', type=int, default=4)
     p.add_argument('--epochs', type=int)
     p.add_argument('--encoder_lr', type=float)
@@ -61,26 +70,38 @@ def source_hashes():
     paths += [root/p for p in ['utils/data_utils.py', 'utils/env_noise.py', 'utils/RawBoost.py',
                                'utils/rtc_data.py', 'utils/rtc_pairs.py', 'rtc_noisy/data.py',
                                'rtc_noisy/common.py', 'rtc_noisy_v2/plan.py', 'rtc_noisy_v2/cache.py',
-                               'rtc_noisy_v2/sampling.py']]
+                               'rtc_noisy_v2/sampling.py', 'rtc_noisy/diverse.py', 'rtc_noisy/simulator.py']]
     return {str(p.relative_to(root)): sha256(p) for p in sorted(paths)}
 
 
 @torch.no_grad()
 def validate(model, bundle, device, microbatch):
     model.eval()
+    begin = time.perf_counter()
+    times = {}
     meters = {k: Metrics() for k in ['all', 'online', 'offline']}
     for b in tqdm(bundle.dev['clean'], desc='Dev clean', leave=False):
-        logits, _ = forward_chunks(model, b['features'].to(device), b['mask'].to(device), microbatch, pad_last=True)
+        if not bool(b['mask'].bool().all()):
+            raise ValueError('Invalid CPU validation mask')
+        logits, _ = forward_chunks(model, b['features'].to(device, non_blocking=True),
+                                  b['mask'].to(device, non_blocking=True), microbatch,
+                                  pad_last=True, validated_mask=True)
         z, y = logits.cpu(), b['labels']
         meters['all'].update(z, y)
         for kind in ('online', 'offline'):
             select = torch.tensor([kind in Path(x).parts for x in b['ids']])
             meters[kind].update(z[select], y[select])
     report = {k: m.result() for k, m in meters.items()}
+    times['clean'] = time.perf_counter() - begin
     for kind in ('seen', 'heldout'):
+        begin = time.perf_counter()
         bands = [Metrics() for _ in range(4)]
         for b in tqdm(bundle.dev[kind], desc='Dev '+kind, leave=False):
-            logits, _ = forward_chunks(model, b['features'].to(device), b['mask'].to(device), microbatch, pad_last=True)
+            if not bool(b['mask'].bool().all()):
+                raise ValueError('Invalid CPU validation mask')
+            logits, _ = forward_chunks(model, b['features'].to(device, non_blocking=True),
+                                      b['mask'].to(device, non_blocking=True), microbatch,
+                                      pad_last=True, validated_mask=True)
             z, y, labels = logits.cpu(), b['labels'], torch.tensor(b['bands'])
             for i, m in enumerate(bands):
                 pick = labels == i
@@ -88,8 +109,10 @@ def validate(model, bundle, device, microbatch):
         parts = [m.result() for m in bands]
         report[kind] = {'macro_f1': sum(x['macro_f1'] for x in parts)/4,
                         'balanced_ce': sum(x['balanced_ce'] for x in parts)/4, 'bands': parts}
+        times[kind] = time.perf_counter() - begin
     report['robust_f1'] = .3*report['online']['macro_f1'] + .35*report['seen']['macro_f1'] + .35*report['heldout']['macro_f1']
     report['robust_ce'] = .3*report['online']['balanced_ce'] + .35*report['seen']['balanced_ce'] + .35*report['heldout']['balanced_ce']
+    report['seconds_by_condition'] = times
     return report
 
 
@@ -102,27 +125,60 @@ def print_validation(dev):
 
 
 def train_step(model, opt, schedule, b, layout, weights, args, stage_step, pair_steps, audit=False):
-    model.train()  # SAME rule in every stage; no hidden .eval() calls inside forward.
+    # from_pretrained may leave the backbone in eval while the outer Detector
+    # already reports training=True; always restore every child's training mode.
+    model.train()
+    # Validate pair/mask invariants once on CPU, not separately in ten GPU chunks.
+    y = b['labels']
+    n, r, s = layout
+    if y.device.type != 'cpu' or b['mask'].device.type != 'cpu':
+        raise ValueError('Training batches must be validated on CPU before transfer')
+    if len(y) != n + 2*r + 2*s or not bool(((y == 0) | (y == 1)).all()) or not bool(b['mask'].bool().all()):
+        raise ValueError('Invalid CPU labels/layout/mask')
+    for offset, pairs in ((n, r), (n + 2*r, s)):
+        if pairs and (not torch.equal(y[offset:offset+pairs], y[offset+pairs:offset+2*pairs])
+                      or y[offset:offset+pairs].unique().numel() != 2):
+            raise ValueError('Each pair group needs matching labels and both classes')
     schedule.before_step(stage_step)
     opt.zero_grad(set_to_none=True)
     device = torch.device(args.device)
+    profile = device.type == 'cuda' and stage_step < getattr(args, 'profile_steps', 0)
+    events = [torch.cuda.Event(enable_timing=True) for _ in range(5)] if profile else None
+    stream = torch.cuda.current_stream(device) if profile else None
+    if events:
+        events[0].record(stream)
     features, mask, labels = (b[k].to(device, non_blocking=True) for k in ('features', 'mask', 'labels'))
+    if events:
+        events[1].record(stream)
     ctx = torch.autocast('cuda', dtype=torch.bfloat16) if device.type == 'cuda' and args.amp == 'bf16' else nullcontext()
     with ctx:
-        logits, readout = forward_chunks(model, features, mask, args.microbatch)
+        logits, readout = forward_chunks(model, features, mask, args.microbatch, validated_mask=True)
     ramp = min(1., (stage_step+1)/max(1, pair_steps))
     rw = .1*ramp if args.stage == 2 else (.1 if args.stage == 3 else 0.)
     nw = .1*ramp if args.stage == 3 else 0.
-    loss, stats = objective(logits, readout, labels, *layout, weights, rw, nw)
+    cw = getattr(args, 'consistency_weight', 0.) * ramp
+    loss, stats = objective(logits, readout, labels, *layout, weights, rw, nw,
+                            consistency_weight=cw,
+                            consistency_confidence=getattr(args, 'consistency_confidence', .8),
+                            tensor_stats=True, check_labels=False)
     if not torch.isfinite(loss):
         raise FloatingPointError('Non-finite loss: stop instead of silently accepting corrupt updates')
+    if events:
+        events[2].record(stream)
     loss.backward()
     audits = gradient_audit(model) if audit else None
     gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip, error_if_nonfinite=True)
+    if events:
+        events[3].record(stream)
     opt.step()
+    if events:
+        events[4].record(stream)
+        events[4].synchronize()
+        stats['profile_ms'] = {k: events[i].elapsed_time(events[i+1]) for i, k in
+                               enumerate(('h2d', 'forward_loss', 'backward_clip', 'optimizer'))}
     if audit:
         stats['gradient_audit'] = finish_audit(*audits)
-    stats.update(loss=float(loss.detach()), grad_norm=float(gnorm), rtc_weight=rw, noisy_weight=nw)
+    stats.update(loss=loss.detach(), grad_norm=gnorm.detach(), rtc_weight=rw, noisy_weight=nw, consistency_weight=cw)
     return stats, logits.detach(), labels.detach()
 
 
@@ -135,15 +191,22 @@ def main():
     for name in ('encoder_lr', 'head_lr', 'grad_clip'):
         if not math.isfinite(getattr(args, name)) or getattr(args, name) <= 0:
             raise ValueError(name+' must be positive and finite')
-    if min(args.epochs, args.microbatch, args.eval_batch, args.patience, args.earlystop) < 1 or args.num_workers < 0:
+    if min(args.epochs, args.microbatch, args.eval_batch, args.eval_microbatch, args.patience, args.earlystop) < 1 or args.num_workers < 0:
         raise ValueError('Invalid counts')
     if args.warmup_epochs < 0 or args.pair_warmup_epochs < 0:
         raise ValueError('Warmup must be nonnegative')
-    if args.init and args.resume or args.preflight and args.resume:
-        raise ValueError('--init/--resume and --preflight/--resume are mutually exclusive')
+    if sum(bool(x) for x in (args.init, args.resume, args.finetune_from)) > 1 or args.preflight and args.resume:
+        raise ValueError('--init/--resume/--finetune_from are exclusive; preflight cannot resume')
+    if args.finetune_from and args.stage != 3:
+        raise ValueError('--finetune_from is only for a new Stage3 experiment')
+    if (not math.isfinite(args.consistency_weight) or args.consistency_weight < 0
+            or not .5 <= args.consistency_confidence <= 1 or args.noise_cache_mb < 0 or args.profile_steps < 0):
+        raise ValueError('Invalid consistency/cache/profiling settings')
+    if args.consistency_weight and args.stage != 3:
+        raise ValueError('Consistency requires Stage3 noisy pairs')
     if args.stage == 1 and args.init:
         raise ValueError('Stage 1 starts from official generic-speech pretraining, not a detector checkpoint')
-    if args.stage > 1 and not (args.init or args.resume or args.check_data):
+    if args.stage > 1 and not (args.init or args.resume or args.finetune_from or args.check_data):
         raise ValueError('Stage 2/3 need the preceding REBUILD checkpoint')
     device = torch.device(args.device)
     if device.type == 'cuda' and not torch.cuda.is_available():
@@ -156,19 +219,29 @@ def main():
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     out = Path(args.out).resolve()
+    if args.finetune_from:
+        source_dir = Path(args.finetune_from).resolve().parent
+        if out == source_dir or source_dir in out.parents:
+            raise ValueError('Use a NEW experiment outside the baseline checkpoint directory')
     if not args.preflight and not args.check_data and out.exists() and (out/'config.json').exists() and not args.resume:
         raise FileExistsError('Experiment already exists. Use --resume or choose a new run directory.')
+    os.environ['RTC_NOISE_CACHE_MB'] = str(args.noise_cache_mb)
     bundle = DataBundle(args)
     if args.check_data:
         print('PASS: V2 protocols, pair manifests, noise split and all cache roles checked; no model loaded')
         return
     codes = source_hashes()
-    ckpt = load_checkpoint(args.resume or args.init) if (args.resume or args.init) else None
-    if ckpt and ckpt['stage'] != (args.stage if args.resume else args.stage - 1):
+    initial_path = args.resume or args.init or args.finetune_from
+    ckpt = load_checkpoint(initial_path) if initial_path else None
+    if ckpt and ckpt['stage'] != (args.stage if args.resume or args.finetune_from else args.stage - 1):
         raise ValueError('Checkpoint stage does not match requested progression')
     if args.resume and ckpt.get('kind') != 'training':
         raise ValueError('--resume requires last.pt, not best_model.pt')
-    if ckpt and ckpt['data_fingerprints'] != bundle.fingerprints:
+    if args.finetune_from:
+        for path, digest in bundle.base_fingerprints.items():
+            if ckpt['data_fingerprints'].get(path) != digest:
+                raise ValueError('Fine-tune changed base protocol/pairs/noise/preprocessor: '+path)
+    elif ckpt and ckpt['data_fingerprints'] != bundle.fingerprints:
         raise ValueError('Dataset/cache/protocol changed since prior checkpoint')
     if args.resume and ckpt['source_hashes'] != codes:
         raise ValueError('Code differs from resume state. Do not claim exact resume under changed code.')
@@ -179,17 +252,22 @@ def main():
     if len(model.backbone.encoder.layers) != 24 or not all(p.requires_grad for layer in model.backbone.encoder.layers for p in layer.parameters()):
         raise RuntimeError('All 24 pretrained encoder layers must participate in every stage')
     opt = build_optimizer(model, args.encoder_lr, args.head_lr, args.weight_decay)
+    device_weights = bundle.weights.to(device)
     schedule = Schedule(opt, round(bundle.steps*args.warmup_epochs), patience=args.patience)
     config = vars(args).copy()
     config.update(model_config=model.backbone.config.to_dict(), source_hashes=codes,
                   data_fingerprints=bundle.fingerprints, logical_batch=40,
                   class_counts=bundle.counts.tolist(), class_weights=bundle.weights.tolist(),
                   torch_version=str(torch.__version__), pretrained_origin='facebook/w2v-bert-2.0',
-                  init_sha256=sha256(args.init) if args.init else None)
+                  init_sha256=sha256(args.init or args.finetune_from) if args.init or args.finetune_from else None,
+                  adaptation=bool(args.finetune_from), baseline_path=args.finetune_from,
+                  noise_environment={k: os.environ.get(k, v) for k, v in
+                                     [('RTC_B_NOISE_PROB', '0.5'), ('RTC_B_SNR_MIN', '10'), ('RTC_B_SNR_MAX', '30')]})
     start_epoch, global_step, best_key, stale = 1, 0, (-math.inf, -math.inf), 0
     if args.resume:
         for name in ('stage', 'epochs', 'microbatch', 'encoder_lr', 'head_lr', 'weight_decay', 'seed', 'amp',
-                     'warmup_epochs', 'pair_warmup_epochs', 'grad_clip', 'patience', 'earlystop', 'no_checkpointing', 'torch_version'):
+                     'warmup_epochs', 'pair_warmup_epochs', 'grad_clip', 'patience', 'earlystop', 'no_checkpointing', 'torch_version',
+                     'ordinary_sampling', 'noisy_bank_policy', 'consistency_weight', 'consistency_confidence', 'eval_microbatch', 'eval_batch', 'noise_environment'):
             if ckpt['config'][name] != config[name]:
                 raise ValueError(f'Resume setting changed: {name}')
         if Path(args.resume).resolve().parent != out:
@@ -200,6 +278,8 @@ def main():
         start_epoch, global_step = ckpt['epoch'] + 1, ckpt['global_step']
         best_key, stale = tuple(ckpt['best_key']), ckpt['stale']
         restore_rng(ckpt['rng'])
+        for key in ('init_sha256', 'adaptation', 'baseline_path'):
+            config[key] = ckpt['config'].get(key)
     del ckpt
     out.mkdir(parents=True, exist_ok=True)
     if not args.resume:
@@ -219,8 +299,9 @@ def main():
     if args.preflight:
         bundle.begin(1)
         b, layout = combine_batches([next(iter(loader)) for loader in bundle.train])  # materialized below
-        stats, _, _ = train_step(model, opt, schedule, b, layout, bundle.weights, args, 0,
+        stats, _, _ = train_step(model, opt, schedule, b, layout, device_weights, args, 0,
                                  round(bundle.steps*args.pair_warmup_epochs), audit=True)
+        stats = materialize_stats(stats)
         model.eval()
         with torch.no_grad():
             # Evaluate the same first sample with a fixed kernel batch shape:
@@ -243,47 +324,66 @@ def main():
         return
 
     if not args.resume and args.stage > 1:
-        dev = validate(model, bundle, device, args.microbatch)
+        dev = validate(model, bundle, device, args.eval_microbatch)
         best_key = (dev['robust_f1'], -dev['robust_ce'])
         atomic_save(snapshot(0, dev, 'weights'), out/'best_model.pt')
+        atomic_json(dev, out/'baseline_dev.json')
         print_validation(dev)
     with (out/'metrics.jsonl').open('a', encoding='utf-8') as log:
         for epoch in range(start_epoch, args.epochs + 1):
             bundle.begin(epoch)
-            meter, losses, last_stats = Metrics(), [], {}
+            meter, loss_total, last_stats = Metrics(device=device, check_finite=False), torch.zeros((), dtype=torch.float64, device=device), {}
             begin = time.perf_counter()
+            ready, data_wait, profiles = begin, 0., []
             done = 0
             for batches in tqdm(zip(*bundle.train), total=bundle.steps, desc=f'S{args.stage} epoch {epoch}'):
+                data_wait += time.perf_counter() - ready
                 b, layout = combine_batches(batches)
                 do_audit = done == 0
-                stats, logits, labels = train_step(model, opt, schedule, b, layout, bundle.weights, args,
+                stats, logits, labels = train_step(model, opt, schedule, b, layout, device_weights, args,
                                                    global_step, round(bundle.steps*args.pair_warmup_epochs), do_audit)
                 if do_audit:
                     atomic_json(stats['gradient_audit'], out/f'gradient_epoch_{epoch:03d}.json')
                 meter.update(logits, labels)
-                losses.append(stats['loss'])
+                loss_total += stats['loss'].double()
+                if 'profile_ms' in stats:
+                    profiles.append(stats['profile_ms'])
                 last_stats = {k: v for k, v in stats.items() if k != 'gradient_audit'}
                 global_step += 1
                 done += 1
+                ready = time.perf_counter()
             if done != bundle.steps:
                 raise RuntimeError('A stream ended early; do not commit sampler history')
             bundle.end(done)
-            dev = validate(model, bundle, device, args.microbatch)
+            if device.type == 'cuda':
+                torch.cuda.synchronize(device)
+            train_seconds = time.perf_counter() - begin
+            dev_begin = time.perf_counter()
+            dev = validate(model, bundle, device, args.eval_microbatch)
+            dev_seconds = time.perf_counter() - dev_begin
             key = (dev['robust_f1'], -dev['robust_ce'])
             improved = key > best_key
+            save_begin = time.perf_counter()
             if improved:
                 best_key, stale = key, 0
                 atomic_save(snapshot(epoch, dev, 'weights'), out/'best_model.pt')
             else:
                 stale += 1
+            best_save_seconds = time.perf_counter() - save_begin
             reduced = schedule.validate(dev['robust_ce'], global_step)
             row = {'epoch': epoch, 'steps': global_step, 'train': meter.result(),
-                   'mean_train_loss': float(np.mean(losses)), 'last_batch': last_stats, 'dev': dev,
+                   'mean_train_loss': float(loss_total / done), 'last_batch': materialize_stats(last_stats), 'dev': dev,
                    'best': improved, 'lr_scale_next': schedule.scale, 'seconds': time.perf_counter()-begin,
                    'used_lr': {g['name']: g['lr'] for g in opt.param_groups}}
+            save_begin = time.perf_counter()
+            atomic_save(snapshot(epoch, dev, 'training'), out/'last.pt')
+            row['timing'] = {'train_seconds': train_seconds, 'data_wait_host_seconds': data_wait,
+                             'dev_seconds': dev_seconds, 'best_save_seconds': best_save_seconds,
+                             'last_save_seconds': time.perf_counter() - save_begin,
+                             'profile_steps_ms': profiles}
+            row['seconds'] = time.perf_counter() - begin
             log.write(json.dumps(row) + '\n')
             log.flush()
-            atomic_save(snapshot(epoch, dev, 'training'), out/'last.pt')
             print_validation(dev)
             print(f'epoch={epoch} best={improved} plateau_reduced={reduced}; Adam history retained; next_scale={schedule.scale}', flush=True)
             if stale >= args.earlystop and global_step > schedule.warmup_steps:

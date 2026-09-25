@@ -16,7 +16,21 @@ def check_metadata(config, rows, role):
     if role != "train" and config["generation"] != 0:
         raise ValueError("Dev must use fixed generation 0")
     allowed = set(settings_for(role))
+    processing = config.get('processing')
+    if processing:
+        from rtc_noisy.diverse import profile_definition
+        profile = processing.get('profile')
+        if profile not in ('diverse', 'unseen') or processing != profile_definition(profile):
+            raise ValueError('Unknown diverse cache recipe')
+        if (profile == 'unseen') != (role == 'dev_heldout'):
+            raise ValueError('Heldout processing family cannot enter training/seen caches')
+        if profile == 'diverse' and config.get('webrtc_version') != '0.1.3':
+            raise ValueError('Diverse cache requires the pinned WebRTC implementation')
     for row in rows:
+        if processing and row.get('processing', {}).get('family') not in processing['families']:
+            raise ValueError('Missing/forbidden processing family in diverse cache row')
+        if not processing and 'processing' in row:
+            raise ValueError('Do not disguise a diverse cache as a legacy cache')
         if setting_key(row["rtc"]) not in allowed:
             raise ValueError(f"Forbidden RTC combination in {role}: {row['rtc']}")
         if row.get("role") != role or row.get("generation") != config["generation"]:
@@ -46,10 +60,19 @@ def check_suite(train_banks, seen, heldout):
                     raise ValueError(f"Train/Dev noise leakage: {field}")
         if config["ffmpeg_version"] != seen_cfg["ffmpeg_version"]:
             raise ValueError("Train/Dev FFmpeg versions differ")
-        identity = (config["seed"], config["generation"])
+        identity = (config["seed"], config["generation"], config.get('processing', {}).get('profile', 'legacy'))
         if identity in identities:
             raise ValueError("Duplicate training cache generation")
         identities.add(identity)
+    held_profile = held_cfg.get('processing')
+    if held_profile:
+        held_families = set(held_profile['families'])
+        for _, config in list(train_banks) + [seen]:
+            families = set(config.get('processing', {}).get('families', ['ffmpeg']))
+            if held_families & families:
+                raise ValueError('Heldout processing algorithm leaked into training/Dev-seen')
+        if not seen_cfg.get('processing'):
+            raise ValueError('Diverse heldout must be compared against matched diverse Dev-seen')
     def mapping(rows):
         return {(r["source"], r["band"]): (r["source_sha256"], r["label"], r["mix_id"])
                 for r in rows}

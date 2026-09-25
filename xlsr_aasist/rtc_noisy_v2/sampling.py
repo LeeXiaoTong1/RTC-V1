@@ -12,10 +12,13 @@ class RotatingViewBatchSampler:
     trainer commits a completed epoch. No four-view forward pass is introduced.
     """
 
-    def __init__(self, source_sampler, sources, seed=1234, banks=1):
+    def __init__(self, source_sampler, sources, seed=1234, banks=1, bank_policy='cycle'):
         if type(banks) is not int or banks < 1:
             raise ValueError("banks must be a positive integer")
         self.source_sampler, self.seed, self.banks = source_sampler, int(seed), banks
+        if bank_policy not in ('cycle', 'mixed'):
+            raise ValueError('Unknown bank policy')
+        self.bank_policy = bank_policy
         self.source_ids = [row["offline"] for row in sources]
         if not self.source_ids or len(set(self.source_ids)) != len(self.source_ids):
             raise ValueError("Offline source IDs must be unique and nonempty")
@@ -41,11 +44,17 @@ class RotatingViewBatchSampler:
             for index in indices:
                 if type(index) is not int or not 0 <= index < len(visits):
                     raise ValueError("Invalid source index")
-                cycle, slot = divmod(visits[index], 4)
-                order = list(range(4))
-                random.Random(stable_seed(self.seed, "views", self.source_ids[index], cycle)).shuffle(order)
-                # Optional extra cache banks change only at a SOURCE cycle boundary.
-                tickets.append((index, cycle % self.banks, order[slot]))
+                if self.bank_policy == 'mixed':
+                    cycle, slot = divmod(visits[index], 4 * self.banks)
+                    order = [(bank, band) for bank in range(self.banks) for band in range(4)]
+                    random.Random(stable_seed(self.seed, 'mixed_views', self.source_ids[index], cycle)).shuffle(order)
+                    bank, band = order[slot]
+                    tickets.append((index, bank, band))
+                else:
+                    cycle, slot = divmod(visits[index], 4)
+                    order = list(range(4))
+                    random.Random(stable_seed(self.seed, "views", self.source_ids[index], cycle)).shuffle(order)
+                    tickets.append((index, cycle % self.banks, order[slot]))
                 visits[index] += 1
             plan.append(tuple(tickets))
         if len(plan) != len(self):
@@ -70,11 +79,14 @@ class RotatingViewBatchSampler:
         # Export only COMMITTED visits. Prefetched tickets are not training history.
         return {"format": "rtc_view_rotation_v2", "source_digest": self.source_digest,
                 "seed": self.seed, "banks": self.banks, "steps_per_epoch": len(self),
-                "completed_epoch": self.completed_epoch, "visits": self.visits.copy()}
+                "completed_epoch": self.completed_epoch, "visits": self.visits.copy(),
+                **({'bank_policy': self.bank_policy} if self.bank_policy != 'cycle' else {})}
 
     def load_state_dict(self, state):
         expected = {"format": "rtc_view_rotation_v2", "source_digest": self.source_digest,
                     "seed": self.seed, "banks": self.banks, "steps_per_epoch": len(self)}
+        if state.get('bank_policy', 'cycle') != self.bank_policy:
+            raise ValueError('Rotation bank policy changed')
         if self._plan is not None or any(state.get(k) != v for k, v in expected.items()):
             raise ValueError("Rotation state does not match this sampler")
         visits, epoch = state.get("visits"), state.get("completed_epoch")

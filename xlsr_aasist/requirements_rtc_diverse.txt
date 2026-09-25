@@ -1,0 +1,3 @@
+# Only for OFFLINE cache generation; keep the existing Torch/HF training environment.
+# Linux build prerequisites: C++ toolchain, Python development headers, swig.
+webrtc-audio-processing==0.1.3

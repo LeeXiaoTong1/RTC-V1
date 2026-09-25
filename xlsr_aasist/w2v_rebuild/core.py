@@ -23,7 +23,7 @@ def class_weights(ids, labels):
     return count.sum().float() / (2 * count.float()), count
 
 
-def pair_loss(off, on, labels, temperature=.1):
+def pair_loss(off, on, labels, temperature=.1, check_labels=True):
     """V2 symmetric same-source positive / opposite-authenticity negative InfoNCE."""
     if off.shape != on.shape or off.ndim != 2 or len(labels) != len(off):
         raise ValueError('Pair shape mismatch')
@@ -31,7 +31,7 @@ def pair_loss(off, on, labels, temperature=.1):
         raise ValueError('Invalid contrastive temperature')
     off, on = F.normalize(off.float(), dim=1), F.normalize(on.float(), dim=1)
     negative = labels[:, None] != labels[None, :]
-    if not bool(negative.any(1).all()):
+    if check_labels and not bool(negative.any(1).all()):
         raise ValueError('Each pair batch must contain fake and real sources')
     logits = off @ on.T / temperature
     mask = negative | torch.eye(len(labels), dtype=torch.bool, device=labels.device)
@@ -40,23 +40,38 @@ def pair_loss(off, on, labels, temperature=.1):
     return ((masked.logsumexp(1) - pos).mean() + (masked.logsumexp(0) - pos).mean()) / 2
 
 
-def objective(logits, features, labels, n, r, s, weights, real_weight, noisy_weight, beta=.3):
+def prediction_consistency(reference, processed, labels, confidence=.8):
+    """Correct, confident reference predictions teach processed views; no teacher gradient."""
+    if not .5 <= confidence <= 1:
+        raise ValueError('Consistency confidence must be in [0.5, 1]')
+    teacher = reference.detach().float().softmax(1)
+    certainty, predicted = teacher.max(1)
+    gate = ((predicted == labels) & (certainty >= confidence)).float()
+    divergence = F.kl_div(processed.float().log_softmax(1), teacher, reduction='none').sum(1)
+    loss = (divergence * gate).sum() / gate.sum().clamp_min(1)
+    return loss, gate.mean()
+
+
+def objective(logits, features, labels, n, r, s, weights, real_weight, noisy_weight, beta=.3,
+              consistency_weight=0., consistency_confidence=.8, tensor_stats=False, check_labels=True):
     if logits.shape != (n + 2*r + 2*s, 2) or labels.shape != (len(logits),):
         raise ValueError('Logical batch layout mismatch')
     if n <= 0 or (s and not r) or not 0 <= beta <= 1:
         raise ValueError('Invalid group sizes or beta')
-    if not torch.isfinite(logits).all() or not torch.isfinite(features).all():
+    if not (torch.isfinite(logits).all() & torch.isfinite(features).all()):
         raise FloatingPointError('Non-finite model output')
+    if not math.isfinite(consistency_weight) or consistency_weight < 0:
+        raise ValueError('Consistency weight must be finite and nonnegative')
     ce = F.cross_entropy(logits.float(), labels, reduction='none')
     w = weights.to(logits.device)[labels[:n]]
     parts = {'ordinary': (ce[:n] * w).sum() / w.sum()}
     if r:
-        if not torch.equal(labels[n:n+r], labels[n+r:n+2*r]):
+        if check_labels and not torch.equal(labels[n:n+r], labels[n+r:n+2*r]):
             raise ValueError('Real-pair labels do not match')
         parts['real_pair'] = ce[n:n+2*r].mean()
     if s:
         a = n + 2*r
-        if not torch.equal(labels[a:a+s], labels[a+s:]):
+        if check_labels and not torch.equal(labels[a:a+s], labels[a+s:]):
             raise ValueError('Noisy-pair labels do not match')
         parts['noisy_reference'], parts['noisy_processed'] = ce[a:a+s].mean(), ce[a+s:].mean()
         other = n + 2*r + s
@@ -67,45 +82,71 @@ def objective(logits, features, labels, n, r, s, weights, real_weight, noisy_wei
     else:
         coeff = {'ordinary': 1.}
     classification = sum(parts[k] * v for k, v in coeff.items())
-    real = pair_loss(features[n:n+r], features[n+r:n+2*r], labels[n:n+r]) if r else classification*0
+    real = pair_loss(features[n:n+r], features[n+r:n+2*r], labels[n:n+r], check_labels=check_labels) if r else classification*0
     a = n + 2*r
-    noisy = pair_loss(features[a:a+s], features[a+s:], labels[a:a+s]) if s else classification*0
+    noisy = pair_loss(features[a:a+s], features[a+s:], labels[a:a+s], check_labels=check_labels) if s else classification*0
     loss = classification + real_weight*real + noisy_weight*noisy
-    return loss, {'ce': float(classification.detach()), 'rtc': float(real.detach()),
-                  'noisy_pair': float(noisy.detach()), 'coefficients': coeff,
-                  **{'ce_'+k: float(v.detach()) for k, v in parts.items()}}
+    consistency, accepted = classification*0, classification.detach()*0
+    if consistency_weight:
+        if not s:
+            raise ValueError('Prediction consistency requires noisy pairs (Stage3)')
+        consistency, accepted = prediction_consistency(logits[a:a+s], logits[a+s:], labels[a:a+s], consistency_confidence)
+        loss = loss + consistency_weight * consistency
+    stats = {'ce': classification.detach(), 'rtc': real.detach(), 'noisy_pair': noisy.detach(),
+             'consistency': consistency.detach(), 'consistency_accepted': accepted.detach(),
+             **{'ce_'+k: v.detach() for k, v in parts.items()}}
+    if not tensor_stats:
+        stats = {k: float(v) for k, v in stats.items()}
+    return loss, {**stats, 'coefficients': coeff}
+
+
+def materialize_stats(stats):
+    """One device-to-host transfer for scalar logging instead of one per statistic."""
+    keys = [k for k, v in stats.items() if isinstance(v, torch.Tensor)]
+    values = torch.stack([stats[k].detach().float() for k in keys]).cpu().tolist() if keys else []
+    return {**stats, **dict(zip(keys, values))}
 
 
 class Metrics:
-    def __init__(self):
-        self.cm = torch.zeros(2, 2, dtype=torch.int64)
-        self.ce = torch.zeros(2, dtype=torch.float64)
-        self.prob = torch.zeros(2, dtype=torch.float64)
+    def __init__(self, device='cpu', check_finite=True):
+        self.cm = torch.zeros(2, 2, dtype=torch.int64, device=device)
+        self.ce = torch.zeros(2, dtype=torch.float64, device=device)
+        self.prob = torch.zeros(2, dtype=torch.float64, device=device)
+        self.check_finite = check_finite
 
     def update(self, logits, labels):
-        z, y = logits.detach().float().cpu(), labels.detach().long().cpu()
+        z, y = logits.detach().float().to(self.cm.device), labels.detach().long().to(self.cm.device)
         if not len(y):
             return
-        if not torch.isfinite(z).all():
+        if self.check_finite and not torch.isfinite(z).all():
             raise FloatingPointError('Non-finite validation logits')
         p = z.softmax(1)[:, 0]
         pred = (p < .5).long()  # fake=0 including a tie at the official fixed threshold
-        self.cm += torch.bincount(2*y + pred, minlength=4).reshape(2, 2)
+        if self.cm.device.type == 'cuda':
+            self.cm.view(-1).scatter_add_(0, 2*y + pred, torch.ones_like(y))
+        else:
+            self.cm += torch.bincount(2*y + pred, minlength=4).reshape(2, 2)
         ce = F.cross_entropy(z, y, reduction='none')
         for c in (0, 1):
-            self.ce[c] += ce[y == c].double().sum()
-            self.prob[c] += p[y == c].double().sum()
+            if self.cm.device.type == 'cuda':
+                mask = (y == c).double()
+                self.ce[c] += (ce.double() * mask).sum()
+                self.prob[c] += (p.double() * mask).sum()
+            else:
+                self.ce[c] += ce[y == c].double().sum()
+                self.prob[c] += p[y == c].double().sum()
 
     def result(self):
-        cm = self.cm.double()
+        cm = self.cm.double().cpu()
+        ce, prob = self.ce.cpu(), self.prob.cpu()
         count = cm.sum(1)
         if bool((count == 0).any()):
             raise ValueError('Both classes must be present in each validation condition')
         f1 = 2*cm.diag()/(count + cm.sum(0)).clamp_min(1)
-        return {'macro_f1': f1.mean().item(), 'balanced_ce': (self.ce/count).mean().item(),
+        return {'macro_f1': f1.mean().item(), 'balanced_ce': (ce/count).mean().item(),
                 'accuracy': (cm.diag().sum()/cm.sum()).item(), 'recall': (cm.diag()/count).tolist(),
                 'fake_prediction_fraction': (cm[:, 0].sum()/cm.sum()).item(),
-                'mean_fake_score_by_class': (self.prob/count).tolist(), 'confusion': self.cm.tolist(),
+                'mean_fake_score_by_class': (prob/count).tolist(), 'confusion': cm.long().tolist(),
                 'count': int(count.sum())}
 
 

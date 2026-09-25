@@ -143,6 +143,7 @@ class Tests(unittest.TestCase):
 
     def test_full24_actual_updates(self):
         m = Detector(ToyEncoder(24, checkpointing=True))
+        m.backbone.eval()  # HF from_pretrained may start this child in eval mode.
         opt = build_optimizer(m, 1e-6, 1e-4, 1e-4)
         sched = Schedule(opt, 10)
         args = SimpleNamespace(device='cpu', amp='none', microbatch=2, stage=3, grad_clip=1.)
@@ -150,6 +151,7 @@ class Tests(unittest.TestCase):
              'labels': torch.tensor([0, 1, 0, 1, 0, 1, 0, 1, 0, 1])}
         stats, _, _ = train_step(m, opt, sched, b, (2, 2, 2), torch.tensor([.7, 1.8]), args, 0, 10, True)
         self.assertEqual(len(stats['gradient_audit']), 26)
+        self.assertTrue(m.backbone.training)
         self.assertTrue(all(x['sampled_update_norm'] > 0 for x in stats['gradient_audit'].values()))
 
     def test_optimizer_coverage_and_no_norm_decay(self):
@@ -287,6 +289,8 @@ class Tests(unittest.TestCase):
             def __init__(self, args):
                 self.args=args; self.steps=1; self.weights=torch.ones(2); self.counts=torch.tensor([20,20])
                 self.fingerprints={'fixture':'unchanged'}; self.completed=0
+                self.base_fingerprints = self.fingerprints.copy()
+                self.fingerprints['cache'] = 'new' if args.ordinary_sampling == 'balanced' else 'old'
                 n={1:40,2:32,3:24}[args.stage]
                 g=torch.Generator().manual_seed(222)
                 def batch(size, kind='ordinary'):
@@ -331,6 +335,20 @@ class Tests(unittest.TestCase):
             target=str(Path(d)/'stage3')
             argv=common+['--stage','3','--out',target,'--resume',str(Path(target)/'last.pt')]
             with patch.object(sys,'argv',argv): engine.main()
+            # New Stage3 fine-tuning may replace caches, but never the base data or baseline artifact.
+            from .core import sha256
+            baseline = str(Path(target)/'best_model.pt')
+            before = sha256(baseline)
+            adapted = str(Path(d)/'adapted')
+            args = common+['--stage','3','--out',adapted,'--epochs','1', '--ordinary_sampling','balanced',
+                          '--noisy_bank_policy','mixed','--consistency_weight','.02']
+            with patch.object(sys,'argv',args+['--finetune_from',baseline]): engine.main()
+            self.assertEqual(before, sha256(baseline))
+            self.assertTrue((Path(adapted)/'baseline_dev.json').is_file())
+            with patch.object(sys,'argv',args+['--resume',str(Path(adapted)/'last.pt')]): engine.main()
+            state = load_checkpoint(Path(adapted)/'last.pt')
+            self.assertEqual(state['config']['init_sha256'], before)
+            self.assertTrue(state['config']['adaptation'])
 
     @unittest.skipUnless(importlib.util.find_spec('transformers'), 'HF library unavailable in offline test container')
     def test_real_hf_random_small_encoder(self):
