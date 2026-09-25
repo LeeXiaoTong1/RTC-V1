@@ -14,6 +14,41 @@
 
 ## 服务器操作
 
+### 优先清理已完成上一版的训练断点，保留特征缓存
+
+上一版如果已经完成训练，回退、推理和继续微调只需保留它的 `stage3/best_model.pt` 及配置/日志。可清理该同一实验的 `stage1/{best_model.pt,last.pt}`、`stage2/{best_model.pt,last.pt}` 和 `stage3/last.pt`。这会失去旧实验各阶段的精确续训状态；正在训练的新实验仍保留自己的 best 和 last。不要对所有实验目录运行通配删除。
+
+恢复脚本新增 `--prune-old-checkpoints --keep-feature-cache`。它从指定失败实验的配置定位原始 baseline，验证保留的 Stage3 最佳权重可读取，仅列出上述最多 5 个文件及总大小。执行前再检查清单是否变化，拒绝沿符号链接删除。其他实验、自定义权重、数据、特征缓存、原配置和日志保留。
+
+```bash
+conda activate sdd &&
+cd "$HOME/LXT/RTC-w2v-improved" &&
+git pull --ff-only &&
+cd xlsr_aasist &&
+python recover_w2v_storage.py \
+  --failed-run exp/w2v_improved_20260925_134727 \
+  --prune-old-checkpoints --keep-feature-cache
+```
+
+上面只预览，不删除、不启动训练。仅在尚未启动另一项恢复训练时执行下一段；它根据指定标志清理旧断点，复用全部缓存，检查空间，自动执行 preflight 和新实验训练。无需再使用 `--release-feature-cache`。若已启动前一种恢复任务，不要重复启动。
+
+```bash
+cd "$HOME/LXT/RTC-w2v-improved/xlsr_aasist" &&
+LOG="$PWD/exp/recovery_keep_cache_$(date +%Y%m%d_%H%M%S).log" &&
+{
+  nohup python -u recover_w2v_storage.py \
+    --failed-run exp/w2v_improved_20260925_134727 \
+    --prune-old-checkpoints --keep-feature-cache --run > "$LOG" 2>&1 < /dev/null &
+  printf 'LOG=%s\n' "$LOG"
+}
+```
+
+```bash
+tail -n 80 -f "$LOG"
+```
+
+只修改恢复工具及文档，不改变训练源文件，避免正在运行的实验因这次工具更新而改变源码指纹。定向检查：`python -m unittest test_w2v_recovery_cleanup w2v_rebuild.storage_tests -v`。
+
 ### 2026-09-25 存储不足修复
 
 若第 1 轮在保存 `last.pt` 时出现 `PytorchStreamWriter failed writing file`，先检查磁盘及保存文件。仅有 `epoch=0, kind=weights` 的 `best_model.pt` 时，第 1 轮的更新没有可恢复的断点，不能宣称从第 2 轮精确续训。已生成的完整音频缓存可以复用。
