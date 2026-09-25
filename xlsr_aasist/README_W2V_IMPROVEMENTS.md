@@ -14,7 +14,48 @@
 
 ## 服务器操作
 
-先进入原来的 `sdd` 环境。以下路径取自此前训练记录；如果实际最佳权重不在此位置，只修改 `BASELINE`，不要自动选择“最新”目录。
+### 2026-09-25 存储不足修复
+
+若第 1 轮在保存 `last.pt` 时出现 `PytorchStreamWriter failed writing file`，先检查磁盘及保存文件。仅有 `epoch=0, kind=weights` 的 `best_model.pt` 时，第 1 轮的更新没有可恢复的断点，不能宣称从第 2 轮精确续训。已生成的完整音频缓存可以复用。
+
+修复增加模型实际大小对应的空间预检：计入完整 Adam 状态、保留中的 last 和其临时替换文件，以及新实验的最佳权重和余量。每轮开始及每次写检查点前再次检查。特征缓存遇到空间下限或 ENOSPC/EDQUOT 时直接计算相同的 FP32 输入，不继续写盘；已有有效缓存仍可读取。原 Linux 特征缓存键保持兼容。每轮 Dev 结果会先打印并写入 `epoch_NNN_evaluation.json`，再保存权重；文件中的 `checkpoint_saved` 表示本轮完整断点是否成功落盘。空间检查无法阻止其他进程同时占用磁盘，也不代替平台配额检查。
+
+针对当前独立目录 `~/LXT/RTC-w2v-improved/xlsr_aasist`，提供 `recover_w2v_storage.py`。它读取指定失败实验的配置，复用原始 baseline、所有数据/缓存路径、学习率和训练参数，创建新实验。恢复实验关闭输入特征缓存以控制占用；不会改变模型结构、增强、训练步数或精度，但会失去这项缓存带来的加速。其他效率改进保留。
+
+以下命令均为 ASCII，每段少于 2000 字符。在 `sdd` 环境执行：
+
+```bash
+conda activate sdd &&
+cd "$HOME/LXT/RTC-w2v-improved" &&
+git pull --ff-only &&
+cd xlsr_aasist &&
+python recover_w2v_storage.py --failed-run exp/w2v_improved_20260925_134727
+```
+
+上面仅检查并预览。确认打印的失败实验和原始 baseline 路径正确后，下面的 `--release-feature-cache` **明确授权删除此 checkout 的 `data/w2v_feature_cache` 中可重新计算的、符合哈希目录格式的 `.npy` 文件**。脚本不遍历符号链接，不删除音频、检查点或原始实验。如果已有完整 `last.pt` 或 best 的轮次大于 0，会拒绝这种重启方式。释放后仍不满足检查点预算时，会在训练前停止并要求继续释放空间或扩容。
+
+```bash
+cd "$HOME/LXT/RTC-w2v-improved/xlsr_aasist" &&
+LOG="$PWD/exp/storage_recovery_$(date +%Y%m%d_%H%M%S).log" &&
+{
+  nohup python -u recover_w2v_storage.py \
+    --failed-run exp/w2v_improved_20260925_134727 \
+    --release-feature-cache --run > "$LOG" 2>&1 < /dev/null &
+  printf 'LOG=%s\n' "$LOG"
+}
+```
+
+```bash
+tail -n 80 -f "$LOG"
+```
+
+启动段只执行一次。脚本也使用 Linux 文件锁阻止同一 checkout 内重复启动恢复任务。日志打印新的 `RUN=...`，随后自动执行 preflight 和训练，不再生成 54 GB 音频缓存。原始回退分支不变。新的源码保护逻辑不能用于对旧源码的 `last.pt` 声称精确 resume；有完整旧断点的其他实验应保留对应源码。
+
+回归检查：`python -m unittest w2v_rebuild.tests w2v_rebuild.improvement_tests w2v_rebuild.storage_tests -v`。
+
+### 新建实验的通用流程（Git 工作目录干净时）
+
+先进入原来的 `sdd` 环境。以下路径取自此前训练记录；如果实际最佳权重不在此位置，只修改 `BASELINE`，不要自动选择“最新”目录。已使用独立工作目录的服务器，沿用上面的独立路径，不再切换原目录。
 
 ```bash
 conda activate sdd

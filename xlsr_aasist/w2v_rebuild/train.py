@@ -13,6 +13,7 @@ from tqdm import tqdm
 from . import SCHEMA
 from .model import Detector, forward_chunks
 from .data import DataBundle, combine_batches
+from .storage import checkpoint_headroom, protect_checkpoint_space, require_space
 from .core import (Metrics, Schedule, objective, build_optimizer, rng_state, restore_rng,
                    atomic_save, atomic_json, sha256, load_checkpoint, gradient_audit, finish_audit, materialize_stats)
 
@@ -34,6 +35,7 @@ def parser():
     p.add_argument('--consistency_weight', type=float, default=0.)
     p.add_argument('--consistency_confidence', type=float, default=.8)
     p.add_argument('--feature_cache', help='Optional lossless fixed-waveform feature cache directory')
+    p.add_argument('--no_feature_cache', action='store_true', help='Recompute fixed inputs; do not read/write feature caches')
     p.add_argument('--noise_cache_mb', type=int, default=128, help='Bounded decoded-noise cache per worker; 0 disables')
     p.add_argument('--profile_steps', type=int, default=0, help='Synchronize/time this many training steps (diagnostic only)')
     p.add_argument('--device', default='cuda:0')
@@ -184,6 +186,8 @@ def train_step(model, opt, schedule, b, layout, weights, args, stage_step, pair_
 
 def main():
     args = parser().parse_args()
+    if args.no_feature_cache:
+        args.feature_cache = None
     defaults = DEFAULTS[args.stage]
     args.epochs = args.epochs if args.epochs is not None else defaults[0]
     args.encoder_lr = args.encoder_lr if args.encoder_lr is not None else defaults[1]
@@ -252,6 +256,7 @@ def main():
     if len(model.backbone.encoder.layers) != 24 or not all(p.requires_grad for layer in model.backbone.encoder.layers for p in layer.parameters()):
         raise RuntimeError('All 24 pretrained encoder layers must participate in every stage')
     opt = build_optimizer(model, args.encoder_lr, args.head_lr, args.weight_decay)
+    best_bytes, full_bytes = protect_checkpoint_space(out, model, args.feature_cache)
     device_weights = bundle.weights.to(device)
     schedule = Schedule(opt, round(bundle.steps*args.warmup_epochs), patience=args.patience)
     config = vars(args).copy()
@@ -331,6 +336,7 @@ def main():
         print_validation(dev)
     with (out/'metrics.jsonl').open('a', encoding='utf-8') as log:
         for epoch in range(start_epoch, args.epochs + 1):
+            require_space(out, checkpoint_headroom(out, best_bytes, full_bytes), 'Before training epoch')
             bundle.begin(epoch)
             meter, loss_total, last_stats = Metrics(device=device, check_finite=False), torch.zeros((), dtype=torch.float64, device=device), {}
             begin = time.perf_counter()
@@ -361,6 +367,11 @@ def main():
             dev_begin = time.perf_counter()
             dev = validate(model, bundle, device, args.eval_microbatch)
             dev_seconds = time.perf_counter() - dev_begin
+            print_validation(dev)
+            # Preserve the completed evaluation even if a later checkpoint write fails.
+            evaluation = {'epoch': epoch, 'steps': global_step, 'train': meter.result(), 'dev': dev,
+                          'checkpoint_saved': False}
+            atomic_json(evaluation, out/f'epoch_{epoch:03d}_evaluation.json')
             key = (dev['robust_f1'], -dev['robust_ce'])
             improved = key > best_key
             save_begin = time.perf_counter()
@@ -377,6 +388,8 @@ def main():
                    'used_lr': {g['name']: g['lr'] for g in opt.param_groups}}
             save_begin = time.perf_counter()
             atomic_save(snapshot(epoch, dev, 'training'), out/'last.pt')
+            evaluation['checkpoint_saved'] = True
+            atomic_json(evaluation, out/f'epoch_{epoch:03d}_evaluation.json')
             row['timing'] = {'train_seconds': train_seconds, 'data_wait_host_seconds': data_wait,
                              'dev_seconds': dev_seconds, 'best_save_seconds': best_save_seconds,
                              'last_save_seconds': time.perf_counter() - save_begin,
@@ -384,7 +397,6 @@ def main():
             row['seconds'] = time.perf_counter() - begin
             log.write(json.dumps(row) + '\n')
             log.flush()
-            print_validation(dev)
             print(f'epoch={epoch} best={improved} plateau_reduced={reduced}; Adam history retained; next_scale={schedule.scale}', flush=True)
             if stale >= args.earlystop and global_step > schedule.warmup_steps:
                 print('Early stopping: no robust Dev improvement for configured patience')

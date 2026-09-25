@@ -9,6 +9,7 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 from . import SCHEMA
+from .storage import MIB, require_space, storage_bytes
 
 
 def class_weights(ids, labels):
@@ -231,6 +232,7 @@ def restore_rng(state):
 
 def atomic_save(value, path):
     path = Path(path)
+    require_space(path.parent, storage_bytes(value) + 128*MIB, 'Checkpoint write')
     tmp = path.with_name(path.name + '.tmp')
     try:
         torch.save(value, tmp)
