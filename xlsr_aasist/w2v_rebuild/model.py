@@ -142,11 +142,52 @@ class Detector(nn.Module):
         super().__init__()
         self.backbone = backbone
         self.head = AASISTSampleNorm(backbone.config.hidden_size)
+        # A plain attribute keeps legacy checkpoint keys and evaluation unchanged.
+        self.trainable_encoder_layers = None
         # Disable only the unused SpecAugment placeholder, not the feature projection/layers.
         if hasattr(backbone, 'masked_spec_embed'):
             backbone.masked_spec_embed.requires_grad_(False)
         if any(isinstance(m, nn.modules.batchnorm._BatchNorm) for m in self.modules()):
             raise RuntimeError('Unexpected BatchNorm: sample-independent microbatching would be invalid')
+
+    def configure_trainable_layers(self, count):
+        """Train the final ``count`` encoder blocks and the complete AASIST head.
+
+        A partial backbone keeps its frozen prefix deterministic. Autograd itself
+        omits the prefix graph when its inputs and parameters require no gradient;
+        the HF forward and checkpoint implementation remain untouched. Configure
+        this before constructing an optimizer (or rebuild the optimizer afterward).
+        """
+        layers = self.backbone.encoder.layers
+        if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= len(layers):
+            raise ValueError(f'trainable encoder layers must be an integer in [0, {len(layers)}]')
+        self.trainable_encoder_layers = count
+        self.backbone.requires_grad_(count == len(layers))
+        if 0 < count < len(layers):
+            for layer in layers[-count:]:
+                layer.requires_grad_(True)
+        if hasattr(self.backbone, 'masked_spec_embed'):
+            self.backbone.masked_spec_embed.requires_grad_(False)
+        for p in self.backbone.parameters():
+            if not p.requires_grad:
+                p.grad = None
+        self.head.requires_grad_(True)
+        return self.train(self.training)
+
+    def train(self, mode=True):
+        super().train(mode)
+        count = self.trainable_encoder_layers
+        if count is not None and count < len(self.backbone.encoder.layers):
+            # Keep projection, top-level encoder dropout and frozen blocks in eval.
+            self.backbone.eval()
+            if mode and count:
+                # HF enables gradient checkpointing using the encoder's mode.
+                # Set container flags directly so frozen children stay in eval.
+                self.backbone.training = True
+                self.backbone.encoder.training = True
+                for layer in self.backbone.encoder.layers[-count:]:
+                    layer.train(True)
+        return self
 
     @classmethod
     def load(cls, model_dir, config_dict=None, checkpointing=True):

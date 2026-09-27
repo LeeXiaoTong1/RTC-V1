@@ -54,7 +54,8 @@ def prediction_consistency(reference, processed, labels, confidence=.8):
 
 
 def objective(logits, features, labels, n, r, s, weights, real_weight, noisy_weight, beta=.3,
-              consistency_weight=0., consistency_confidence=.8, tensor_stats=False, check_labels=True):
+              consistency_weight=0., consistency_confidence=.8, tensor_stats=False, check_labels=True,
+              real_ce_weight=1.):
     if logits.shape != (n + 2*r + 2*s, 2) or labels.shape != (len(logits),):
         raise ValueError('Logical batch layout mismatch')
     if n <= 0 or (s and not r) or not 0 <= beta <= 1:
@@ -63,18 +64,30 @@ def objective(logits, features, labels, n, r, s, weights, real_weight, noisy_wei
         raise FloatingPointError('Non-finite model output')
     if not math.isfinite(consistency_weight) or consistency_weight < 0:
         raise ValueError('Consistency weight must be finite and nonnegative')
+    if not math.isfinite(real_ce_weight) or real_ce_weight <= 0:
+        raise ValueError('Real CE cost must be positive and finite')
     ce = F.cross_entropy(logits.float(), labels, reduction='none')
+    # An explicit error cost, separate from inverse-frequency correction.
+    # Pair groups are already balanced: NEVER apply ordinary frequency weights there.
+    cost = torch.where(labels == 1, real_ce_weight, 1.)
     w = weights.to(logits.device)[labels[:n]]
+    if real_ce_weight != 1.:
+        w = w * cost[:n]
+    def pair_mean(start, stop):
+        if real_ce_weight == 1.:
+            return ce[start:stop].mean()  # Keep the legacy arithmetic unchanged.
+        c = cost[start:stop]
+        return (ce[start:stop] * c).sum() / c.sum()
     parts = {'ordinary': (ce[:n] * w).sum() / w.sum()}
     if r:
         if check_labels and not torch.equal(labels[n:n+r], labels[n+r:n+2*r]):
             raise ValueError('Real-pair labels do not match')
-        parts['real_pair'] = ce[n:n+2*r].mean()
+        parts['real_pair'] = pair_mean(n, n+2*r)
     if s:
         a = n + 2*r
         if check_labels and not torch.equal(labels[a:a+s], labels[a+s:]):
             raise ValueError('Noisy-pair labels do not match')
-        parts['noisy_reference'], parts['noisy_processed'] = ce[a:a+s].mean(), ce[a+s:].mean()
+        parts['noisy_reference'], parts['noisy_processed'] = pair_mean(a, a+s), pair_mean(a+s, len(ce))
         other = n + 2*r + s
         coeff = {'ordinary': (1-beta)*n/other, 'real_pair': (1-beta)*2*r/other,
                  'noisy_reference': (1-beta)*s/other, 'noisy_processed': beta}
@@ -181,6 +194,12 @@ class Schedule:
         self.opt, self.warmup_steps, self.patience = optimizer, int(warmup_steps), patience
         self.factor, self.floor, self.scale, self.best, self.bad, self.cooldown = factor, floor, 1., math.inf, 0, 0
 
+    def anchor(self, value):
+        """A measured starting checkpoint is a real plateau baseline, not infinity."""
+        if not math.isfinite(value):
+            raise FloatingPointError('Non-finite scheduler baseline')
+        self.best, self.bad, self.cooldown = float(value), 0, 0
+
     def before_step(self, step):
         warm = min(1., (step+1)/max(1, self.warmup_steps))
         warm = .1 + .9*warm if self.warmup_steps else 1.
@@ -272,7 +291,12 @@ def gradient_audit(model):
     for key, m in modules.items():
         params = [(name, p) for name, p in m.named_parameters() if p.requires_grad and p.ndim >= 2]
         if not params:
-            raise RuntimeError(f'No trainable matrix in {key}')
+            if any(p.requires_grad for p in m.parameters()):
+                raise RuntimeError(f'No trainable matrix in {key}')
+            if any(p.grad is not None for p in m.parameters()):
+                raise RuntimeError(f'Frozen module unexpectedly has gradients: {key}')
+            records[key] = {'frozen': True}
+            continue
         name, p = params[0]
         if p.grad is None or not torch.isfinite(p.grad).all() or not bool(p.grad.abs().max() > 0):
             raise RuntimeError(f'Broken/non-finite/zero gradient in {key}.{name}')
