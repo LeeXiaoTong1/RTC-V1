@@ -26,6 +26,7 @@ def refine_config(config):
     result = dict(config)
     result.update(ordinary_sampling='legacy', noisy_bank_policy='cycle',
                   extra_train_noisy_cache=[], consistency_weight=0.,
+                  adaptation_control=False, noisy_extra_fraction=0., noisy_mix_warmup_epochs=1.,
                   trainable_encoder_layers=4, real_ce_weight=1.25, guard_baseline=True,
                   encoder_lr=1e-7, head_lr=2e-6, warmup_epochs=.25,
                   epochs=3, patience=1, earlystop=2,

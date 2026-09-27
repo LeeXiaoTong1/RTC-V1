@@ -49,7 +49,7 @@ def checkpoint_sizes(model):
     return weights + 64*MIB, weights + moments + 128*MIB
 
 
-def checkpoint_headroom(out, best_bytes, full_bytes):
+def checkpoint_headroom(out, best_bytes, full_bytes, extra_weight_files=()):
     out = Path(out)
     # Keep both the live last.pt and space for its next atomic replacement.
     required = full_bytes + GIB
@@ -57,6 +57,7 @@ def checkpoint_headroom(out, best_bytes, full_bytes):
         required += full_bytes
     if not (out/'best_model.pt').is_file():
         required += best_bytes
+    required += sum(best_bytes for name in extra_weight_files if not (out/name).is_file())
     return required
 
 
@@ -70,9 +71,9 @@ def require_space(path, required, purpose):
     return free
 
 
-def protect_checkpoint_space(out, model, feature_cache=None):
+def protect_checkpoint_space(out, model, feature_cache=None, extra_weight_files=()):
     best, full = checkpoint_sizes(model)
-    required = checkpoint_headroom(out, best, full)
+    required = checkpoint_headroom(out, best, full, extra_weight_files)
     free = require_space(out, required, 'Checkpoint space check')
     if feature_cache:
         # Cache files on another volume cannot consume the checkpoint budget.

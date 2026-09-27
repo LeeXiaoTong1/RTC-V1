@@ -94,6 +94,21 @@ class AudioIntegration(unittest.TestCase):
                 expected = next(iter(uncached.dev['seen']))
                 torch.testing.assert_close(dev['features'], expected['features'], rtol=0, atol=0)
                 self.assertEqual(bundle.fingerprints, uncached.fingerprints)
+                # Scheduled low-fraction selection uses the same real audio
+                # banks and existing DataLoader objects; no collator changes.
+                args.noisy_bank_policy = 'cycle'
+                scheduled = DataBundle(args)
+                scheduled.rotation.configure_mixture(.2, 0)
+                for epoch in range(1, 6):
+                    scheduled.begin(epoch)
+                    noisy_batch = next(iter(scheduled.train[2]))
+                    self.assertEqual(noisy_batch['labels'].bincount().tolist(), [4, 4])
+                    selected = list(scheduled.rotation)[0]
+                    self.assertEqual({ticket[1] for ticket in selected}, {1 if epoch == 5 else 0})
+                    raw_rows = [scheduled.train[2].dataset[ticket] for ticket in selected]
+                    reference = scheduled.train[2].collate_fn(raw_rows)
+                    torch.testing.assert_close(noisy_batch['features'], reference['features'], rtol=0, atol=0)
+                    scheduled.end(scheduled.steps)
 
 
 if __name__ == '__main__': unittest.main(verbosity=2)

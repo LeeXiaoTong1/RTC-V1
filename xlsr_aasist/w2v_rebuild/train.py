@@ -14,7 +14,8 @@ from . import SCHEMA
 from .model import Detector, forward_chunks
 from .data import DataBundle, combine_batches
 from .storage import checkpoint_headroom, protect_checkpoint_space, require_space
-from .selection import candidate_decision, guard_metrics
+from .selection import candidate_decision, guard_metrics, noisy_metrics
+from .control import AdaptationControl
 from .core import (Metrics, Schedule, objective, build_optimizer, rng_state, restore_rng,
                    atomic_save, atomic_json, sha256, load_checkpoint, gradient_audit, finish_audit, materialize_stats)
 
@@ -35,6 +36,11 @@ def parser():
                    help='New Stage3 adaptation only: train the last N layers; freeze the prefix and its dropout')
     p.add_argument('--real_ce_weight', type=float, default=1., help='Additional real-class error cost; default preserves legacy CE')
     p.add_argument('--guard_baseline', action='store_true', help='Keep the starting best unless real recall and condition F1 floors pass')
+    p.add_argument('--adaptation_control', action='store_true',
+                   help='Separate score candidate from targeted best; early stop on actual progress')
+    p.add_argument('--noisy_extra_fraction', type=float, default=0.,
+                   help='Scheduled fraction of noisy pair batches drawn from extra banks; 0 preserves old rotation')
+    p.add_argument('--noisy_mix_warmup_epochs', type=float, default=1.)
     p.add_argument('--ordinary_sampling', choices=['legacy', 'balanced'], default='legacy')
     p.add_argument('--noisy_bank_policy', choices=['cycle', 'mixed'], default='cycle')
     p.add_argument('--consistency_weight', type=float, default=0.)
@@ -130,6 +136,8 @@ def print_validation(dev):
     print('Online: recall[fake,real]=', dev['online']['recall'], 'confusion=', dev['online']['confusion'],
           'predict_fake_fraction=', dev['online']['fake_prediction_fraction'], flush=True)
     for kind in ('seen', 'heldout'):
+        print(f"{kind}: mean_recall[fake,real]=" + str([
+            round(100*sum(b['recall'][c] for b in dev[kind]['bands'])/4, 3) for c in (0, 1)]), flush=True)
         print(f"{kind}: real_recall_by_band=" + str([round(100*b['recall'][1], 3) for b in dev[kind]['bands']]), flush=True)
 
 
@@ -215,9 +223,15 @@ def main():
         raise ValueError('trainable_encoder_layers must be between 0 and 24')
     if not math.isfinite(args.real_ce_weight) or args.real_ce_weight <= 0:
         raise ValueError('real_ce_weight must be positive and finite')
-    if (args.trainable_encoder_layers != 24 or args.guard_baseline) and not (
+    if (args.trainable_encoder_layers != 24 or args.guard_baseline or args.adaptation_control) and not (
             args.stage == 3 and (args.finetune_from or args.resume)):
         raise ValueError('Partial freezing/baseline guard require Stage3 adaptation or its exact resume')
+    if (not math.isfinite(args.noisy_extra_fraction) or not 0 <= args.noisy_extra_fraction <= 1
+            or not math.isfinite(args.noisy_mix_warmup_epochs) or args.noisy_mix_warmup_epochs < 0):
+        raise ValueError('Invalid noisy mixture settings')
+    if args.noisy_extra_fraction and (args.stage != 3 or not args.extra_train_noisy_cache
+                                     or args.noisy_bank_policy != 'cycle'):
+        raise ValueError('Scheduled noisy mixing needs Stage3, extra caches and cycle policy')
     if (not math.isfinite(args.consistency_weight) or args.consistency_weight < 0
             or not .5 <= args.consistency_confidence <= 1 or args.noise_cache_mb < 0 or args.profile_steps < 0):
         raise ValueError('Invalid consistency/cache/profiling settings')
@@ -247,6 +261,8 @@ def main():
     os.environ['RTC_NOISE_CACHE_MB'] = str(args.noise_cache_mb)
     print('Loading protocols and checking cached audio; this may take several minutes.', flush=True)
     bundle = DataBundle(args)
+    if args.noisy_extra_fraction:
+        bundle.rotation.configure_mixture(args.noisy_extra_fraction, round(bundle.steps*args.noisy_mix_warmup_epochs))
     if args.check_data:
         print('PASS: V2 protocols, pair manifests, noise split and all cache roles checked; no model loaded')
         return
@@ -274,7 +290,8 @@ def main():
         raise RuntimeError('Expected the original 24-layer encoder')
     model.configure_trainable_layers(args.trainable_encoder_layers)
     opt = build_optimizer(model, args.encoder_lr, args.head_lr, args.weight_decay)
-    best_bytes, full_bytes = protect_checkpoint_space(out, model, args.feature_cache)
+    extra_weight_files = ('candidate_best.pt',) if args.adaptation_control else ()
+    best_bytes, full_bytes = protect_checkpoint_space(out, model, args.feature_cache, extra_weight_files)
     device_weights = bundle.weights.to(device)
     schedule = Schedule(opt, round(bundle.steps*args.warmup_epochs), patience=args.patience)
     config = vars(args).copy()
@@ -287,7 +304,7 @@ def main():
                   noise_environment={k: os.environ.get(k, v) for k, v in
                                      [('RTC_B_NOISE_PROB', '0.5'), ('RTC_B_SNR_MIN', '10'), ('RTC_B_SNR_MAX', '30')]})
     start_epoch, global_step, best_key, stale = 1, 0, (-math.inf, -math.inf), 0
-    baseline_dev, best_epoch = None, 0
+    baseline_dev, best_epoch, control = None, 0, None
     if args.resume:
         for name in ('stage', 'epochs', 'microbatch', 'encoder_lr', 'head_lr', 'weight_decay', 'seed', 'amp',
                      'warmup_epochs', 'pair_warmup_epochs', 'grad_clip', 'patience', 'earlystop', 'no_checkpointing', 'torch_version',
@@ -297,10 +314,19 @@ def main():
         for name in ('trainable_encoder_layers', 'real_ce_weight', 'guard_baseline'):
             if ckpt['config'].get(name) != config[name]:
                 raise ValueError(f'Resume setting changed: {name}')
+        for name, default in (('adaptation_control', False), ('noisy_extra_fraction', 0.),
+                              ('noisy_mix_warmup_epochs', 1.)):
+            if ckpt['config'].get(name, default) != config[name]:
+                raise ValueError(f'Resume setting changed: {name}')
         baseline_dev = ckpt.get('baseline_dev')
         best_epoch = ckpt.get('best_epoch', 0)
-        if args.guard_baseline and baseline_dev is None:
+        if (args.guard_baseline or args.adaptation_control) and baseline_dev is None:
             raise ValueError('Guarded resume requires the original baseline metrics')
+        if args.adaptation_control:
+            control = AdaptationControl(baseline_dev)
+            control.load_state_dict(ckpt['adaptation_control_state'])
+            if control.candidate_epoch and not (out/'candidate_best.pt').is_file():
+                raise FileNotFoundError('Candidate checkpoint missing; restore it before exact resume')
         if Path(args.resume).resolve().parent != out:
             raise ValueError('Resume into the SAME experiment directory so best_model.pt remains available')
         opt.load_state_dict(ckpt['optimizer'])
@@ -319,6 +345,9 @@ def main():
           f'feature projection trainable={args.trainable_encoder_layers == 24}; no BatchNorm; '
           f'logical=40 micro={args.microbatch}; encoder={args.encoder_lr:.2e} head={args.head_lr:.2e}', flush=True)
     print(f'Real CE cost={args.real_ce_weight}; baseline guard={args.guard_baseline}', flush=True)
+    if args.adaptation_control:
+        print('Selection: independent score candidate; best requires higher RobustF1 and no decrease '
+              'in Online real recall, mean noisy real recall and mean noisy F1. Offline is diagnostic.', flush=True)
 
     def snapshot(epoch, dev, kind):
         state = {'schema': SCHEMA, 'kind': kind, 'stage': args.stage, 'epoch': epoch,
@@ -328,6 +357,8 @@ def main():
             state.update(optimizer=opt.state_dict(), schedule=schedule.state_dict(), rng=rng_state(),
                          sampler=bundle.sampler_state(), global_step=global_step, best_key=best_key, stale=stale,
                          baseline_dev=baseline_dev, best_epoch=best_epoch)
+            if control is not None:
+                state['adaptation_control_state'] = control.state_dict()
         return state
 
     if args.preflight:
@@ -364,15 +395,24 @@ def main():
         baseline_dev = dev
         schedule.anchor(dev['robust_ce'])
         best_key = (dev['robust_f1'], -dev['robust_ce'])
+        if args.adaptation_control:
+            control = AdaptationControl(dev)
         atomic_save(snapshot(0, dev, 'weights'), out/'best_model.pt')
         atomic_json(dev, out/'baseline_dev.json')
         print_validation(dev)
-        if args.guard_baseline:
+        if args.adaptation_control:
+            print('Target floors:', {'online_real_recall': baseline_dev['online']['recall'][1],
+                                     **noisy_metrics(baseline_dev)}, flush=True)
+        elif args.guard_baseline:
             print('Baseline floors:', guard_metrics(baseline_dev), flush=True)
     with (out/'metrics.jsonl').open('a', encoding='utf-8') as log:
         for epoch in range(start_epoch, args.epochs + 1):
-            require_space(out, checkpoint_headroom(out, best_bytes, full_bytes), 'Before training epoch')
+            require_space(out, checkpoint_headroom(out, best_bytes, full_bytes, extra_weight_files), 'Before training epoch')
             bundle.begin(epoch)
+            mixture_report = None
+            if args.noisy_extra_fraction:
+                mixture_report = bundle.rotation.plan_summary()
+                print('Noisy mixture: '+json.dumps(mixture_report), flush=True)
             meter, loss_total, last_stats = Metrics(device=device, check_finite=False), torch.zeros((), dtype=torch.float64, device=device), {}
             begin = time.perf_counter()
             ready, data_wait, profiles = begin, 0., []
@@ -413,7 +453,9 @@ def main():
                           'checkpoint_saved': False}
             atomic_json(evaluation, out/f'epoch_{epoch:03d}_evaluation.json')
             key = (dev['robust_f1'], -dev['robust_ce'])
-            improved, selection = candidate_decision(dev, best_key, baseline_dev if args.guard_baseline else None)
+            improved, selection = candidate_decision(
+                dev, best_key, baseline_dev if args.guard_baseline or args.adaptation_control else None,
+                policy='targeted' if args.adaptation_control else 'strict')
             save_begin = time.perf_counter()
             if improved:
                 best_key, stale, best_epoch = key, 0, epoch
@@ -422,12 +464,26 @@ def main():
                 stale += 1
             best_save_seconds = time.perf_counter() - save_begin
             reduced = schedule.validate(dev['robust_ce'], global_step)
+            candidate_saved, progress = False, None
+            candidate_save_seconds = 0.
+            if control is not None:
+                candidate_saved, progress = control.observe(dev, epoch, reduced)
+                stale = control.stale
+                if candidate_saved:
+                    save_begin = time.perf_counter()
+                    atomic_save(snapshot(epoch, dev, 'weights'), out/'candidate_best.pt')
+                    candidate_save_seconds = time.perf_counter() - save_begin
             row = {'epoch': epoch, 'steps': global_step, 'train': meter.result(),
                    'mean_train_loss': float(loss_total / done), 'last_batch': materialize_stats(last_stats), 'dev': dev,
                    'mean_batch': materialize_stats({name: value/done for name, value in totals.items()}),
                    'selection': selection,
                    'best': improved, 'lr_scale_next': schedule.scale, 'seconds': time.perf_counter()-begin,
                    'used_lr': {g['name']: g['lr'] for g in opt.param_groups}}
+            if control is not None:
+                row.update(candidate_saved=candidate_saved, candidate_epoch=control.candidate_epoch,
+                           candidate_key=control.candidate_key, progress=progress)
+            if mixture_report is not None:
+                row['noisy_mixture'] = mixture_report
             save_begin = time.perf_counter()
             atomic_save(snapshot(epoch, dev, 'training'), out/'last.pt')
             evaluation['checkpoint_saved'] = True
@@ -436,21 +492,37 @@ def main():
                              'dev_seconds': dev_seconds, 'best_save_seconds': best_save_seconds,
                              'last_save_seconds': time.perf_counter() - save_begin,
                              'profile_steps_ms': profiles}
+            row['timing']['candidate_save_seconds'] = candidate_save_seconds
             row['seconds'] = time.perf_counter() - begin
             log.write(json.dumps(row) + '\n')
             log.flush()
             print(f'epoch={epoch} best={improved} plateau_reduced={reduced}; Adam history retained; next_scale={schedule.scale}', flush=True)
-            if args.guard_baseline and not improved:
+            if (args.guard_baseline or args.adaptation_control) and not improved:
                 print('Best kept; rejected candidate:', ', '.join(selection['reasons']), flush=True)
-            if stale >= args.earlystop and global_step > schedule.warmup_steps:
-                print('Early stopping: no robust Dev improvement for configured patience')
+            if control is not None:
+                print(f'Candidate: saved={candidate_saved}, best_epoch={control.candidate_epoch}; '
+                      f'progress={progress}; promotion_warnings={selection["warnings"]}', flush=True)
+                if reduced:
+                    print('Reduced LR will be used next epoch.' if epoch < args.epochs else
+                          'Epoch budget exhausted; the scheduled reduced LR was not used.', flush=True)
+            stop = control.should_stop(epoch, args.earlystop) if control is not None else stale >= args.earlystop
+            if stop and global_step > schedule.warmup_steps:
+                print('Early stopping: no score, noisy F1 or CE progress after the reduced-rate opportunity.'
+                      if control is not None else 'Early stopping: no candidate passed all selection conditions')
                 break
-    atomic_json({'stage': args.stage, 'best_key': best_key, 'best_model': str(out/'best_model.pt'),
-                 'best_epoch': best_epoch,
-                 'status': 'improved' if best_epoch else 'no_eligible_improvement'}, out/'completed.json')
+    completed = {'stage': args.stage, 'best_key': best_key, 'best_model': str(out/'best_model.pt'),
+                 'best_epoch': best_epoch, 'status': 'improved' if best_epoch else 'no_eligible_improvement'}
+    if control is not None:
+        completed.update(candidate_epoch=control.candidate_epoch, candidate_key=control.candidate_key,
+                         candidate_model=str(out/'candidate_best.pt') if control.candidate_epoch else None)
+        if not best_epoch and control.candidate_epoch:
+            completed['status'] = 'candidate_only'
+    atomic_json(completed, out/'completed.json')
     if best_epoch == 0:
         print('No eligible improvement: best_model.pt still contains the starting checkpoint weights.', flush=True)
     print('Best model:', out/'best_model.pt')
+    if control is not None and control.candidate_epoch:
+        print('Score candidate (review real/noisy tradeoffs):', out/'candidate_best.pt', flush=True)
 
 
 if __name__ == '__main__':
