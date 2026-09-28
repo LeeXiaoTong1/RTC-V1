@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import random
+import re
 import time
 import numpy as np
 import torch
@@ -16,6 +17,7 @@ from .data import DataBundle, combine_batches
 from .storage import checkpoint_headroom, protect_checkpoint_space, require_space
 from .selection import candidate_decision, guard_metrics, noisy_metrics
 from .control import AdaptationControl
+from .group_metrics import GroupMetrics, DevGroupRecorder
 from .core import (Metrics, Schedule, objective, build_optimizer, rng_state, restore_rng,
                    atomic_save, atomic_json, sha256, load_checkpoint, gradient_audit, finish_audit, materialize_stats)
 
@@ -35,6 +37,9 @@ def parser():
     p.add_argument('--trainable_encoder_layers', type=int, default=24,
                    help='New Stage3 adaptation only: train the last N layers; freeze the prefix and its dropout')
     p.add_argument('--real_ce_weight', type=float, default=1., help='Additional real-class error cost; default preserves legacy CE')
+    p.add_argument('--language_weighting', action='store_true', help='Class-conditional en/zh CE budgets; complete ordinary traversal')
+    p.add_argument('--en_real_budget', type=float, default=.35)
+    p.add_argument('--en_fake_budget', type=float, default=.40)
     p.add_argument('--guard_baseline', action='store_true', help='Keep the starting best unless real recall and condition F1 floors pass')
     p.add_argument('--adaptation_control', action='store_true',
                    help='Separate score candidate from targeted best; early stop on actual progress')
@@ -87,8 +92,37 @@ def source_hashes():
     return {str(p.relative_to(root)): sha256(p) for p in sorted(paths)}
 
 
+def archive_uncommitted_diagnostics(out, start_epoch):
+    """Keep a failed attempt's reports before replaying its uncommitted epoch."""
+    paths = []
+    for path in out.iterdir():
+        match = re.fullmatch(r'epoch_(\d+)_(scores\.jsonl|evaluation\.json)', path.name)
+        if match and int(match.group(1)) >= start_epoch:
+            if path.is_symlink() or not path.is_file():
+                raise ValueError('Unexpected uncommitted diagnostic path: '+str(path))
+            paths.append(path)
+    if paths:
+        folder = out/'interrupted_diagnostics'
+        if folder.is_symlink():
+            raise ValueError('Interrupted diagnostic directory must not be a symlink')
+        destination = folder/str(time.time_ns())
+        destination.mkdir(parents=True, exist_ok=False)
+        for path in paths:
+            path.rename(destination/path.name)
+        print('Preserved uncommitted evaluation reports: '+str(destination), flush=True)
+
+
 @torch.no_grad()
-def validate(model, bundle, device, microbatch):
+def validate(model, bundle, device, microbatch, score_path=None):
+    if score_path is None:
+        return _validate(model, bundle, device, microbatch)
+    with DevGroupRecorder(score_path) as recorder:
+        report = _validate(model, bundle, device, microbatch, recorder)
+        report['language_groups'] = recorder.result()
+    return report
+
+
+def _validate(model, bundle, device, microbatch, recorder=None):
     model.eval()
     begin = time.perf_counter()
     times = {}
@@ -104,6 +138,9 @@ def validate(model, bundle, device, microbatch):
         for kind in ('online', 'offline'):
             select = torch.tensor([kind in Path(x).parts for x in b['ids']])
             meters[kind].update(z[select], y[select])
+            if recorder is not None:
+                ids = [source for source, chosen in zip(b['ids'], select.tolist()) if chosen]
+                recorder.update(kind, z[select], y[select], ids)
     report = {k: m.result() for k, m in meters.items()}
     times['clean'] = time.perf_counter() - begin
     for kind in ('seen', 'heldout'):
@@ -116,6 +153,8 @@ def validate(model, bundle, device, microbatch):
                                       b['mask'].to(device, non_blocking=True), microbatch,
                                       pad_last=True, validated_mask=True)
             z, y, labels = logits.cpu(), b['labels'], torch.tensor(b['bands'])
+            if recorder is not None:
+                recorder.update(kind, z, y, b['source_ids'], b['bands'])
             for i, m in enumerate(bands):
                 pick = labels == i
                 m.update(z[pick], y[pick])
@@ -156,6 +195,20 @@ def train_step(model, opt, schedule, b, layout, weights, args, stage_step, pair_
         if pairs and (not torch.equal(y[offset:offset+pairs], y[offset+pairs:offset+2*pairs])
                       or y[offset:offset+pairs].unique().numel() != 2):
             raise ValueError('Each pair group needs matching labels and both classes')
+    language_weights = None
+    if getattr(args, 'language_weighting', False):
+        if 'languages' not in b or 'language_weights' not in b:
+            raise ValueError('Language-weighted training requires source metadata')
+        languages, language_weights = b['languages'], b['language_weights']
+        if (languages.device.type != 'cpu' or language_weights.device.type != 'cpu'
+                or languages.shape != y.shape or language_weights.shape != y.shape
+                or not bool(((languages == 0) | (languages == 1)).all())
+                or not bool((torch.isfinite(language_weights) & (language_weights > 0)).all())):
+            raise ValueError('Invalid CPU language metadata')
+        for offset, pairs in ((n, r), (n + 2*r, s)):
+            if pairs and any(not torch.equal(v[offset:offset+pairs], v[offset+pairs:offset+2*pairs])
+                             for v in (languages, language_weights)):
+                raise ValueError('Paired language metadata differs between views')
     schedule.before_step(stage_step)
     opt.zero_grad(set_to_none=True)
     device = torch.device(args.device)
@@ -178,7 +231,8 @@ def train_step(model, opt, schedule, b, layout, weights, args, stage_step, pair_
                             consistency_weight=cw,
                             consistency_confidence=getattr(args, 'consistency_confidence', .8),
                             tensor_stats=True, check_labels=False,
-                            real_ce_weight=getattr(args, 'real_ce_weight', 1.))
+                            real_ce_weight=getattr(args, 'real_ce_weight', 1.),
+                            language_weights=language_weights.to(device, non_blocking=True) if language_weights is not None else None)
     if not torch.isfinite(loss):
         raise FloatingPointError('Non-finite loss: stop instead of silently accepting corrupt updates')
     if events:
@@ -223,6 +277,11 @@ def main():
         raise ValueError('trainable_encoder_layers must be between 0 and 24')
     if not math.isfinite(args.real_ce_weight) or args.real_ce_weight <= 0:
         raise ValueError('real_ce_weight must be positive and finite')
+    if any(not math.isfinite(q) or not 0 < q < 1 for q in (args.en_real_budget, args.en_fake_budget)):
+        raise ValueError('English class-conditional budgets must lie strictly between 0 and 1')
+    if args.language_weighting and (args.stage != 3 or not (args.finetune_from or args.resume or args.check_data)
+                                   or args.ordinary_sampling != 'legacy'):
+        raise ValueError('Language weighting requires Stage3 adaptation and complete ordinary traversal')
     if (args.trainable_encoder_layers != 24 or args.guard_baseline or args.adaptation_control) and not (
             args.stage == 3 and (args.finetune_from or args.resume)):
         raise ValueError('Partial freezing/baseline guard require Stage3 adaptation or its exact resume')
@@ -303,6 +362,8 @@ def main():
                   adaptation=bool(args.finetune_from), baseline_path=args.finetune_from,
                   noise_environment={k: os.environ.get(k, v) for k, v in
                                      [('RTC_B_NOISE_PROB', '0.5'), ('RTC_B_SNR_MIN', '10'), ('RTC_B_SNR_MAX', '30')]})
+    if args.language_weighting:
+        config['language_budgets'] = bundle.language_budgets
     start_epoch, global_step, best_key, stale = 1, 0, (-math.inf, -math.inf), 0
     baseline_dev, best_epoch, control = None, 0, None
     if args.resume:
@@ -315,9 +376,12 @@ def main():
             if ckpt['config'].get(name) != config[name]:
                 raise ValueError(f'Resume setting changed: {name}')
         for name, default in (('adaptation_control', False), ('noisy_extra_fraction', 0.),
-                              ('noisy_mix_warmup_epochs', 1.)):
+                              ('noisy_mix_warmup_epochs', 1.), ('language_weighting', False),
+                              ('en_real_budget', .35), ('en_fake_budget', .40)):
             if ckpt['config'].get(name, default) != config[name]:
                 raise ValueError(f'Resume setting changed: {name}')
+        if args.language_weighting and ckpt['config'].get('language_budgets') != config['language_budgets']:
+            raise ValueError('Language source pools or coefficients changed on resume')
         baseline_dev = ckpt.get('baseline_dev')
         best_epoch = ckpt.get('best_epoch', 0)
         if (args.guard_baseline or args.adaptation_control) and baseline_dev is None:
@@ -339,8 +403,12 @@ def main():
             config[key] = ckpt['config'].get(key)
     del ckpt
     out.mkdir(parents=True, exist_ok=True)
+    if args.resume and args.language_weighting:
+        archive_uncommitted_diagnostics(out, start_epoch)
     if not args.resume:
         atomic_json(config, out/'config.json') if not args.preflight else None
+    if args.language_weighting and not args.preflight:
+        atomic_json(bundle.language_budgets, out/'language_budget.json')
     print(f'REBUILD Stage {args.stage}: last {args.trainable_encoder_layers}/24 encoder layers trainable; '
           f'feature projection trainable={args.trainable_encoder_layers == 24}; no BatchNorm; '
           f'logical=40 micro={args.microbatch}; encoder={args.encoder_lr:.2e} head={args.head_lr:.2e}', flush=True)
@@ -391,7 +459,8 @@ def main():
 
     if not args.resume and args.stage > 1:
         print('Evaluating the starting checkpoint on fixed Dev conditions before any update.', flush=True)
-        dev = validate(model, bundle, device, args.eval_microbatch)
+        dev = (validate(model, bundle, device, args.eval_microbatch, out/'baseline_scores.jsonl')
+               if args.language_weighting else validate(model, bundle, device, args.eval_microbatch))
         baseline_dev = dev
         schedule.anchor(dev['robust_ce'])
         best_key = (dev['robust_f1'], -dev['robust_ce'])
@@ -414,6 +483,9 @@ def main():
                 mixture_report = bundle.rotation.plan_summary()
                 print('Noisy mixture: '+json.dumps(mixture_report), flush=True)
             meter, loss_total, last_stats = Metrics(device=device, check_finite=False), torch.zeros((), dtype=torch.float64, device=device), {}
+            group_meters = ({name: GroupMetrics(device=device) for name in
+                             ('all', 'ordinary', 'rtc_pair', 'noisy_reference', 'noisy_processed')}
+                            if args.language_weighting else {})
             begin = time.perf_counter()
             ready, data_wait, profiles = begin, 0., []
             done = 0
@@ -427,6 +499,13 @@ def main():
                 if do_audit:
                     atomic_json(stats['gradient_audit'], out/f'gradient_epoch_{epoch:03d}.json')
                 meter.update(logits, labels)
+                if group_meters:
+                    languages = b['languages'].to(device, non_blocking=True)
+                    n, r, s = layout
+                    ranges = {'all': (0, len(labels)), 'ordinary': (0, n), 'rtc_pair': (n, n+2*r),
+                              'noisy_reference': (n+2*r, n+2*r+s), 'noisy_processed': (n+2*r+s, len(labels))}
+                    for name, (first, last) in ranges.items():
+                        group_meters[name].update(logits[first:last], labels[first:last], languages[first:last])
                 loss_total += stats['loss'].double()
                 for name in ('ce', 'rtc', 'noisy_pair', 'consistency', 'consistency_accepted',
                              'ce_ordinary', 'ce_real_pair', 'ce_noisy_reference', 'ce_noisy_processed'):
@@ -445,12 +524,17 @@ def main():
                 torch.cuda.synchronize(device)
             train_seconds = time.perf_counter() - begin
             dev_begin = time.perf_counter()
-            dev = validate(model, bundle, device, args.eval_microbatch)
+            dev = (validate(model, bundle, device, args.eval_microbatch, out/f'epoch_{epoch:03d}_scores.jsonl')
+                   if args.language_weighting else validate(model, bundle, device, args.eval_microbatch))
             dev_seconds = time.perf_counter() - dev_begin
             print_validation(dev)
             # Preserve the completed evaluation even if a later checkpoint write fails.
             evaluation = {'epoch': epoch, 'steps': global_step, 'train': meter.result(), 'dev': dev,
                           'checkpoint_saved': False}
+            train_groups = {name: value.result() for name, value in group_meters.items()}
+            if train_groups:
+                evaluation['train_groups'] = train_groups
+                print('Train language groups (augmented online predictions): '+json.dumps(train_groups['all']), flush=True)
             atomic_json(evaluation, out/f'epoch_{epoch:03d}_evaluation.json')
             key = (dev['robust_f1'], -dev['robust_ce'])
             improved, selection = candidate_decision(
@@ -479,6 +563,8 @@ def main():
                    'selection': selection,
                    'best': improved, 'lr_scale_next': schedule.scale, 'seconds': time.perf_counter()-begin,
                    'used_lr': {g['name']: g['lr'] for g in opt.param_groups}}
+            if train_groups:
+                row['train_groups'] = train_groups
             if control is not None:
                 row.update(candidate_saved=candidate_saved, candidate_epoch=control.candidate_epoch,
                            candidate_key=control.candidate_key, progress=progress)

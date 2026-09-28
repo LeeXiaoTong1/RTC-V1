@@ -14,6 +14,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset, RandomSampler
 from .core import class_weights, sha256
 from .sampling import BalancedOrdinarySampler
+from .language import LanguageBudget, language_id
 
 
 class SeededDataset(Dataset):
@@ -45,10 +46,34 @@ class SeededDataset(Dataset):
             torch.set_rng_state(cpu)
 
 
+class SourceTaggedDataset(Dataset):
+    """Attach audited source metadata without changing the inner waveform or RNG."""
+    def __init__(self, inner, ids, labels, budget=None):
+        self.inner, self.ids, self.labels = inner, list(ids), list(labels)
+        if len(self.ids) != len(inner) or len(self.labels) != len(inner):
+            raise ValueError('Source metadata and dataset lengths differ')
+        self.languages = torch.tensor([language_id(x) for x in self.ids], dtype=torch.long)
+        y = torch.tensor(self.labels, dtype=torch.long)
+        if not bool(((y == 0) | (y == 1)).all()):
+            raise ValueError('Invalid source metadata labels')
+        self.coefficients = (budget.coefficients(y, self.languages) if budget is not None
+                             else torch.ones(len(inner))).tolist()
+
+    def __len__(self):
+        return len(self.inner)
+
+    def __getitem__(self, ticket):
+        index = ticket[0] if isinstance(ticket, tuple) else ticket
+        row = self.inner[ticket]
+        return (*row, {'source_id': self.ids[index], 'language': int(self.languages[index]),
+                      'label': self.labels[index], 'language_weight': self.coefficients[index]})
+
+
 class FeatureCollator:
-    def __init__(self, directory, kind='ordinary', cache_root=None):
+    def __init__(self, directory, kind='ordinary', cache_root=None, source_metadata=False):
         self.directory, self.kind, self.extractor = str(directory), kind, None
         self.cache_root, self.cache = cache_root, None
+        self.source_metadata = source_metadata
 
     def __call__(self, rows):
         if self.extractor is None:
@@ -66,6 +91,16 @@ class FeatureCollator:
         else:
             waves, labels = [r[0] for r in rows], [r[1] for r in rows]
             extra = {'ids': [r[2] for r in rows]} if self.kind == 'ordinary' else {'bands': [r[2] for r in rows]}
+        if self.source_metadata:
+            metadata = [r[-1] for r in rows]
+            if any(not isinstance(m, dict) for m in metadata):
+                raise ValueError('Expected tagged source metadata')
+            repeats = 2 if self.kind in ('pair', 'noisy_pair') else 1
+            if [m['label'] for m in metadata] * repeats != labels:
+                raise ValueError('Source metadata labels differ from waveform labels')
+            extra.update(source_ids=[m['source_id'] for m in metadata] * repeats,
+                         languages=torch.tensor([m['language'] for m in metadata] * repeats, dtype=torch.long),
+                         language_weights=torch.tensor([m['language_weight'] for m in metadata] * repeats))
         if any(w.device.type != 'cpu' or w.shape != (64600,) or not torch.isfinite(w).all() for w in waves):
             raise ValueError('Expected finite CPU mono 64600-sample V2 waveforms')
         features, mask = self.cache.transform(waves, self.extract) if self.cache else self.extract(waves)
@@ -102,6 +137,10 @@ class DataBundle:
         from rtc_noisy_v2.cache import load_v2_cache, check_suite, RotatingNoisyDataset
         from rtc_noisy_v2.sampling import RotatingViewBatchSampler
         self.args, self.rotation, self.real_sampler, self.ordinary_sampler = args, None, None, None
+        self.language_weighting = getattr(args, 'language_weighting', False)
+        self.language_budgets = {}
+        if self.language_weighting and args.ordinary_sampling != 'legacy':
+            raise ValueError('Language weighting requires complete ordinary traversal, without resampling')
         self.generators = []
         os.environ['RTC_B_NOISE_MANIFEST'] = str(Path(args.train_noise_manifest).resolve())
         pairs = load_pairs(args.rtc_pairs, args.train_protocol, args.train_data_path)
@@ -115,11 +154,12 @@ class DataBundle:
             raise ValueError('Ordinary noise and Train caches must use the same training manifest')
         ordinary, ids, labels = build_dataset_from_protocol(args.train_protocol, args.train_data_path,
                                                            mode='train', args=args, algo=args.algo)
-        clean, dev_ids, _ = build_dataset_from_protocol(args.dev_protocol, args.dev_data_path, mode='dev', args=args)
+        clean, dev_ids, dev_labels = build_dataset_from_protocol(args.dev_protocol, args.dev_data_path, mode='dev', args=args)
         self.weights, self.counts = class_weights(ids, labels)
         if ordinary.env_noise is None:
             raise ValueError('V2 ordinary MUSAN augmentation is disabled; check RTC_B_* variables')
         self.ordinary = SeededDataset(ordinary, args.seed + 50)
+        tagged_ordinary = self.tag(self.ordinary, ids, [labels[i] for i in ids], 'ordinary')
         n = {1: 40, 2: 32, 3: 24}[args.stage]
         self.n, self.r, self.s = n, (4 if args.stage > 1 else 0), (4 if args.stage == 3 else 0)
         self.steps = math.ceil(len(ordinary)/n)
@@ -127,22 +167,32 @@ class DataBundle:
         if args.ordinary_sampling == 'balanced':
             self.weights = torch.ones(2)  # Do not double-correct class imbalance.
             self.ordinary_sampler = BalancedOrdinarySampler([labels[i] for i in ids], n, self.steps, args.seed + 7)
-            self.train = [self.loader(self.ordinary, 'ordinary', batch_sampler=self.ordinary_sampler)]
+            self.train = [self.loader(tagged_ordinary, 'ordinary', batch_sampler=self.ordinary_sampler)]
         else:
             sampler = RandomSampler(self.ordinary, generator=self.order_generator)
-            self.train = [self.loader(self.ordinary, 'ordinary', n, sampler=sampler)]
+            self.train = [self.loader(tagged_ordinary, 'ordinary', n, sampler=sampler)]
         if self.r:
             self.real_sampler = BalancedPairBatchSampler(pairs, 4, self.steps, args.seed + 1)
-            self.train.append(self.loader(RTCPairDataset(pairs, args.train_data_path), 'pair',
+            if self.language_weighting and any(language_id(p['offline']) != language_id(p['online']) for p in pairs):
+                raise ValueError('RTC Offline/Online language groups do not match')
+            tagged_pair = self.tag(RTCPairDataset(pairs, args.train_data_path),
+                                   [p['offline'] for p in pairs], [p['label'] for p in pairs], 'rtc_pair')
+            self.train.append(self.loader(tagged_pair, 'pair',
                                           batch_sampler=self.real_sampler))
         if self.s:
             noisy = RotatingNoisyDataset([rows for rows, _ in banks], args.train_data_path)
             source = BalancedPairBatchSampler(noisy.sources, 4, self.steps, args.seed + 2)
             self.rotation = RotatingViewBatchSampler(source, noisy.sources, args.seed + 3, len(banks), args.noisy_bank_policy)
-            self.train.append(self.loader(noisy, 'noisy_pair', batch_sampler=self.rotation))
-        self.dev = {'clean': self.loader(clean, 'ordinary', args.eval_batch, evaluation=True),
-                    'seen': self.loader(NoisyDevDataset(seen[0]), 'noisy_dev', args.eval_batch, evaluation=True),
-                    'heldout': self.loader(NoisyDevDataset(held[0]), 'noisy_dev', args.eval_batch, evaluation=True)}
+            tagged_noisy = self.tag(noisy, [p['offline'] for p in noisy.sources],
+                                    [p['label'] for p in noisy.sources], 'noisy_pair')
+            self.train.append(self.loader(tagged_noisy, 'noisy_pair', batch_sampler=self.rotation))
+        clean = self.tag(clean, dev_ids, [dev_labels[i] for i in dev_ids])
+        self.dev = {'clean': self.loader(clean, 'ordinary', args.eval_batch, evaluation=True)}
+        for kind, rows in (('seen', seen[0]), ('heldout', held[0])):
+            inner = NoisyDevDataset(rows)
+            # NoisyDevDataset sorts its rows. Tags must follow its actual read order.
+            dataset = self.tag(inner, [p['source'] for p in inner.rows], [p['label'] for p in inner.rows])
+            self.dev[kind] = self.loader(dataset, 'noisy_dev', args.eval_batch, evaluation=True)
         sources = [args.train_protocol, args.dev_protocol, args.rtc_pairs, args.train_noise_manifest,
                    str(Path(args.ssl_path)/'preprocessor_config.json'), str(Path(args.ssl_path)/'config.json')]
         sources += [str(Path(p)/name) for p in bank_paths + [args.dev_noisy_cache, args.dev_heldout_cache]
@@ -152,6 +202,17 @@ class DataBundle:
         print(f'Train counts [fake,real]={self.counts.tolist()}, ordinary={args.ordinary_sampling}, CE={self.weights.tolist()}')
         print(f'Logical batch: {n} ordinary + {2*self.r} real-pair + {2*self.s} noisy-pair = 40; steps={self.steps}')
         print('Pair branches: equal CE. Validation: fixed clean Online + noisy seen + noisy heldout, in all stages.')
+        if self.language_weighting:
+            print('Language CE budgets (per-branch source pools): '+json.dumps(self.language_budgets), flush=True)
+
+    def tag(self, dataset, ids, labels, branch=None):
+        if not self.language_weighting:
+            return dataset
+        budget = None
+        if branch is not None:
+            budget = LanguageBudget(ids, labels, en_real=self.args.en_real_budget, en_fake=self.args.en_fake_budget)
+            self.language_budgets[branch] = budget.report
+        return SourceTaggedDataset(dataset, ids, labels, budget)
 
     def loader(self, dataset, kind, batch_size=None, sampler=None, batch_sampler=None, evaluation=False):
         gen = torch.Generator()
@@ -159,7 +220,7 @@ class DataBundle:
         workers = min(self.args.num_workers, 2 if kind in ('pair', 'noisy_pair') else 4)
         cache = self.args.feature_cache if evaluation or kind in ('pair', 'noisy_pair') else None
         kwargs = {'dataset': dataset, 'num_workers': workers, 'pin_memory': self.args.device.startswith('cuda'),
-                  'generator': gen, 'collate_fn': FeatureCollator(self.args.ssl_path, kind, cache)}
+                  'generator': gen, 'collate_fn': FeatureCollator(self.args.ssl_path, kind, cache, self.language_weighting)}
         if workers:
             kwargs.update(persistent_workers=True, multiprocessing_context='spawn', worker_init_fn=worker_init,
                           prefetch_factor=2)
@@ -197,7 +258,14 @@ class DataBundle:
 
 def combine_batches(batches):
     out = {}
-    for k in ('features', 'mask', 'labels'):
+    keys = ['features', 'mask', 'labels']
+    tagged = ['languages' in b for b in batches]
+    if any(tagged):
+        if not all(tagged):
+            raise ValueError('Only some logical branches have source metadata')
+        keys += ['languages', 'language_weights']
+        out['source_ids'] = [x for b in batches for x in b['source_ids']]
+    for k in keys:
         values = [b[k] for b in batches]
         if all(v.is_pinned() for v in values):
             result = torch.empty((sum(len(v) for v in values), *values[0].shape[1:]),

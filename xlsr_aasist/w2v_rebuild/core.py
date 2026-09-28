@@ -55,7 +55,7 @@ def prediction_consistency(reference, processed, labels, confidence=.8):
 
 def objective(logits, features, labels, n, r, s, weights, real_weight, noisy_weight, beta=.3,
               consistency_weight=0., consistency_confidence=.8, tensor_stats=False, check_labels=True,
-              real_ce_weight=1.):
+              real_ce_weight=1., language_weights=None):
     if logits.shape != (n + 2*r + 2*s, 2) or labels.shape != (len(logits),):
         raise ValueError('Logical batch layout mismatch')
     if n <= 0 or (s and not r) or not 0 <= beta <= 1:
@@ -66,7 +66,21 @@ def objective(logits, features, labels, n, r, s, weights, real_weight, noisy_wei
         raise ValueError('Consistency weight must be finite and nonnegative')
     if not math.isfinite(real_ce_weight) or real_ce_weight <= 0:
         raise ValueError('Real CE cost must be positive and finite')
+    if language_weights is not None:
+        if (not isinstance(language_weights, torch.Tensor)
+                or language_weights.shape != labels.shape
+                or language_weights.device != labels.device
+                or not language_weights.is_floating_point()):
+            raise ValueError('Language weights must be a floating tensor matching label shape and device')
+        language_weights = language_weights.to(dtype=torch.float32)
+        if not bool((torch.isfinite(language_weights) & (language_weights > 0)).all()):
+            raise ValueError('Language weights must be finite and positive')
     ce = F.cross_entropy(logits.float(), labels, reduction='none')
+    # Normalize by the ORIGINAL class/cost budget below, not the minibatch's
+    # language multipliers. Self-normalization would cancel weighting whenever
+    # a branch contains only one language. None retains the old arithmetic.
+    if language_weights is not None:
+        ce = ce * language_weights.to(dtype=ce.dtype)
     # An explicit error cost, separate from inverse-frequency correction.
     # Pair groups are already balanced: NEVER apply ordinary frequency weights there.
     cost = torch.where(labels == 1, real_ce_weight, 1.)
