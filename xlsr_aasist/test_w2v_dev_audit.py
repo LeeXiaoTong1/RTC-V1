@@ -10,7 +10,7 @@ import zipfile
 import numpy as np
 import torch
 from torch import nn
-from transformers import SeamlessM4TFeatureExtractor
+from transformers import SeamlessM4TFeatureExtractor, Wav2Vec2BertConfig
 
 from w2v_rebuild import SCHEMA
 import audit_w2v_dev as audit
@@ -91,12 +91,14 @@ class DevAuditTests(unittest.TestCase):
         records = [r for _, _, _, rs in streams for r in rs]
         baseline = root/'original'/'stage3'/'best_model.pt'
         baseline.parent.mkdir(parents=True)
+        model_config = Wav2Vec2BertConfig(hidden_size=16, num_hidden_layers=1, num_attention_heads=2,
+            intermediate_size=32, conv_depthwise_kernel_size=3, layerdrop=0., apply_spec_augment=False).to_dict()
         config = dict(stage=3, baseline_path=str(baseline), ssl_path=str(model_dir), dev_protocol=str(paths[0]),
             dev_data_path=str(root/'audio'), dev_noisy_cache=str(root/'seen'), dev_heldout_cache=str(root/'held'),
-            data_fingerprints=fingerprints, model_config={}, eval_batch=5, eval_microbatch=4, feature_cache=None)
+            data_fingerprints=fingerprints, model_config=model_config, eval_batch=5, eval_microbatch=4, feature_cache=None)
         for path, bias, epoch in [(baseline, 0., 20), (stage/'candidate_best.pt', -.08, 1)]:
             torch.save(dict(schema=SCHEMA, stage=3, kind='weights', epoch=epoch, model=TinyDetector(bias).state_dict(),
-                            model_config={}, data_fingerprints=fingerprints), path)
+                            model_config=model_config, data_fingerprints=fingerprints), path)
         config['init_sha256'] = sha256(baseline)
         (stage/'config.json').write_text(json.dumps(config), encoding='utf-8')
         (stage/'completed.json').write_text(json.dumps(dict(candidate_epoch=1)), encoding='utf-8')
@@ -119,6 +121,10 @@ class DevAuditTests(unittest.TestCase):
             self.assertEqual(load.call_count, 2)
             self.assertEqual(before, {p: sha256(p) for p in before})
             out = Path(args.out)
+            for tag in ('baseline', 'candidate'):
+                comparison = audit.read_json(out/f'{tag}_model_config_check.json')
+                self.assertTrue(comparison['matched'])
+                self.assertIn('id2label', comparison['representation_only_keys'])
             self.assertTrue(all(x['matched'] for x in audit.read_json(out/'metric_parity.json').values()))
             archive = Path(args.download_dir)/(out.name+'.zip')
             with zipfile.ZipFile(archive) as z:
@@ -178,6 +184,38 @@ class DevAuditTests(unittest.TestCase):
             altered = json.loads(json.dumps(old))
             altered['seen']['bands'][3]['confusion'][1][0] += 1
             self.assertFalse(audit.metric_parity(altered, old)['matched'])
+
+    def test_config_json_roundtrip_and_true_differences(self):
+        checkpoint = Wav2Vec2BertConfig().to_dict()
+        recorded = json.loads(json.dumps(checkpoint))
+        self.assertNotEqual(checkpoint, recorded)  # Reproduces the reported false rejection.
+        result = audit.compare_model_configs(checkpoint, recorded)
+        self.assertTrue(result['matched'])
+        self.assertEqual(result['representation_only_keys'], ['id2label'])
+        for field, value in [('hidden_size', 2048), ('num_hidden_layers', 12), ('layer_norm_eps', 1e-3),
+                             ('id2label', {'0': 'CHANGED_LABEL', '1': 'LABEL_1'})]:
+            changed = dict(recorded, **{field: value})
+            result = audit.compare_model_configs(checkpoint, changed)
+            self.assertFalse(result['matched'])
+            self.assertIn(field, result['differences'])
+        missing = dict(recorded)
+        del missing['pad_token_id']
+        self.assertFalse(audit.compare_model_configs(checkpoint, missing)['matched'])
+
+    def test_real_config_mismatch_persists_details_and_stops_before_model_load(self):
+        with tempfile.TemporaryDirectory() as d:
+            args, streams, _, _, stage = self.fixture(Path(d))
+            config = audit.read_json(stage/'config.json')
+            config['model_config']['hidden_size'] = 128
+            (stage/'config.json').write_text(json.dumps(config), encoding='utf-8')
+            with patch.object(audit, 'dev_streams', return_value=streams), \
+                 patch.object(audit.Detector, 'load', side_effect=AssertionError('Must stop before loading')):
+                with self.assertRaisesRegex(ValueError, 'hidden_size'):
+                    audit.run(args)
+            details = audit.read_json(Path(args.out)/'baseline_model_config_check.json')
+            self.assertFalse(details['matched'])
+            self.assertEqual(details['differences']['hidden_size']['checkpoint'], 16)
+            self.assertEqual(details['differences']['hidden_size']['recorded'], 128)
 
 
 if __name__ == '__main__':

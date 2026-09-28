@@ -38,6 +38,7 @@ CSV 使用 UTF-8 BOM，可用 Excel 打开。评分不截断到几位小数，�
 - 沿用训练配置的 `eval_batch` 和 `eval_microbatch`，纯 FP32、eval 模式、尾批补齐；保持协议顺序和 noisy 数据的 source/band 排序。
 - Seen/Heldout 分别取四档指标平均，RobustF1 = 0.3 Online + 0.35 Seen + 0.35 Heldout。分组 CSV 中的组内合并 F1 不代替这个正式口径。
 - 原 best SHA256 必须等于本次 adaptation 的 `init_sha256`。两模型使用本次固定 Dev；原 checkpoint 过去用的旧 noisy Dev 不会混入比较。
+- 模型配置先统一到 JSON 表示再逐字段比较：checkpoint 的 `id2label` 数字键与配置 JSON 的字符串键等价，不会被误判为架构变化。真实配置差异仍会停止，保存到 `baseline_model_config_check.json` / `candidate_model_config_check.json`；随后仍以 `strict=True` 加载全部权重。
 - 核对 Dev 协议、特征提取器和缓存 manifest/config 的哈希。实际音频的大小及 mtime 在两遍评分期间及续跑时检查；这不是所有音频的内容哈希。
 - 每个模型的混淆矩阵、BalancedCE 会与本次保存的基线/第一轮日志核对。包内 `completed.json` 的完成状态表示诊断流程完成，不意味着候选一定更好。
 - 默认 400 次按真假分层的成对重采样，同一 noisy 源的八个视图共同抽样。Online 与 noisy 的源依赖关系未经确认，不计算 RobustF1 联合区间。Dev 已用于选模，这些区间不能作为独立测试集证据。
@@ -61,3 +62,5 @@ nohup python -u audit_w2v_dev.py \
 ## 本地验证范围
 
 回归测试覆盖评分与原 `Metrics` 的口径、FP32 尾批补齐、误判转换、AUC 并列/饱和、按源抽样、缓存只读命中/缺失、模型与音频保留、续跑身份校验、ZIP 清单和哈希。端到端流程采用小型模型和合成输入，不能替代服务器实际模型的复算；真实评分一致性由报告中的 `metric_parity.json` 检查。
+
+配置比较的回归使用实际 `Wav2Vec2BertConfig`，分别经过 `torch.save` 和 JSON 保存/读取，覆盖数字键变成字符串键的实际问题，并验证层数、维度、归一化参数和标签值的真实差异仍会被拒绝。旧版若在加载 baseline 时因配置比较失败，应拉取更新后重新运行启动脚本，创建新诊断目录；该失败发生在逐样本评分之前，没有完整评分需要续跑。

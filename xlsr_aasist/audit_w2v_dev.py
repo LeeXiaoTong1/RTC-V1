@@ -36,6 +36,29 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def compare_model_configs(checkpoint_config, recorded_config):
+    """Compare values in the same representation as the recorded JSON file.
+
+    torch.save preserves integer id2label keys; JSON object keys are strings.
+    Normalize serialization only: no architecture, label or execution fields
+    are ignored. Strict state_dict loading remains an independent check.
+    """
+    if not isinstance(checkpoint_config, dict) or not isinstance(recorded_config, dict):
+        raise ValueError('Checkpoint and recorded model configs must be dictionaries')
+    left = json.loads(json.dumps(checkpoint_config, allow_nan=False))
+    right = json.loads(json.dumps(recorded_config, allow_nan=False))
+    keys = sorted(set(left) | set(right))
+    missing = object()
+    differences = {key: {'checkpoint_present': key in left, 'recorded_present': key in right,
+                         'checkpoint': left.get(key), 'recorded': right.get(key)}
+                   for key in keys if left.get(key, missing) != right.get(key, missing)}
+    representation_only = [key for key in keys if key not in differences and
+                           checkpoint_config.get(key, missing) != recorded_config.get(key, missing)]
+    return {'matched': not differences, 'normalization': 'JSON representation; no fields ignored',
+            'representation_only_keys': representation_only, 'differences': differences,
+            'checkpoint_normalized_sha256': digest(left), 'recorded_normalized_sha256': digest(right)}
+
+
 class ReadOnlyFeatureCache(FeatureCache):
     def publish(self, path, value):
         # Missing features are recomputed in RAM using the unchanged extractor.
@@ -338,8 +361,14 @@ def run_locked(args, config, stage, baseline, candidate, out):
             ckpt = load_checkpoint(checkpoint)
             if ckpt['stage'] != 3 or (tag == 'candidate' and (ckpt.get('epoch') != 1 or ckpt.get('kind') != 'weights')):
                 raise ValueError('Unexpected checkpoint stage/kind/epoch')
-            if ckpt['model_config'] != config['model_config']:
-                raise ValueError('Checkpoint architecture differs from the recorded run')
+            comparison = compare_model_configs(ckpt['model_config'], config['model_config'])
+            comparison_path = out/f'{tag}_model_config_check.json'
+            atomic_json(comparison, comparison_path)
+            if not comparison['matched']:
+                raise ValueError('Checkpoint model config differs after JSON normalization: '+
+                                 ', '.join(comparison['differences'])+'; details: '+str(comparison_path))
+            print(tag+' model config matched; representation-only keys: '+
+                  ', '.join(comparison['representation_only_keys']), flush=True)
             for path, value in inputs.items():
                 # Baseline predates the current noisy Dev bank: require its original
                 # Dev protocol/extractor, but use CURRENT fixed Dev for both models.
