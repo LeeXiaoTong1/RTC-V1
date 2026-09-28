@@ -214,15 +214,18 @@ class Detector(nn.Module):
             backbone.gradient_checkpointing_disable()
         return cls(backbone)
 
-    def forward(self, features, mask, validated_mask=False):
+    def forward(self, features, mask, validated_mask=False, return_frames=False):
         if features.ndim != 3 or mask.shape != features.shape[:2] or (not validated_mask and not bool(mask.bool().all())):
             raise ValueError('Fixed-length features must be trimmed to all-valid frames before AASIST')
         h = self.backbone(input_features=features, attention_mask=mask,
                           output_hidden_states=False, return_dict=True).last_hidden_state
-        return self.head(h)
+        output = self.head(h)
+        # Reuse the encoder computation without adding parameters/checkpoint keys.
+        return (*output, h) if return_frames else output
 
 
-def forward_chunks(model, features, mask, microbatch, pad_last=False, validated_mask=False):
+def forward_chunks(model, features, mask, microbatch, pad_last=False, validated_mask=False,
+                   return_frames=False):
     """Run fixed-size chunks while keeping one logical loss/optimizer step.
 
     Training uses logical batches divisible by microbatch and normally leaves
@@ -236,7 +239,7 @@ def forward_chunks(model, features, mask, microbatch, pad_last=False, validated_
         raise ValueError('features/mask must contain the same nonzero batch size')
     if not validated_mask and not bool(mask.bool().all()):
         raise ValueError('Fixed-length features require an all-valid mask')
-    logits, reps = [], []
+    logits, reps, frames = [], [], []
     for i in range(0, len(features), microbatch):
         f = features[i:i + microbatch]
         m = mask[i:i + microbatch]
@@ -245,7 +248,12 @@ def forward_chunks(model, features, mask, microbatch, pad_last=False, validated_
             pad = microbatch - keep
             f = torch.cat((f, f[-1:].expand(pad, *f.shape[1:])), 0)
             m = torch.cat((m, m[-1:].expand(pad, *m.shape[1:])), 0)
-        z, h = model(f, m, validated_mask=True)
+        if return_frames:
+            z, h, sequence = model(f, m, validated_mask=True, return_frames=True)
+            frames.append(sequence[:keep])
+        else:
+            z, h = model(f, m, validated_mask=True)
         logits.append(z[:keep])
         reps.append(h[:keep])
-    return torch.cat(logits), torch.cat(reps)
+    output = torch.cat(logits), torch.cat(reps)
+    return (*output, torch.cat(frames)) if return_frames else output

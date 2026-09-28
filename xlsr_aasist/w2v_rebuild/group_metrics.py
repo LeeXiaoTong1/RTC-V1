@@ -321,7 +321,9 @@ def export_language_report(stage_dir, reference_metrics=None, download_dir=None)
                          'Reference E1 is copied from prior metrics; it is not reevaluated and may lack group metrics.',
                          'The package contains diagnostic text only, no checkpoints, features or audio.']}
     coverage_run = bool(current_config and current_config.get('coverage_training')) or (stage.parent/'coverage_plan.json').is_file()
-    title = 'Coverage-repair fine-tuning report' if coverage_run else 'English-weighted fine-tuning report'
+    structure_run = bool(current_config and current_config.get('local_structure_weight')) or (stage.parent/'structure_plan.json').is_file()
+    title = ('Local-structure robustness report' if structure_run else
+             ('Coverage-repair fine-tuning report' if coverage_run else 'English-weighted fine-tuning report'))
     lines = ['# '+title, '', f'**Run status: {status.upper()}**', '',
              'F1/recall values below are percentages; AUC is on the 0-1 scale. Missing values are shown as `-`.', '',
              '| Model | Online F1 | Seen F1 | Heldout F1 | Robust F1 | Robust CE |',
@@ -387,6 +389,33 @@ def export_language_report(stage_dir, reference_metrics=None, download_dir=None)
                          f"{value['ordinary_views']-random_count} | {value['noisy_processed_views']} |")
         lines += ['', 'Each cell is bank|family|SNR-band|label|language. See coverage plan/actual JSON for counts and distinct sources.',
                   'Energy screening is not speech recognition. Random crops are a hypothesis, not verified accuracy gains.', '']
+    if structure_run:
+        summary['local_structure_config'] = (current_config or {}).get('local_structure_config')
+        summary['structure_plan'] = _read_json(stage.parent/'structure_plan.json')
+        metrics_path = stage/'metrics.jsonl'
+        structure_epochs = []
+        if metrics_path.is_file():
+            for raw in metrics_path.read_text(encoding='utf-8').splitlines():
+                row = json.loads(raw)
+                values = {k: v for k, v in row.get('mean_batch', {}).items() if k.startswith('structure_')}
+                structure_epochs.append({'epoch': row['epoch'], **values})
+        summary['structure_training'] = structure_epochs
+        lines += ['', '## Local structure objective', '',
+                  'Only same-recording noisy pairs are matched. Low-dynamic/ambiguous latent blocks are rejected; this is not a VAD or phoneme recognizer.',
+                  'The local objective replaces the noisy global contrastive contribution. Classification and real RTC supervision remain active.',
+                  'Structure loss and accepted match fractions are diagnostic, not evidence of accuracy by themselves.',
+                  'Selection prioritizes noisy F1; promotion also requires improved weighted F1 and no clean Online F1 decrease.', '',
+                  'Each group cell gives usable-pair percentage / accepted-bin percentage. Training dropout can make these differ from frozen audit results.', '',
+                  '| Epoch | Structure loss | en-fake usable/accepted | en-real usable/accepted | zh-fake usable/accepted | zh-real usable/accepted |',
+                  '|---|---:|---:|---:|---:|---:|']
+        for row in structure_epochs:
+            fractions = []
+            for group in ('en_fake', 'en_real', 'zh_fake', 'zh_real'):
+                denominator = row.get('structure_'+group+'_pairs', 0)
+                value = row.get('structure_'+group+'_accepted_sum', 0)/denominator if denominator else None
+                usable = row.get('structure_'+group+'_usable_sum', 0)/denominator if denominator else None
+                fractions.append(_pct(usable)+' / '+_pct(value))
+            lines.append('| '+str(row['epoch'])+' | '+str(row.get('structure_loss', '-'))+' | '+' | '.join(fractions)+' |')
     lines += ['', '## Interpretation and limits', ''] + ['- '+note for note in summary['notes']]
     lines += ['- A real-recall gain alone is not evidence of better discrimination; inspect fake recall, noisy F1 and AUC together.',
               '- Group weighting changes loss coefficients. It does not guarantee the same shares of actual gradient or loss.',
@@ -410,7 +439,8 @@ def export_language_report(stage_dir, reference_metrics=None, download_dir=None)
             if path.is_symlink() or not path.is_file():
                 raise ValueError(f'Diagnostic input must be a regular file: {path}')
             sources.append((path, 'stage3/'+path.name))
-    for name in ('en_plan.json', 'en_execution.log', 'coverage_plan.json', 'coverage_execution.log'):
+    for name in ('en_plan.json', 'en_execution.log', 'coverage_plan.json', 'coverage_execution.log',
+                 'structure_plan.json', 'structure_execution.log', 'reviewed_audit_manifest.json', 'reviewed_audit_summary.json'):
         path = stage.parent/name
         if path.exists():
             if path.is_symlink() or not path.is_file():

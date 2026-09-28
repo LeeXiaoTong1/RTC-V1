@@ -15,8 +15,8 @@ from . import SCHEMA
 from .model import Detector, forward_chunks
 from .data import DataBundle, combine_batches
 from .storage import checkpoint_headroom, protect_checkpoint_space, require_space
-from .selection import candidate_decision, guard_metrics, noisy_metrics
-from .control import AdaptationControl
+from .selection import candidate_decision, guard_metrics, noisy_metrics, selection_key
+from .control import AdaptationControl, NoisyAdaptationControl
 from .group_metrics import GroupMetrics, DevGroupRecorder
 from .core import (Metrics, Schedule, objective, build_optimizer, rng_state, restore_rng,
                    atomic_save, atomic_json, sha256, load_checkpoint, gradient_audit, finish_audit, materialize_stats)
@@ -53,6 +53,12 @@ def parser():
     p.add_argument('--noisy_bank_policy', choices=['cycle', 'mixed'], default='cycle')
     p.add_argument('--consistency_weight', type=float, default=0.)
     p.add_argument('--consistency_confidence', type=float, default=.8)
+    p.add_argument('--local_structure_weight', type=float, default=0.,
+                   help='Opt-in local relation loss replacing noisy global InfoNCE; same-source pairs only')
+    p.add_argument('--local_structure_warmup_steps', type=int, default=100,
+                   help='Local objective ramp independent of the legacy multi-epoch pair ramp')
+    p.add_argument('--noisy_selection', action='store_true',
+                   help='Rank noisy F1 first; promote only with better noisy/weighted F1 and protected clean F1')
     p.add_argument('--feature_cache', help='Optional lossless fixed-waveform feature cache directory')
     p.add_argument('--no_feature_cache', action='store_true', help='Recompute fixed inputs; do not read/write feature caches')
     p.add_argument('--noise_cache_mb', type=int, default=128, help='Bounded decoded-noise cache per worker; 0 disables')
@@ -224,11 +230,18 @@ def train_step(model, opt, schedule, b, layout, weights, args, stage_step, pair_
     if events:
         events[1].record(stream)
     ctx = torch.autocast('cuda', dtype=torch.bfloat16) if device.type == 'cuda' and args.amp == 'bf16' else nullcontext()
+    local_weight = getattr(args, 'local_structure_weight', 0.)
     with ctx:
-        logits, readout = forward_chunks(model, features, mask, args.microbatch, validated_mask=True)
+        if local_weight:
+            if not s:
+                raise ValueError('Local structure requires same-source noisy pairs')
+            logits, readout, frames = forward_chunks(model, features, mask, args.microbatch,
+                                                     validated_mask=True, return_frames=True)
+        else:
+            logits, readout = forward_chunks(model, features, mask, args.microbatch, validated_mask=True)
     ramp = min(1., (stage_step+1)/max(1, pair_steps))
     rw = .1*ramp if args.stage == 2 else (.1 if args.stage == 3 else 0.)
-    nw = .1*ramp if args.stage == 3 else 0.
+    nw = .1*ramp if args.stage == 3 and not local_weight else 0.
     cw = getattr(args, 'consistency_weight', 0.) * ramp
     loss, stats = objective(logits, readout, labels, *layout, weights, rw, nw,
                             consistency_weight=cw,
@@ -236,6 +249,29 @@ def train_step(model, opt, schedule, b, layout, weights, args, stage_step, pair_
                             tensor_stats=True, check_labels=False,
                             real_ce_weight=getattr(args, 'real_ce_weight', 1.),
                             language_weights=language_weights.to(device, non_blocking=True) if language_weights is not None else None)
+    if local_weight:
+        from .local_structure import local_structure_loss
+        first = n + 2*r
+        local, local_stats = local_structure_loss(frames[first:first+s], frames[first+s:first+2*s])
+        accepted = local_stats.pop('accept_by_pair', None)
+        usable_pairs = local_stats.pop('valid_by_pair', None)
+        stats.update({'structure_'+key: value for key, value in local_stats.items()})
+        stats['structure_loss'] = local.detach()
+        local_ramp = min(1., (stage_step+1)/max(1, getattr(args, 'local_structure_warmup_steps', 100)))
+        stats['structure_weight'] = logits.new_tensor(local_weight*local_ramp)
+        if accepted is not None:
+            # Aggregate per-group eligibility without rerunning the backbone/loss.
+            for label, label_name in ((0, 'fake'), (1, 'real')):
+                for language, language_name in ((0, 'en'), (1, 'zh')):
+                    if 'languages' not in b:
+                        continue
+                    pick = ((b['labels'][first:first+s] == label) &
+                            (b['languages'][first:first+s] == language)).to(device)
+                    stats[f'structure_{language_name}_{label_name}_accepted_sum'] = (accepted*pick).sum().detach()
+                    stats[f'structure_{language_name}_{label_name}_pairs'] = pick.sum().float().detach()
+                    if usable_pairs is not None:
+                        stats[f'structure_{language_name}_{label_name}_usable_sum'] = (usable_pairs*pick).sum().float().detach()
+        loss = loss + local_weight*local_ramp*local
     if not torch.isfinite(loss):
         raise FloatingPointError('Non-finite loss: stop instead of silently accepting corrupt updates')
     if events:
@@ -305,6 +341,13 @@ def main():
         raise ValueError('Invalid consistency/cache/profiling settings')
     if args.consistency_weight and args.stage != 3:
         raise ValueError('Consistency requires Stage3 noisy pairs')
+    if (not math.isfinite(args.local_structure_weight) or args.local_structure_weight < 0
+            or args.local_structure_warmup_steps < 0):
+        raise ValueError('local_structure_weight must be finite and nonnegative')
+    if args.local_structure_weight and (args.stage != 3 or args.consistency_weight):
+        raise ValueError('Local structure requires Stage3; do not combine with score consistency')
+    if args.noisy_selection and not (args.adaptation_control and args.guard_baseline):
+        raise ValueError('noisy_selection requires adaptation_control and guard_baseline')
     if args.stage == 1 and args.init:
         raise ValueError('Stage 1 starts from official generic-speech pretraining, not a detector checkpoint')
     if args.stage > 1 and not (args.init or args.resume or args.finetune_from or args.check_data):
@@ -373,6 +416,11 @@ def main():
                                      [('RTC_B_NOISE_PROB', '0.5'), ('RTC_B_SNR_MIN', '10'), ('RTC_B_SNR_MAX', '30')]})
     if args.language_weighting:
         config['language_budgets'] = bundle.language_budgets
+    if args.local_structure_weight:
+        from dataclasses import asdict
+        from .local_structure import LocalStructureConfig
+        config['local_structure_config'] = asdict(LocalStructureConfig())
+    control_class = NoisyAdaptationControl if args.noisy_selection else AdaptationControl
     start_epoch, global_step, best_key, stale = 1, 0, (-math.inf, -math.inf), 0
     baseline_dev, best_epoch, control = None, 0, None
     if args.resume:
@@ -387,7 +435,8 @@ def main():
         for name, default in (('adaptation_control', False), ('noisy_extra_fraction', 0.),
                               ('noisy_mix_warmup_epochs', 1.), ('language_weighting', False),
                               ('en_real_budget', .35), ('en_fake_budget', .40),
-                              ('coverage_training', False), ('coverage_prefix_probability', .5)):
+                              ('coverage_training', False), ('coverage_prefix_probability', .5),
+                              ('local_structure_weight', 0.), ('local_structure_warmup_steps', 100), ('noisy_selection', False)):
             if ckpt['config'].get(name, default) != config[name]:
                 raise ValueError(f'Resume setting changed: {name}')
         if args.language_weighting and ckpt['config'].get('language_budgets') != config['language_budgets']:
@@ -397,7 +446,7 @@ def main():
         if (args.guard_baseline or args.adaptation_control) and baseline_dev is None:
             raise ValueError('Guarded resume requires the original baseline metrics')
         if args.adaptation_control:
-            control = AdaptationControl(baseline_dev)
+            control = control_class(baseline_dev)
             control.load_state_dict(ckpt['adaptation_control_state'])
             if control.candidate_epoch and not (out/'candidate_best.pt').is_file():
                 raise FileNotFoundError('Candidate checkpoint missing; restore it before exact resume')
@@ -423,7 +472,10 @@ def main():
           f'feature projection trainable={args.trainable_encoder_layers == 24}; no BatchNorm; '
           f'logical=40 micro={args.microbatch}; encoder={args.encoder_lr:.2e} head={args.head_lr:.2e}', flush=True)
     print(f'Real CE cost={args.real_ce_weight}; baseline guard={args.guard_baseline}', flush=True)
-    if args.adaptation_control:
+    if args.noisy_selection:
+        print('Selection: noisy F1 first; promotion requires higher noisy and weighted F1, '
+              'with no clean Online F1 decrease. Class/language recall changes remain diagnostic.', flush=True)
+    elif args.adaptation_control:
         print('Selection: independent score candidate; best requires higher RobustF1 and no decrease '
               'in Online real recall, mean noisy real recall and mean noisy F1. Offline is diagnostic.', flush=True)
 
@@ -473,13 +525,16 @@ def main():
                if args.language_weighting else validate(model, bundle, device, args.eval_microbatch))
         baseline_dev = dev
         schedule.anchor(dev['robust_ce'])
-        best_key = (dev['robust_f1'], -dev['robust_ce'])
+        best_key = selection_key(dev, args.noisy_selection)
         if args.adaptation_control:
-            control = AdaptationControl(dev)
+            control = control_class(dev)
         atomic_save(snapshot(0, dev, 'weights'), out/'best_model.pt')
         atomic_json(dev, out/'baseline_dev.json')
         print_validation(dev)
-        if args.adaptation_control:
+        if args.noisy_selection:
+            print('Target floors:', {'online_f1': dev['online']['macro_f1'],
+                                     'robust_f1': dev['robust_f1'], 'noisy_f1': noisy_metrics(dev)['noisy_f1']}, flush=True)
+        elif args.adaptation_control:
             print('Target floors:', {'online_real_recall': baseline_dev['online']['recall'][1],
                                      **noisy_metrics(baseline_dev)}, flush=True)
         elif args.guard_baseline:
@@ -531,11 +586,19 @@ def main():
                              'ce_ordinary', 'ce_real_pair', 'ce_noisy_reference', 'ce_noisy_processed'):
                     if name in stats:
                         totals[name] = totals.get(name, 0.) + stats[name].detach().double()
+                for name, value in stats.items():
+                    if name.startswith('structure_'):
+                        totals[name] = totals.get(name, 0.) + value.detach().double()
                 if 'profile_ms' in stats:
                     profiles.append(stats['profile_ms'])
                 last_stats = {k: v for k, v in stats.items() if k != 'gradient_audit'}
                 global_step += 1
                 done += 1
+                if (args.local_structure_weight and done == 100
+                        and float(totals.get('structure_usable_fraction', 0.)) <= 0):
+                    raise RuntimeError('No usable local-structure pair in the first 100 training steps. '
+                                       'Stopped this attempt; original best remains protected. '
+                                       'Inspect alignment/dropout instead of completing an ineffective epoch.')
                 ready = time.perf_counter()
             if done != bundle.steps:
                 raise RuntimeError('A stream ended early; do not commit sampler history')
@@ -566,10 +629,10 @@ def main():
             if coverage_report is not None:
                 evaluation['coverage'] = coverage_report
             atomic_json(evaluation, out/f'epoch_{epoch:03d}_evaluation.json')
-            key = (dev['robust_f1'], -dev['robust_ce'])
+            key = selection_key(dev, args.noisy_selection)
             improved, selection = candidate_decision(
                 dev, best_key, baseline_dev if args.guard_baseline or args.adaptation_control else None,
-                policy='targeted' if args.adaptation_control else 'strict')
+                policy='noisy' if args.noisy_selection else ('targeted' if args.adaptation_control else 'strict'))
             save_begin = time.perf_counter()
             if improved:
                 best_key, stale, best_epoch = key, 0, epoch

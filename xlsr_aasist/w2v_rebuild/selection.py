@@ -19,24 +19,36 @@ def noisy_metrics(dev):
                                      for b in dev[k]['bands']) / 8}
 
 
+def selection_key(dev, noisy_first=False):
+    key = (dev['robust_f1'], -dev['robust_ce'])
+    return (noisy_metrics(dev)['noisy_f1'], *key) if noisy_first else key
+
+
 def candidate_decision(dev, best_key, baseline=None, policy='strict'):
     """Keep the original best unless the candidate improves and passes all floors."""
-    if policy not in ('strict', 'targeted'):
+    if policy not in ('strict', 'targeted', 'noisy'):
         raise ValueError('Unknown selection policy')
-    key = (dev['robust_f1'], -dev['robust_ce'])
+    key = selection_key(dev, policy == 'noisy')
     reasons, deltas = [], {}
     if key <= tuple(best_key):
-        reasons.append('robust_score_not_improved')
+        reasons.append('noisy_score_not_improved' if policy == 'noisy' else 'robust_score_not_improved')
     if baseline is not None:
         if dev['robust_f1'] <= baseline['robust_f1'] + 1e-12:
             reasons.append('robust_f1_not_above_baseline')
         current, anchor = guard_metrics(dev), guard_metrics(baseline)
         deltas = {name: current[name] - anchor[name] for name in anchor}
-        if policy == 'targeted':
+        if policy in ('targeted', 'noisy'):
             current.update(noisy_metrics(dev))
             anchor.update(noisy_metrics(baseline))
             deltas.update({name: current[name] - anchor[name] for name in noisy_metrics(dev)})
-            floors = ('online_real_recall', 'noisy_real_recall', 'noisy_f1')
+            if policy == 'noisy':
+                # Fixed-threshold class tradeoffs are reported, not individually
+                # vetoed. Promotion still protects clean F1 and weighted score.
+                floors = ('online_f1',)
+                if deltas['noisy_f1'] <= 1e-12:
+                    reasons.append('noisy_f1_not_above_baseline')
+            else:
+                floors = ('online_real_recall', 'noisy_real_recall', 'noisy_f1')
         else:
             floors = tuple(deltas)
         reasons.extend(name + '_below_baseline' for name in floors if deltas[name] < -1e-12)

@@ -1,11 +1,13 @@
 """Save promising candidates independently of promotion; stop on actual progress."""
 import math
-from .selection import noisy_metrics
+from .selection import noisy_metrics, selection_key
 
 
 class AdaptationControl:
+    key = staticmethod(selection_key)
+
     def __init__(self, baseline):
-        self.candidate_key = (baseline['robust_f1'], -baseline['robust_ce'])
+        self.candidate_key = self.key(baseline)
         self.candidate_epoch = 0
         self.best_ce = baseline['robust_ce']
         self.best_noisy_f1 = noisy_metrics(baseline)['noisy_f1']
@@ -13,7 +15,7 @@ class AdaptationControl:
         self.last_reduction_epoch = 0
 
     def observe(self, dev, epoch, reduced):
-        key = (dev['robust_f1'], -dev['robust_ce'])
+        key = self.key(dev)
         noisy = noisy_metrics(dev)['noisy_f1']
         if not all(math.isfinite(x) for x in (*key, noisy)):
             raise FloatingPointError('Non-finite adaptation progress')
@@ -47,3 +49,8 @@ class AdaptationControl:
             raise ValueError('Adaptation control state is incomplete')
         for key, value in state.items():
             setattr(self, key, tuple(value) if key == 'candidate_key' else value)
+
+
+class NoisyAdaptationControl(AdaptationControl):
+    """Preserve the strongest noisy candidate, independently of clean protection."""
+    key = staticmethod(lambda dev: selection_key(dev, noisy_first=True))
