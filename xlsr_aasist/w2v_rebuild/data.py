@@ -39,6 +39,8 @@ class SeededDataset(Dataset):
             random.seed(seed)
             np.random.seed(seed)
             torch.random.default_generator.manual_seed(seed)
+            if hasattr(self.inner, 'getitem_seeded'):
+                return self.inner.getitem_seeded(index, seed)
             return self.inner[index]
         finally:
             random.setstate(py)
@@ -48,8 +50,9 @@ class SeededDataset(Dataset):
 
 class SourceTaggedDataset(Dataset):
     """Attach audited source metadata without changing the inner waveform or RNG."""
-    def __init__(self, inner, ids, labels, budget=None):
+    def __init__(self, inner, ids, labels, budget=None, coverage=False):
         self.inner, self.ids, self.labels = inner, list(ids), list(labels)
+        self.coverage = coverage
         if len(self.ids) != len(inner) or len(self.labels) != len(inner):
             raise ValueError('Source metadata and dataset lengths differ')
         self.languages = torch.tensor([language_id(x) for x in self.ids], dtype=torch.long)
@@ -65,8 +68,17 @@ class SourceTaggedDataset(Dataset):
     def __getitem__(self, ticket):
         index = ticket[0] if isinstance(ticket, tuple) else ticket
         row = self.inner[ticket]
-        return (*row, {'source_id': self.ids[index], 'language': int(self.languages[index]),
-                      'label': self.labels[index], 'language_weight': self.coefficients[index]})
+        metadata = {'source_id': self.ids[index], 'language': int(self.languages[index]),
+                    'label': self.labels[index], 'language_weight': self.coefficients[index]}
+        if self.coverage:
+            if isinstance(row[-1], dict) and 'crop' in row[-1]:
+                metadata.update(row[-1])
+                row = row[:-1]
+            elif isinstance(ticket, tuple) and len(ticket) == 3:
+                _, bank, band = ticket
+                view = self.inner.banks[bank][self.ids[index]][band]
+                metadata.update(bank=bank, band=band, family=view.get('processing', {}).get('family', 'ffmpeg'))
+        return (*row, metadata)
 
 
 class FeatureCollator:
@@ -101,6 +113,8 @@ class FeatureCollator:
             extra.update(source_ids=[m['source_id'] for m in metadata] * repeats,
                          languages=torch.tensor([m['language'] for m in metadata] * repeats, dtype=torch.long),
                          language_weights=torch.tensor([m['language_weight'] for m in metadata] * repeats))
+            if metadata and ('crop' in metadata[0] or 'family' in metadata[0]):
+                extra['coverage_rows'] = {self.kind: metadata}
         if any(w.device.type != 'cpu' or w.shape != (64600,) or not torch.isfinite(w).all() for w in waves):
             raise ValueError('Expected finite CPU mono 64600-sample V2 waveforms')
         features, mask = self.cache.transform(waves, self.extract) if self.cache else self.extract(waves)
@@ -138,6 +152,9 @@ class DataBundle:
         from rtc_noisy_v2.sampling import RotatingViewBatchSampler
         self.args, self.rotation, self.real_sampler, self.ordinary_sampler = args, None, None, None
         self.language_weighting = getattr(args, 'language_weighting', False)
+        self.coverage_training = getattr(args, 'coverage_training', False)
+        if self.coverage_training and (not self.language_weighting or args.ordinary_sampling != 'legacy'):
+            raise ValueError('Coverage needs language reporting and complete ordinary traversal')
         self.language_budgets = {}
         if self.language_weighting and args.ordinary_sampling != 'legacy':
             raise ValueError('Language weighting requires complete ordinary traversal, without resampling')
@@ -182,7 +199,12 @@ class DataBundle:
         if self.s:
             noisy = RotatingNoisyDataset([rows for rows, _ in banks], args.train_data_path)
             source = BalancedPairBatchSampler(noisy.sources, 4, self.steps, args.seed + 2)
-            self.rotation = RotatingViewBatchSampler(source, noisy.sources, args.seed + 3, len(banks), args.noisy_bank_policy)
+            if self.coverage_training:
+                from .coverage import CoverageViewBatchSampler
+                self.rotation = CoverageViewBatchSampler(source, noisy, args.seed + 3,
+                                                         args.en_real_budget, args.en_fake_budget)
+            else:
+                self.rotation = RotatingViewBatchSampler(source, noisy.sources, args.seed + 3, len(banks), args.noisy_bank_policy)
             tagged_noisy = self.tag(noisy, [p['offline'] for p in noisy.sources],
                                     [p['label'] for p in noisy.sources], 'noisy_pair')
             self.train.append(self.loader(tagged_noisy, 'noisy_pair', batch_sampler=self.rotation))
@@ -212,7 +234,15 @@ class DataBundle:
         if branch is not None:
             budget = LanguageBudget(ids, labels, en_real=self.args.en_real_budget, en_fake=self.args.en_fake_budget)
             self.language_budgets[branch] = budget.report
-        return SourceTaggedDataset(dataset, ids, labels, budget)
+            if self.coverage_training and branch == 'noisy_pair':
+                # The sampler already realizes q; multiplying by q/p again would
+                # double-correct language imbalance in both reference/processed CE.
+                self.language_budgets[branch] = {**budget.report, 'coefficients': [[1., 1.], [1., 1.]],
+                    'normalization': 'English target realized by condition-stratified sampling; CE multiplier 1',
+                    'sampling_en_targets': [self.args.en_fake_budget, self.args.en_real_budget]}
+                budget = None
+        return SourceTaggedDataset(dataset, ids, labels, budget,
+                                   coverage=self.coverage_training and branch in ('ordinary', 'noisy_pair'))
 
     def loader(self, dataset, kind, batch_size=None, sampler=None, batch_sampler=None, evaluation=False):
         gen = torch.Generator()
@@ -258,6 +288,9 @@ class DataBundle:
 
 def combine_batches(batches):
     out = {}
+    coverage = {kind: rows for b in batches for kind, rows in b.get('coverage_rows', {}).items()}
+    if coverage:
+        out['coverage_rows'] = coverage
     keys = ['features', 'mask', 'labels']
     tagged = ['languages' in b for b in batches]
     if any(tagged):

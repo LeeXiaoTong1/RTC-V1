@@ -113,22 +113,41 @@ class SpoofAudioDataset(Dataset):
         self.use_rawboost = use_rawboost
         self.cut = 64600
         self.env_noise = NoiseAugment.from_env() if self.use_rawboost else None
+        self.coverage_training = bool(self.use_rawboost and getattr(args, 'coverage_training', False))
+        self.coverage_prefix_probability = getattr(args, 'coverage_prefix_probability', .5)
 
     def __len__(self):
         return len(self.file_list)
 
     def __getitem__(self, index):
+        return self.getitem_seeded(index, None)
+
+    def getitem_seeded(self, index, seed):
         utt_id = self.file_list[index]
         wav_path = self.base_dir / utt_id
         audio, sample_rate = librosa.load(str(wav_path), sr=16000)
+        crop = None
+        if self.coverage_training:
+            from .coverage_crop import select_window
+            if seed is None:
+                raise ValueError('Coverage Train must use SeededDataset for reproducible crops')
+            crop = select_window(audio, self.cut, seed, self.coverage_prefix_probability)
+        # Retain RawBoost's full-waveform processing, normalization and RNG order.
+        # Choose on the clean signal, then extract the same interval before noise.
         if self.use_rawboost:
             audio = process_rawboost_feature(audio, sample_rate, self.args, self.algo)
+        if crop is not None:
+            if len(audio) != crop['source_samples']:
+                raise ValueError('RawBoost changed waveform length; cannot apply the selected crop')
+            audio = audio[crop['start']:crop['start']+self.cut]
         if self.env_noise is not None:
             audio = self.env_noise(audio[:self.cut], sample_rate)
         audio = Tensor(pad_audio(audio, self.cut))
 
         if self.labels is None:
             return audio, utt_id
+        if crop is not None:
+            return audio, self.labels[utt_id], utt_id, {'crop': crop}
         return audio, self.labels[utt_id], utt_id
 
 

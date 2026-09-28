@@ -320,7 +320,9 @@ def export_language_report(stage_dir, reference_metrics=None, download_dir=None)
                          'Train group metrics use augmented/repeated training views, not clean independent sources.',
                          'Reference E1 is copied from prior metrics; it is not reevaluated and may lack group metrics.',
                          'The package contains diagnostic text only, no checkpoints, features or audio.']}
-    lines = ['# English-weighted fine-tuning report', '', f'**Run status: {status.upper()}**', '',
+    coverage_run = bool(current_config and current_config.get('coverage_training')) or (stage.parent/'coverage_plan.json').is_file()
+    title = 'Coverage-repair fine-tuning report' if coverage_run else 'English-weighted fine-tuning report'
+    lines = ['# '+title, '', f'**Run status: {status.upper()}**', '',
              'F1/recall values below are percentages; AUC is on the 0-1 scale. Missing values are shown as `-`.', '',
              '| Model | Online F1 | Seen F1 | Heldout F1 | Robust F1 | Robust CE |',
              '|---|---:|---:|---:|---:|---:|']
@@ -369,6 +371,22 @@ def export_language_report(stage_dir, reference_metrics=None, download_dir=None)
                 ce = '-' if metric.get('mean_ce') is None else f"{metric['mean_ce']:.6f}"
                 lines.append(f"| {epoch.get('epoch', '?')} | {branch} | {group} | {metric.get('count', 0)} | "
                              f"{_pct(metric.get('recall'))} | {ce} |")
+    if coverage_run:
+        summary['coverage'] = {p.name: _read_json(p) for p in sorted(stage.glob('coverage_*_epoch_*.json'))
+                               if re.fullmatch(r'coverage_(plan|actual)_epoch_\d+\.json', p.name)}
+        lines += ['', '## Consumed coverage (completed optimizer steps only)', '',
+                  'Ordinary uses one window per file. Crop groups are label|language|kind; fake/en=0, real/zh=1.',
+                  'The noisy sampler implements the English target shares; noisy CE language multipliers are one.', '',
+                  '| Epoch | Ordinary views | Unique files | Random accepted | Prefix/fallback/short | Noisy processed views |',
+                  '|---|---:|---:|---:|---:|---:|']
+        for name, value in summary['coverage'].items():
+            if not name.startswith('coverage_actual'):
+                continue
+            random_count = sum(v for k, v in value['crop_counts'].items() if k.endswith('|random'))
+            lines.append(f"| {name} | {value['ordinary_views']} | {value['ordinary_unique_files']} | {random_count} | "
+                         f"{value['ordinary_views']-random_count} | {value['noisy_processed_views']} |")
+        lines += ['', 'Each cell is bank|family|SNR-band|label|language. See coverage plan/actual JSON for counts and distinct sources.',
+                  'Energy screening is not speech recognition. Random crops are a hypothesis, not verified accuracy gains.', '']
     lines += ['', '## Interpretation and limits', ''] + ['- '+note for note in summary['notes']]
     lines += ['- A real-recall gain alone is not evidence of better discrimination; inspect fake recall, noisy F1 and AUC together.',
               '- Group weighting changes loss coefficients. It does not guarantee the same shares of actual gradient or loss.',
@@ -387,11 +405,12 @@ def export_language_report(stage_dir, reference_metrics=None, download_dir=None)
                'launcher_status.json', 'metrics.jsonl', 'baseline_scores.jsonl', 'preflight.json'}
     sources = [(report, 'report.md'), (summary_path, 'summary.json')]
     for path in sorted(stage.iterdir()):
-        if path.name in allowed or re.fullmatch(r'epoch_\d+_(evaluation\.json|scores\.jsonl)', path.name):
+        if (path.name in allowed or re.fullmatch(r'epoch_\d+_(evaluation\.json|scores\.jsonl)', path.name)
+                or re.fullmatch(r'coverage_(plan|actual)_epoch_\d+\.json', path.name)):
             if path.is_symlink() or not path.is_file():
                 raise ValueError(f'Diagnostic input must be a regular file: {path}')
             sources.append((path, 'stage3/'+path.name))
-    for name in ('en_plan.json', 'en_execution.log'):
+    for name in ('en_plan.json', 'en_execution.log', 'coverage_plan.json', 'coverage_execution.log'):
         path = stage.parent/name
         if path.exists():
             if path.is_symlink() or not path.is_file():

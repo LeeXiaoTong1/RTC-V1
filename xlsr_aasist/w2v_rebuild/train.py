@@ -40,6 +40,9 @@ def parser():
     p.add_argument('--language_weighting', action='store_true', help='Class-conditional en/zh CE budgets; complete ordinary traversal')
     p.add_argument('--en_real_budget', type=float, default=.35)
     p.add_argument('--en_fake_budget', type=float, default=.40)
+    p.add_argument('--coverage_training', action='store_true',
+                   help='Opt-in ordinary mixed crops and condition-stratified cached noisy sampling')
+    p.add_argument('--coverage_prefix_probability', type=float, default=.5)
     p.add_argument('--guard_baseline', action='store_true', help='Keep the starting best unless real recall and condition F1 floors pass')
     p.add_argument('--adaptation_control', action='store_true',
                    help='Separate score candidate from targeted best; early stop on actual progress')
@@ -85,7 +88,7 @@ def parser():
 def source_hashes():
     root = Path(__file__).resolve().parent.parent
     paths = list((root/'w2v_rebuild').glob('*.py'))
-    paths += [root/p for p in ['utils/data_utils.py', 'utils/env_noise.py', 'utils/RawBoost.py',
+    paths += [root/p for p in ['utils/data_utils.py', 'utils/coverage_crop.py', 'utils/env_noise.py', 'utils/RawBoost.py',
                                'utils/rtc_data.py', 'utils/rtc_pairs.py', 'rtc_noisy/data.py',
                                'rtc_noisy/common.py', 'rtc_noisy_v2/plan.py', 'rtc_noisy_v2/cache.py',
                                'rtc_noisy_v2/sampling.py', 'rtc_noisy/diverse.py', 'rtc_noisy/simulator.py']]
@@ -282,6 +285,12 @@ def main():
     if args.language_weighting and (args.stage != 3 or not (args.finetune_from or args.resume or args.check_data)
                                    or args.ordinary_sampling != 'legacy'):
         raise ValueError('Language weighting requires Stage3 adaptation and complete ordinary traversal')
+    if not math.isfinite(args.coverage_prefix_probability) or not 0 <= args.coverage_prefix_probability <= 1:
+        raise ValueError('coverage_prefix_probability must lie in [0, 1]')
+    if args.coverage_training and (not args.language_weighting or args.stage != 3
+                                  or args.ordinary_sampling != 'legacy' or args.noisy_bank_policy != 'cycle'
+                                  or not args.noisy_extra_fraction):
+        raise ValueError('Coverage requires Stage3 language metadata, legacy ordinary traversal and scheduled noisy mixture')
     if (args.trainable_encoder_layers != 24 or args.guard_baseline or args.adaptation_control) and not (
             args.stage == 3 and (args.finetune_from or args.resume)):
         raise ValueError('Partial freezing/baseline guard require Stage3 adaptation or its exact resume')
@@ -377,7 +386,8 @@ def main():
                 raise ValueError(f'Resume setting changed: {name}')
         for name, default in (('adaptation_control', False), ('noisy_extra_fraction', 0.),
                               ('noisy_mix_warmup_epochs', 1.), ('language_weighting', False),
-                              ('en_real_budget', .35), ('en_fake_budget', .40)):
+                              ('en_real_budget', .35), ('en_fake_budget', .40),
+                              ('coverage_training', False), ('coverage_prefix_probability', .5)):
             if ckpt['config'].get(name, default) != config[name]:
                 raise ValueError(f'Resume setting changed: {name}')
         if args.language_weighting and ckpt['config'].get('language_budgets') != config['language_budgets']:
@@ -481,7 +491,13 @@ def main():
             mixture_report = None
             if args.noisy_extra_fraction:
                 mixture_report = bundle.rotation.plan_summary()
-                print('Noisy mixture: '+json.dumps(mixture_report), flush=True)
+                print('Noisy mixture: '+json.dumps({k: v for k, v in mixture_report.items() if k != 'cells'}), flush=True)
+            coverage_meter = None
+            if args.coverage_training:
+                from .coverage import CoverageMeter
+                coverage_meter = CoverageMeter()
+                atomic_json(mixture_report, out/f'coverage_plan_epoch_{epoch:03d}.json')
+                print('Coverage: mixed ordinary crops; language/family/SNR quotas; no noisy language CE multiplier.', flush=True)
             meter, loss_total, last_stats = Metrics(device=device, check_finite=False), torch.zeros((), dtype=torch.float64, device=device), {}
             group_meters = ({name: GroupMetrics(device=device) for name in
                              ('all', 'ordinary', 'rtc_pair', 'noisy_reference', 'noisy_processed')}
@@ -496,6 +512,10 @@ def main():
                 do_audit = done == 0
                 stats, logits, labels = train_step(model, opt, schedule, b, layout, device_weights, args,
                                                    global_step, round(bundle.steps*args.pair_warmup_epochs), do_audit)
+                if coverage_meter is not None:
+                    coverage_meter.update(b['coverage_rows'])
+                    if (done+1) % 256 == 0 or done == 0:
+                        atomic_json(coverage_meter.result(), out/f'coverage_actual_epoch_{epoch:03d}.json')
                 if do_audit:
                     atomic_json(stats['gradient_audit'], out/f'gradient_epoch_{epoch:03d}.json')
                 meter.update(logits, labels)
@@ -519,6 +539,14 @@ def main():
                 ready = time.perf_counter()
             if done != bundle.steps:
                 raise RuntimeError('A stream ended early; do not commit sampler history')
+            coverage_report = None
+            if coverage_meter is not None:
+                coverage_meter.verify(mixture_report, int(bundle.counts.sum()))
+                coverage_report = coverage_meter.result()
+                atomic_json(coverage_report, out/f'coverage_actual_epoch_{epoch:03d}.json')
+                print(f"Coverage completed: ordinary={coverage_report['ordinary_views']} "
+                      f"unique_files={coverage_report['ordinary_unique_files']} "
+                      f"noisy_processed={coverage_report['noisy_processed_views']}", flush=True)
             bundle.end(done)
             if device.type == 'cuda':
                 torch.cuda.synchronize(device)
@@ -535,6 +563,8 @@ def main():
             if train_groups:
                 evaluation['train_groups'] = train_groups
                 print('Train language groups (augmented online predictions): '+json.dumps(train_groups['all']), flush=True)
+            if coverage_report is not None:
+                evaluation['coverage'] = coverage_report
             atomic_json(evaluation, out/f'epoch_{epoch:03d}_evaluation.json')
             key = (dev['robust_f1'], -dev['robust_ce'])
             improved, selection = candidate_decision(
@@ -565,6 +595,8 @@ def main():
                    'used_lr': {g['name']: g['lr'] for g in opt.param_groups}}
             if train_groups:
                 row['train_groups'] = train_groups
+            if coverage_report is not None:
+                row['coverage'] = coverage_report
             if control is not None:
                 row.update(candidate_saved=candidate_saved, candidate_epoch=control.candidate_epoch,
                            candidate_key=control.candidate_key, progress=progress)
