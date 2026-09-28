@@ -80,6 +80,7 @@ class Issues:
 
 def protocol_rows(path, data_root, issues):
     rows, seen, line_count = [], {}, 0
+    data_root, last = Path(data_root).resolve(), time.monotonic()
     with Path(path).open(encoding='utf-8-sig') as stream:
         for number, line in enumerate(stream, 1):
             parts = line.split()
@@ -101,14 +102,17 @@ def protocol_rows(path, data_root, issues):
                 continue
             seen[source] = label
             lang, domain, directory = tags(source)
-            audio = (Path(data_root)/source).resolve()
-            if not within(audio, data_root):
+            audio = (data_root/source).resolve()
+            if not audio.is_relative_to(data_root):
                 raise ValueError('Audio/symlink escapes data root: '+source)
             if lang == 'unknown':
                 issues.add('unknown_language_directory', source)
             rows.append({'source_id': source, 'label': label, 'class': CLASS_NAMES[label],
                          'language_group': lang, 'domain': domain, 'source_directory': directory,
                          'audio_path': str(audio), 'protocol_line': number})
+            if time.monotonic()-last >= 10:
+                print(f'Train protocol indexing: {len(rows)} unique IDs',flush=True)
+                last=time.monotonic()
     if not rows:
         raise ValueError('Empty Train protocol')
     return rows, line_count
@@ -255,6 +259,7 @@ def pair_inventory(path, records, components, issues):
 
 
 def cache_inventory(path, records, protocol_hash, issues):
+    path = Path(path).resolve()
     config_path, manifest_path = path/'config.json', path/'manifest.jsonl'
     result = {'path':str(path), 'available':config_path.is_file() and manifest_path.is_file()}
     if not result['available']:
@@ -292,7 +297,7 @@ def cache_inventory(path, records, protocol_hash, issues):
                     raise ValueError('Cache source SHA256 differs from current audio')
                 audio_id = relative_id(row['audio'])
                 audio = (path/audio_id).resolve()
-                if not within(audio,path) or not audio.is_file():
+                if not audio.is_relative_to(path) or not audio.is_file():
                     raise ValueError('Cached audio missing or outside cache root')
                 family = row.get('processing',{}).get('family','ffmpeg')
                 allowed_families = config.get('processing',{}).get('families',['ffmpeg'])
@@ -403,6 +408,7 @@ def resolve_config_path(value, project_root):
 def run(args):
     started = time.monotonic()
     run_dir = Path(args.run_dir).expanduser().resolve()
+    print('Starting CPU-only Train inventory; reading recorded paths and metadata.',flush=True)
     config_path = run_dir/'stage3'/'config.json'
     config = read_json(config_path)
     project = Path(args.project_root).expanduser().resolve()
@@ -431,11 +437,15 @@ def run(args):
     missing = [p for p in metadata if not p.is_file()]
     if missing:
         raise FileNotFoundError('Missing input metadata: '+str(missing))
-    fingerprints = {str(p):sha256(p) for p in metadata}
+    fingerprints = {}
+    for p in metadata:
+        print('Checking metadata: '+str(p),flush=True)
+        fingerprints[str(p)]=sha256(p)
     for path,value in fingerprints.items():
         recorded = config.get('data_fingerprints',{}).get(path)
         if recorded and recorded != value:
             issues.add('recorded_run_fingerprint_mismatch',path)
+    print('Indexing Train protocol; resolving source paths without loading a model.',flush=True)
     rows, protocol_count = protocol_rows(protocol,data_root,issues)
     print(f'TRAIN_ROOT={data_root}\nPROTOCOL={protocol}\nTrain IDs={len(rows)}; workers={args.workers}; GPU/model not used.',flush=True)
     print('Hashing original files and reading headers/head/middle segments. Progress prints every 10 seconds.',flush=True)
