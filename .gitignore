@@ -43,6 +43,7 @@ venv/
 .venv/
 
 # Code-only server upload
+code_archives/
 .git/
 .env
 .env.*

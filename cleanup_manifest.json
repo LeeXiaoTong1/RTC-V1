@@ -1,0 +1,2074 @@
+{
+  "base_commit": "ab937d63293670935905bd960186976777c9272e",
+  "archive_branch": "archive-before-aasist-full-20260929",
+  "files": [
+    {
+      "path": "rtc_b_noise/README_使用说明.md",
+      "git_blob_sha": "003425dd7e7e5c3097c4c7faa12031ed5b743a82"
+    },
+    {
+      "path": "rtc_b_noise/VALIDATION.txt",
+      "git_blob_sha": "fca388d181f8174e843d66f4920058845378ebdf"
+    },
+    {
+      "path": "rtc_b_noise/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "rtc_b_noise/evaluate_b.py",
+      "git_blob_sha": "ebe8ef2541dee0b199553de01c4da479b0a5ca25"
+    },
+    {
+      "path": "rtc_b_noise/install_b.py",
+      "git_blob_sha": "ef11b30e2909e9eb61bafbc76a0f21a7fa8119fa"
+    },
+    {
+      "path": "rtc_b_noise/prepare_noise.py",
+      "git_blob_sha": "bf159240b37bc0c79cd2b907ccb57dc7be36ea22"
+    },
+    {
+      "path": "rtc_b_noise/smoke_test.py",
+      "git_blob_sha": "9ad24b98ac355ca26990a308ce91ea74ddf15b72"
+    },
+    {
+      "path": "xlsr_aasist/README_RTC_NOISY_V2.md",
+      "git_blob_sha": "2ce511602e06b6344336609f4d2a6d83f08a0534"
+    },
+    {
+      "path": "xlsr_aasist/README_RTC_PAIR.md",
+      "git_blob_sha": "15b4261a53b19c0bfb679cfc2e503ff8e2c60cc7"
+    },
+    {
+      "path": "xlsr_aasist/README_W2VBERT_V2.md",
+      "git_blob_sha": "8923648f9dbfb37c37932b37ac01f231bb25a1be"
+    },
+    {
+      "path": "xlsr_aasist/README_W2V_ADAPT.md",
+      "git_blob_sha": "f5ecfb7c56f91be734801030928e277f483bbdc6"
+    },
+    {
+      "path": "xlsr_aasist/README_W2V_COVERAGE.md",
+      "git_blob_sha": "a7d3ded08c84590577ae6d3096c0d65ae7139af2"
+    },
+    {
+      "path": "xlsr_aasist/README_W2V_DEV_AUDIT.md",
+      "git_blob_sha": "1e4f88112b30d307a484cf06ff4b524963b5815d"
+    },
+    {
+      "path": "xlsr_aasist/README_W2V_EN.md",
+      "git_blob_sha": "d490d59b4c6707a117e666666d12bd9df39c77ae"
+    },
+    {
+      "path": "xlsr_aasist/README_W2V_IMPROVEMENTS.md",
+      "git_blob_sha": "1e40a499cf92cd1557663112abb0fcfcb76ff1f3"
+    },
+    {
+      "path": "xlsr_aasist/README_W2V_MULTICONV.md",
+      "git_blob_sha": "d165302d3a91f19e7222453dab05abb436b1dc76"
+    },
+    {
+      "path": "xlsr_aasist/README_W2V_PAIR_GRADIENTS.md",
+      "git_blob_sha": "fb579ef8273018912ed2fc461028a32be86fc63c"
+    },
+    {
+      "path": "xlsr_aasist/README_W2V_REBUILD.md",
+      "git_blob_sha": "07ab65876f25b157fa5be9e35df010715409e9bb"
+    },
+    {
+      "path": "xlsr_aasist/README_W2V_REFINE.md",
+      "git_blob_sha": "52f0fafc40da38e17f2886c13c17bb51beed7c6b"
+    },
+    {
+      "path": "xlsr_aasist/README_W2V_STRUCTURE.md",
+      "git_blob_sha": "55f09f5ac3630eb9cce4d68e4d7d80bfd4761903"
+    },
+    {
+      "path": "xlsr_aasist/README_W2V_TRAIN_AUDIT.md",
+      "git_blob_sha": "1b1959db1bfc23ee0b3b017986eff79831189059"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/rtc_b_noise/README_使用说明.md",
+      "git_blob_sha": "003425dd7e7e5c3097c4c7faa12031ed5b743a82"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/rtc_b_noise/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/rtc_b_noise/evaluate_b.py",
+      "git_blob_sha": "ebe8ef2541dee0b199553de01c4da479b0a5ca25"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/rtc_b_noise/install_b.py",
+      "git_blob_sha": "ef11b30e2909e9eb61bafbc76a0f21a7fa8119fa"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/rtc_b_noise/prepare_noise.py",
+      "git_blob_sha": "bf159240b37bc0c79cd2b907ccb57dc7be36ea22"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/rtc_b_noise/smoke_test.py",
+      "git_blob_sha": "9ad24b98ac355ca26990a308ce91ea74ddf15b72"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_train.py",
+      "git_blob_sha": "eb438fdee5df434fd832987de5946500013010d9"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/xlsr_aasist/model/model.py",
+      "git_blob_sha": "273c22b5e6e1c54d9a9ce3de2aa561f7751d58eb"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/RawBoost.py",
+      "git_blob_sha": "0339f666a804805c7bb4c77024e1d88998b8aaf5"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/__init__.py",
+      "git_blob_sha": "8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/data_utils.py",
+      "git_blob_sha": "f9cbe17cc2be1f669e0d615cce5291c70a18cca9"
+    },
+    {
+      "path": "xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/THIRD_PARTY_LICENSES/MultiConv.txt",
+      "git_blob_sha": "746ebb106dc6a2315f205fd904f09268834e0c8c"
+    },
+    {
+      "path": "xlsr_aasist/audit_w2v_dev.py",
+      "git_blob_sha": "1082bedaa426b939d48ab4d2534035d3b282099a"
+    },
+    {
+      "path": "xlsr_aasist/audit_w2v_pair_gradients.py",
+      "git_blob_sha": "667ce5baee449e7162e9999157da743279196500"
+    },
+    {
+      "path": "xlsr_aasist/audit_w2v_report.py",
+      "git_blob_sha": "82a68b67f2ccc7e04aa539b872feae080108a01f"
+    },
+    {
+      "path": "xlsr_aasist/audit_w2v_structure.py",
+      "git_blob_sha": "0a784f755b36c26bc6928449c48e3ceec328fdab"
+    },
+    {
+      "path": "xlsr_aasist/audit_w2v_train.py",
+      "git_blob_sha": "bb7011a53b1126af1560ce6266c8762709243c2a"
+    },
+    {
+      "path": "xlsr_aasist/check_rtc_noisy.py",
+      "git_blob_sha": "df5ffb53b95dcdef0be5b2746fdd81e80c24f019"
+    },
+    {
+      "path": "xlsr_aasist/check_rtc_noisy_v2.py",
+      "git_blob_sha": "8f27acda27420d74a62e9eea141425326415d73e"
+    },
+    {
+      "path": "xlsr_aasist/check_w2vbert_tuning.py",
+      "git_blob_sha": "c0180b277c734393e7aecd1b3457820ac7d8f572"
+    },
+    {
+      "path": "xlsr_aasist/check_w2vbert_v2.py",
+      "git_blob_sha": "9f2f43556f4869150c4950c327d4b0e6f795d675"
+    },
+    {
+      "path": "xlsr_aasist/diagnose_w2v_readonly.py",
+      "git_blob_sha": "3d767765c805587032e2e8149e1a8db1424d108e"
+    },
+    {
+      "path": "xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/main_eval_rtc_noisy.py",
+      "git_blob_sha": "152ee9150755f3fcf0b61489e96643cdc4495347"
+    },
+    {
+      "path": "xlsr_aasist/main_eval_rtc_noisy_w2vbert.py",
+      "git_blob_sha": "412870b47e9a4727031a94d72d4df9ab68c8ab1a"
+    },
+    {
+      "path": "xlsr_aasist/main_eval_w2vbert.py",
+      "git_blob_sha": "6dc66dc69206b0ff63bbfafae5365a7f88e67a69"
+    },
+    {
+      "path": "xlsr_aasist/main_train.py",
+      "git_blob_sha": "e4a68eb7ea8e70f987238b16b60686380b6555f3"
+    },
+    {
+      "path": "xlsr_aasist/main_train_rtc.py",
+      "git_blob_sha": "ddd8b37d71bb216932964a13f7e921e9ea885402"
+    },
+    {
+      "path": "xlsr_aasist/main_train_rtc_noisy.py",
+      "git_blob_sha": "353d87cb70eb5dcaa60625a9f2deed34de9cd2cb"
+    },
+    {
+      "path": "xlsr_aasist/main_train_rtc_noisy_v2.py",
+      "git_blob_sha": "f87c97819f87a2620281393719a08ccb4d49b480"
+    },
+    {
+      "path": "xlsr_aasist/main_train_rtc_noisy_v2_w2vbert.py",
+      "git_blob_sha": "eeeadc86ed5979d35af7bc29af10da173d92aa9e"
+    },
+    {
+      "path": "xlsr_aasist/main_train_rtc_w2vbert.py",
+      "git_blob_sha": "524c22270663c1b6f0a6fe2d860c35e49c4ceea6"
+    },
+    {
+      "path": "xlsr_aasist/main_train_w2vbert.py",
+      "git_blob_sha": "43ff7fedf4bb29fb95435d4af0fe86e24b8bccc1"
+    },
+    {
+      "path": "xlsr_aasist/model/model.py",
+      "git_blob_sha": "816b33cd8989da4930f86d34fe89953e60689533"
+    },
+    {
+      "path": "xlsr_aasist/model/model_w2vbert.py",
+      "git_blob_sha": "975aa7c547a67efa755b11995a49f7cf6c460402"
+    },
+    {
+      "path": "xlsr_aasist/prepare_rtc_noisy.py",
+      "git_blob_sha": "d0fd347b2ecb01e32c7bd96537537393c2b003b6"
+    },
+    {
+      "path": "xlsr_aasist/prepare_rtc_pairs.py",
+      "git_blob_sha": "c91fee5878114573238b79a36bf5fcc5019fe542"
+    },
+    {
+      "path": "xlsr_aasist/recover_w2v_storage.py",
+      "git_blob_sha": "c6ea76a0dcda0ff4f71d52051f24064601862e23"
+    },
+    {
+      "path": "xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/requirements_w2v_multiconv.txt",
+      "git_blob_sha": "b77d7bc34dc89ca10cb5fc1b36ceab00555aa54a"
+    },
+    {
+      "path": "xlsr_aasist/requirements_w2vbert.txt",
+      "git_blob_sha": "a03c1f8c3160c49283f7b5672f5683959da8f2c9"
+    },
+    {
+      "path": "xlsr_aasist/rollback_to_v2.py",
+      "git_blob_sha": "08f582cd0f8f43f89376ca0b7d6f4c8dc3817b0e"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy/training.py",
+      "git_blob_sha": "b5aa1e89f8bd3cade289327574bd45a8fed11c0e"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/README_逐步实施.md",
+      "git_blob_sha": "792b9a9e3f90eb774d2afd60d7dcb35e424954ac"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/check_rtc_noisy.py",
+      "git_blob_sha": "df5ffb53b95dcdef0be5b2746fdd81e80c24f019"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/main_eval_rtc_noisy.py",
+      "git_blob_sha": "152ee9150755f3fcf0b61489e96643cdc4495347"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/main_train_rtc_noisy.py",
+      "git_blob_sha": "353d87cb70eb5dcaa60625a9f2deed34de9cd2cb"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/prepare_rtc_noisy.py",
+      "git_blob_sha": "d0fd347b2ecb01e32c7bd96537537393c2b003b6"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/__init__.py",
+      "git_blob_sha": "9a12ea0d45ef3a7dbeb43875025909909b171bf3"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/common.py",
+      "git_blob_sha": "c076513ac7b7b727429084827d519f8ba00eb71e"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/data.py",
+      "git_blob_sha": "d73c5768af6686f129c460c8dca6fbe85eedf65b"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/simulator.py",
+      "git_blob_sha": "ffb1c14044e4c87ecc6e9978b8c1c041615816c6"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/training.py",
+      "git_blob_sha": "b5aa1e89f8bd3cade289327574bd45a8fed11c0e"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/run_eval_rtc_noisy.sh",
+      "git_blob_sha": "5417bfdb707880c7860651db1fc3dde843e29167"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/run_train_rtc_noisy.sh",
+      "git_blob_sha": "475c52227bb6091ad405fb1588bf05665c3cf166"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_pair_manual/tests/test_rtc_noisy.py",
+      "git_blob_sha": "b73d142b690e60bf24ce3d2d0ea15a0ca42ceafb"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_v2/losses.py",
+      "git_blob_sha": "b28306ff13696d70fd1f5e976de59274404a4c4e"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_v2/sampling.py",
+      "git_blob_sha": "b21f778fe2ced648f37836c9c3d457ec1a03df86"
+    },
+    {
+      "path": "xlsr_aasist/rtc_noisy_v2/training.py",
+      "git_blob_sha": "631f6c82125ca5495f81d0dd2cf18b1f9dc03905"
+    },
+    {
+      "path": "xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/run_eval_rtc.sh",
+      "git_blob_sha": "6a6265df0bd5635fd85b78e09ffeb732c33a3c32"
+    },
+    {
+      "path": "xlsr_aasist/run_eval_rtc_noisy.sh",
+      "git_blob_sha": "5417bfdb707880c7860651db1fc3dde843e29167"
+    },
+    {
+      "path": "xlsr_aasist/run_eval_rtc_noisy_w2vbert.sh",
+      "git_blob_sha": "d923ac171eab533da0c5a0e8ae8e6893f8cbae93"
+    },
+    {
+      "path": "xlsr_aasist/run_eval_w2v_multiconv.sh",
+      "git_blob_sha": "e2d67d5072273701106b03d4a70be095b45307ca"
+    },
+    {
+      "path": "xlsr_aasist/run_eval_w2v_rebuild.sh",
+      "git_blob_sha": "ff85fd80ec03f7121b0c79ddaa348244f80a1632"
+    },
+    {
+      "path": "xlsr_aasist/run_prepare_w2v_improved.sh",
+      "git_blob_sha": "b1e153f4fe66dd5c1bc337b7933ae76c265329ce"
+    },
+    {
+      "path": "xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/run_train_rtc.sh",
+      "git_blob_sha": "bcc38cbdeba8bc69cf15e456d6f5f9de69bedca8"
+    },
+    {
+      "path": "xlsr_aasist/run_train_rtc_noisy.sh",
+      "git_blob_sha": "475c52227bb6091ad405fb1588bf05665c3cf166"
+    },
+    {
+      "path": "xlsr_aasist/run_train_rtc_noisy_v2.sh",
+      "git_blob_sha": "1ab8eedff5e4ea7e57e315c6c8af886ba62f2969"
+    },
+    {
+      "path": "xlsr_aasist/run_train_rtc_noisy_v2_w2vbert.sh",
+      "git_blob_sha": "ecf94ded784af67aedd9e9d7f95641b8b20b1615"
+    },
+    {
+      "path": "xlsr_aasist/run_train_rtc_w2vbert.sh",
+      "git_blob_sha": "c03d3e54cbdb2aa46721e3e8d2df6d7cf03f5928"
+    },
+    {
+      "path": "xlsr_aasist/run_train_w2vbert_base.sh",
+      "git_blob_sha": "8cfd42d66f8493ba804e8bff23f049dc974a24c7"
+    },
+    {
+      "path": "xlsr_aasist/run_w2v_adapt.sh",
+      "git_blob_sha": "d011cf60dda128c6824c5e62d4149f10fc3c3f4b"
+    },
+    {
+      "path": "xlsr_aasist/run_w2v_coverage.sh",
+      "git_blob_sha": "a7a9b9b255a32e21e21b4b3ebb9753a2bb8fd6ed"
+    },
+    {
+      "path": "xlsr_aasist/run_w2v_dev_audit.sh",
+      "git_blob_sha": "ff78adee3ae0f13e0b8d9af0d6233b8cb1d9749b"
+    },
+    {
+      "path": "xlsr_aasist/run_w2v_en.sh",
+      "git_blob_sha": "5c9225959498388b26d26e16e31edf22de809b85"
+    },
+    {
+      "path": "xlsr_aasist/run_w2v_improved.sh",
+      "git_blob_sha": "93305f196e252faa8c3be551b58731b0359b22fb"
+    },
+    {
+      "path": "xlsr_aasist/run_w2v_multiconv.sh",
+      "git_blob_sha": "27be5b374c43015b128998437d0a85927e9e9546"
+    },
+    {
+      "path": "xlsr_aasist/run_w2v_pair_gradients.sh",
+      "git_blob_sha": "4d52e358971e8c315bea23d0fce5669e7323aadb"
+    },
+    {
+      "path": "xlsr_aasist/run_w2v_rebuild.sh",
+      "git_blob_sha": "0561cb209791e2755f4ff35ba964eea0b1695303"
+    },
+    {
+      "path": "xlsr_aasist/run_w2v_refine.sh",
+      "git_blob_sha": "3d72abc26f04083e25b7e7eec074885fa9a477fa"
+    },
+    {
+      "path": "xlsr_aasist/run_w2v_structure.sh",
+      "git_blob_sha": "8f2b7997c78af6119bbbc3506e44274610127bba"
+    },
+    {
+      "path": "xlsr_aasist/run_w2v_train_audit.sh",
+      "git_blob_sha": "33fc1a5f1d0f5b8c21ced33c5853ebcc0c020298"
+    },
+    {
+      "path": "xlsr_aasist/setup_w2v_multiconv.sh",
+      "git_blob_sha": "cb99611c95663448ef53ff0275b7f55f8f3a6a4b"
+    },
+    {
+      "path": "xlsr_aasist/start_w2v_adapt.py",
+      "git_blob_sha": "ec8ee8d51784950fa33670082a8d7b36d487e4ca"
+    },
+    {
+      "path": "xlsr_aasist/start_w2v_coverage.py",
+      "git_blob_sha": "2ca797a8b95ab1bdac102e2da3415dad4195ef3a"
+    },
+    {
+      "path": "xlsr_aasist/start_w2v_en.py",
+      "git_blob_sha": "2b8831997919eba5b2e8314ef61c9257c685131c"
+    },
+    {
+      "path": "xlsr_aasist/start_w2v_refine.py",
+      "git_blob_sha": "dbb00ac5780c9edd52422e391e938c598ae3b5c3"
+    },
+    {
+      "path": "xlsr_aasist/start_w2v_structure.py",
+      "git_blob_sha": "31a8df9b648af39ef1bc6eb38d6f56799d480bbf"
+    },
+    {
+      "path": "xlsr_aasist/test_w2v_coverage_launcher.py",
+      "git_blob_sha": "f8ade498df46f25634e6b4fd13190240fa750aac"
+    },
+    {
+      "path": "xlsr_aasist/test_w2v_dev_audit.py",
+      "git_blob_sha": "c592621b747959fdf9a61e523d97a72f6a357350"
+    },
+    {
+      "path": "xlsr_aasist/test_w2v_dev_report.py",
+      "git_blob_sha": "3f716605f8df953bf36e5cf4c045bb2c648e1d5a"
+    },
+    {
+      "path": "xlsr_aasist/test_w2v_en_launcher.py",
+      "git_blob_sha": "689c1ebdf29d8e8d76a96bed73aaafeebd2d23d9"
+    },
+    {
+      "path": "xlsr_aasist/test_w2v_pair_gradients.py",
+      "git_blob_sha": "3fc4d6816687eb4b24b7bd2564e6f415df22aa25"
+    },
+    {
+      "path": "xlsr_aasist/test_w2v_recovery_cleanup.py",
+      "git_blob_sha": "9b772f3c20b9d3fbc9761d75104b21e1a69ec173"
+    },
+    {
+      "path": "xlsr_aasist/test_w2v_structure_audit.py",
+      "git_blob_sha": "33b9c09a570153a4473940f24a4955b02483f5da"
+    },
+    {
+      "path": "xlsr_aasist/test_w2v_structure_launcher.py",
+      "git_blob_sha": "06a13a66cddea9a24477b60f1313942e1dc86ead"
+    },
+    {
+      "path": "xlsr_aasist/test_w2v_train_audit.py",
+      "git_blob_sha": "515d4f75e5e244a4499cc77dbfd0ee0cef6519d5"
+    },
+    {
+      "path": "xlsr_aasist/tests/test_rtc_loss.py",
+      "git_blob_sha": "a5fcec5153d2bfac70e2e585e7199bca5c697ebb"
+    },
+    {
+      "path": "xlsr_aasist/tests/test_rtc_noisy_v2_logic.py",
+      "git_blob_sha": "970eb2a9559e345106f1603e5edf8a2048f4b490"
+    },
+    {
+      "path": "xlsr_aasist/tests/test_rtc_noisy_v2_torch.py",
+      "git_blob_sha": "4093944b49de9e90cccd5d4e70a2bc20f36a859e"
+    },
+    {
+      "path": "xlsr_aasist/tests/test_rtc_pairs.py",
+      "git_blob_sha": "d685704002c4edcef775696449b243d510432d09"
+    },
+    {
+      "path": "xlsr_aasist/tests/test_rtc_training.py",
+      "git_blob_sha": "a3ac79632560f1988b0b963663139d05d651dee7"
+    },
+    {
+      "path": "xlsr_aasist/utils/rtc_loss.py",
+      "git_blob_sha": "8df6968d3f466217cdaf45abcd446a151fb07d9d"
+    },
+    {
+      "path": "xlsr_aasist/utils/w2vbert_tuning.py",
+      "git_blob_sha": "ba5fa65ab6e5711e2c06918d99bec6876b7a694a"
+    },
+    {
+      "path": "xlsr_aasist/w2v_multiconv/__init__.py",
+      "git_blob_sha": "bf9b63f674c5bbd835889df1cf1e359356ad1cde"
+    },
+    {
+      "path": "xlsr_aasist/w2v_multiconv/data.py",
+      "git_blob_sha": "ee69fd8cba8e2f1aa09b937433da8d629eca5032"
+    },
+    {
+      "path": "xlsr_aasist/w2v_multiconv/evaluate.py",
+      "git_blob_sha": "0a5174b260a8cbecad2c1faacd85552736df3b55"
+    },
+    {
+      "path": "xlsr_aasist/w2v_multiconv/launch.py",
+      "git_blob_sha": "2789028a3db6160ab6ad987cad036edcec7bb0f9"
+    },
+    {
+      "path": "xlsr_aasist/w2v_multiconv/model.py",
+      "git_blob_sha": "719af0ad8160d2134e93c33c0a44d65f1e42e058"
+    },
+    {
+      "path": "xlsr_aasist/w2v_multiconv/runtime.py",
+      "git_blob_sha": "ae64ad3cc17f74153d03c864845b006dfb0365f6"
+    },
+    {
+      "path": "xlsr_aasist/w2v_multiconv/tests.py",
+      "git_blob_sha": "5be51919b4e06972f94812f72126de48d5388521"
+    },
+    {
+      "path": "xlsr_aasist/w2v_multiconv/train.py",
+      "git_blob_sha": "f405a22cab62cbf1088955b58f8c55f561bb2e6c"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/VALIDATION.txt",
+      "git_blob_sha": "d659f557a6199487fe367aaed98b876d2bc69126"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/adaptation_tests.py",
+      "git_blob_sha": "42dba220ebad6947335b1ddc8de72e4277a45068"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/control.py",
+      "git_blob_sha": "54af03d0e927491dad741849561f741484ca93c0"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/core.py",
+      "git_blob_sha": "04f389a8ebc3617eae4d7ff2da198eb15e7bd8ac"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/coverage.py",
+      "git_blob_sha": "8d38945e7f38dc6b2919350bde69818ae4e66d8a"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/coverage_engine_tests.py",
+      "git_blob_sha": "32e8d585ab2aba712f3b5ac8bf573962d9e95cb6"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/coverage_tests.py",
+      "git_blob_sha": "615a8cbbe7cbdac43257b0e73993cca301a2a471"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/data.py",
+      "git_blob_sha": "18a4910d985681a03ab2cae41d48c5874a1aebe4"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/evaluate.py",
+      "git_blob_sha": "a428c2bdee7c1d46ce4efa687d9b3f1a51ec1d57"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/feature_cache.py",
+      "git_blob_sha": "6d6c3988559ca50d38d827da18f1c76079dccf51"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/group_metrics.py",
+      "git_blob_sha": "f2685a8f428358527432a4b4fa97bb608a9b1b50"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/group_metrics_tests.py",
+      "git_blob_sha": "0259e81d1b539ba2d459bf0d3721e8473166e6ff"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/improvement_tests.py",
+      "git_blob_sha": "1cecc1323597141d7a96286d359cf97acf9291b4"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/integration_tests.py",
+      "git_blob_sha": "aec850c0dc3a8cb44a13e1e15586a209393ac1d5"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/language.py",
+      "git_blob_sha": "97cc89dac6667001dbdedb5130cc85ba06106ffe"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/language_data_tests.py",
+      "git_blob_sha": "d6551bd657bcc7a8f56969c0a685307e70feade4"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/language_engine_tests.py",
+      "git_blob_sha": "12e0cd12c22fbff8dd521819a1960cdaaa3c231a"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/language_tests.py",
+      "git_blob_sha": "cf89f17fccc7be59412127a0117c0ec2821d9cb7"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/local_structure.py",
+      "git_blob_sha": "19e1b9a628c1cdd7567ba6147ca5c2c6947b2ec0"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/local_structure_tests.py",
+      "git_blob_sha": "cbef780e0609fca849c27f09d655565944c812e7"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/pair_gradient.py",
+      "git_blob_sha": "e36b5b4eddf4652817cecfd227453a1cc2f45eab"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/pair_gradient_data.py",
+      "git_blob_sha": "2776bab825a5296f15d22d215a860ce981893bcd"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/partial_freeze_tests.py",
+      "git_blob_sha": "83452bb08eb32adec020334422315b6b0b562315"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/refinement_engine_tests.py",
+      "git_blob_sha": "da2ab924354d6bf0ff8d4c0a5f9baa278a3275e3"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/refinement_tests.py",
+      "git_blob_sha": "877ec17e5180b37b75b8f823485c6eaef841a62a"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/sampling.py",
+      "git_blob_sha": "7e078a66af8efe2dd9775703f5f4c9cf5edf5044"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/selection.py",
+      "git_blob_sha": "976fed15f4579abfc5a42457c5caf3a3c49e584e"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/storage.py",
+      "git_blob_sha": "53ce473e5b60ac0171d0fa38dd788dcd4b405853"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/storage_tests.py",
+      "git_blob_sha": "71ab30656f3c19a313b548cde26d1b6e8e642c1c"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/structure_engine_tests.py",
+      "git_blob_sha": "6011ce832672ffbac8170b5cf1d12d5c57dacc71"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/structure_probe.py",
+      "git_blob_sha": "6f3958ef55850f86df8d1017611eafceb2e0bd1f"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/structure_recipe.py",
+      "git_blob_sha": "fe6dd0df8ebe33583c1418c49d32e9db30305d70"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/tests.py",
+      "git_blob_sha": "185b18a01504787fcc606d67e941dcb48b023822"
+    },
+    {
+      "path": "xlsr_aasist/w2v_rebuild/train.py",
+      "git_blob_sha": "6108d93b5df839d4ef53df66da1348962b207351"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/README_RTC_NOISY_V2.md",
+      "git_blob_sha": "2ce511602e06b6344336609f4d2a6d83f08a0534"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/README_RTC_PAIR.md",
+      "git_blob_sha": "15b4261a53b19c0bfb679cfc2e503ff8e2c60cc7"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/README_使用说明.md",
+      "git_blob_sha": "003425dd7e7e5c3097c4c7faa12031ed5b743a82"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/evaluate_b.py",
+      "git_blob_sha": "ebe8ef2541dee0b199553de01c4da479b0a5ca25"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/install_b.py",
+      "git_blob_sha": "ef11b30e2909e9eb61bafbc76a0f21a7fa8119fa"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/prepare_noise.py",
+      "git_blob_sha": "bf159240b37bc0c79cd2b907ccb57dc7be36ea22"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/smoke_test.py",
+      "git_blob_sha": "9ad24b98ac355ca26990a308ce91ea74ddf15b72"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_train.py",
+      "git_blob_sha": "eb438fdee5df434fd832987de5946500013010d9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/model/model.py",
+      "git_blob_sha": "273c22b5e6e1c54d9a9ce3de2aa561f7751d58eb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/RawBoost.py",
+      "git_blob_sha": "0339f666a804805c7bb4c77024e1d88998b8aaf5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/__init__.py",
+      "git_blob_sha": "8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/data_utils.py",
+      "git_blob_sha": "f9cbe17cc2be1f669e0d615cce5291c70a18cca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/check_rtc_noisy.py",
+      "git_blob_sha": "df5ffb53b95dcdef0be5b2746fdd81e80c24f019"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/check_rtc_noisy_v2.py",
+      "git_blob_sha": "8f27acda27420d74a62e9eea141425326415d73e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/main_eval_rtc_noisy.py",
+      "git_blob_sha": "152ee9150755f3fcf0b61489e96643cdc4495347"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/main_train.py",
+      "git_blob_sha": "605e5194668078ae8f9068a08fdcaf836282e5f5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/main_train_rtc.py",
+      "git_blob_sha": "22caee8cb54781eac54001744d1cf5d045676af8"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/main_train_rtc_noisy.py",
+      "git_blob_sha": "353d87cb70eb5dcaa60625a9f2deed34de9cd2cb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/main_train_rtc_noisy_v2.py",
+      "git_blob_sha": "d9eabffaec095df5ace6556beb758231456731e2"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/model/model.py",
+      "git_blob_sha": "816b33cd8989da4930f86d34fe89953e60689533"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/prepare_rtc_noisy.py",
+      "git_blob_sha": "d0fd347b2ecb01e32c7bd96537537393c2b003b6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/prepare_rtc_noisy_v2.py",
+      "git_blob_sha": "cfa5bbd4173870fdbea4d2a6df20a0cfbbee67aa"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/prepare_rtc_pairs.py",
+      "git_blob_sha": "c91fee5878114573238b79a36bf5fcc5019fe542"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rollback_to_v2.py",
+      "git_blob_sha": "08f582cd0f8f43f89376ca0b7d6f4c8dc3817b0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy/__init__.py",
+      "git_blob_sha": "9a12ea0d45ef3a7dbeb43875025909909b171bf3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy/common.py",
+      "git_blob_sha": "c076513ac7b7b727429084827d519f8ba00eb71e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy/data.py",
+      "git_blob_sha": "d73c5768af6686f129c460c8dca6fbe85eedf65b"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy/simulator.py",
+      "git_blob_sha": "ffb1c14044e4c87ecc6e9978b8c1c041615816c6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy/training.py",
+      "git_blob_sha": "b5aa1e89f8bd3cade289327574bd45a8fed11c0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/README_逐步实施.md",
+      "git_blob_sha": "792b9a9e3f90eb774d2afd60d7dcb35e424954ac"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/check_rtc_noisy.py",
+      "git_blob_sha": "df5ffb53b95dcdef0be5b2746fdd81e80c24f019"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/main_eval_rtc_noisy.py",
+      "git_blob_sha": "152ee9150755f3fcf0b61489e96643cdc4495347"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/main_train_rtc_noisy.py",
+      "git_blob_sha": "353d87cb70eb5dcaa60625a9f2deed34de9cd2cb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/prepare_rtc_noisy.py",
+      "git_blob_sha": "d0fd347b2ecb01e32c7bd96537537393c2b003b6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/__init__.py",
+      "git_blob_sha": "9a12ea0d45ef3a7dbeb43875025909909b171bf3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/common.py",
+      "git_blob_sha": "c076513ac7b7b727429084827d519f8ba00eb71e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/data.py",
+      "git_blob_sha": "d73c5768af6686f129c460c8dca6fbe85eedf65b"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/simulator.py",
+      "git_blob_sha": "ffb1c14044e4c87ecc6e9978b8c1c041615816c6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/training.py",
+      "git_blob_sha": "b5aa1e89f8bd3cade289327574bd45a8fed11c0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/run_eval_rtc_noisy.sh",
+      "git_blob_sha": "5417bfdb707880c7860651db1fc3dde843e29167"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/run_train_rtc_noisy.sh",
+      "git_blob_sha": "475c52227bb6091ad405fb1588bf05665c3cf166"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/tests/test_rtc_noisy.py",
+      "git_blob_sha": "b73d142b690e60bf24ce3d2d0ea15a0ca42ceafb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_v2/__init__.py",
+      "git_blob_sha": "74d181c41cfe878caf21eeb1ab9244a8280f4d4d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_v2/cache.py",
+      "git_blob_sha": "3d471a0eb95cbfca56e1eb9b337861b41462873d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_v2/losses.py",
+      "git_blob_sha": "8ca389b16d950ac5945e3f389bf8894199a6d3c5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_v2/plan.py",
+      "git_blob_sha": "fb62fbb8802f4252e95c653b8bbec1f9b356d7c4"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_v2/sampling.py",
+      "git_blob_sha": "8b83236eb8740dedcdf4fd3876050b58b9eff5bf"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/rtc_noisy_v2/training.py",
+      "git_blob_sha": "0f3cf4136e495d230cee4d3427ac5b302af59ce6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/run_eval_rtc.sh",
+      "git_blob_sha": "6a6265df0bd5635fd85b78e09ffeb732c33a3c32"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/run_eval_rtc_noisy.sh",
+      "git_blob_sha": "5417bfdb707880c7860651db1fc3dde843e29167"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/run_prepare_rtc_noisy_v2.sh",
+      "git_blob_sha": "8cc9c428b3337a3b00ed2922add2be187203905f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/run_train_rtc.sh",
+      "git_blob_sha": "bcc38cbdeba8bc69cf15e456d6f5f9de69bedca8"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/run_train_rtc_noisy.sh",
+      "git_blob_sha": "475c52227bb6091ad405fb1588bf05665c3cf166"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/run_train_rtc_noisy_v2.sh",
+      "git_blob_sha": "1ab8eedff5e4ea7e57e315c6c8af886ba62f2969"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/tests/test_rtc_loss.py",
+      "git_blob_sha": "a5fcec5153d2bfac70e2e585e7199bca5c697ebb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/tests/test_rtc_noisy_v2_logic.py",
+      "git_blob_sha": "970eb2a9559e345106f1603e5edf8a2048f4b490"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/tests/test_rtc_noisy_v2_torch.py",
+      "git_blob_sha": "4093944b49de9e90cccd5d4e70a2bc20f36a859e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/tests/test_rtc_pairs.py",
+      "git_blob_sha": "d685704002c4edcef775696449b243d510432d09"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/tests/test_rtc_training.py",
+      "git_blob_sha": "a3ac79632560f1988b0b963663139d05d651dee7"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/utils/RawBoost.py",
+      "git_blob_sha": "0339f666a804805c7bb4c77024e1d88998b8aaf5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/utils/__init__.py",
+      "git_blob_sha": "8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/utils/data_utils.py",
+      "git_blob_sha": "f9cbe17cc2be1f669e0d615cce5291c70a18cca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/utils/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/utils/rtc_data.py",
+      "git_blob_sha": "aff9f6f62b4eddbee035da16ff9a2115d40eaa34"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/utils/rtc_loss.py",
+      "git_blob_sha": "8df6968d3f466217cdaf45abcd446a151fb07d9d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/utils/rtc_pairs.py",
+      "git_blob_sha": "fc12513a28a8d09d244dcc52ae93048d9627dca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/README_RTC_NOISY_V2.md",
+      "git_blob_sha": "2ce511602e06b6344336609f4d2a6d83f08a0534"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/README_RTC_PAIR.md",
+      "git_blob_sha": "15b4261a53b19c0bfb679cfc2e503ff8e2c60cc7"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/README_使用说明.md",
+      "git_blob_sha": "003425dd7e7e5c3097c4c7faa12031ed5b743a82"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/evaluate_b.py",
+      "git_blob_sha": "ebe8ef2541dee0b199553de01c4da479b0a5ca25"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/install_b.py",
+      "git_blob_sha": "ef11b30e2909e9eb61bafbc76a0f21a7fa8119fa"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/prepare_noise.py",
+      "git_blob_sha": "bf159240b37bc0c79cd2b907ccb57dc7be36ea22"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/smoke_test.py",
+      "git_blob_sha": "9ad24b98ac355ca26990a308ce91ea74ddf15b72"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_train.py",
+      "git_blob_sha": "eb438fdee5df434fd832987de5946500013010d9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/model/model.py",
+      "git_blob_sha": "273c22b5e6e1c54d9a9ce3de2aa561f7751d58eb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/RawBoost.py",
+      "git_blob_sha": "0339f666a804805c7bb4c77024e1d88998b8aaf5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/__init__.py",
+      "git_blob_sha": "8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/data_utils.py",
+      "git_blob_sha": "f9cbe17cc2be1f669e0d615cce5291c70a18cca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/check_rtc_noisy.py",
+      "git_blob_sha": "df5ffb53b95dcdef0be5b2746fdd81e80c24f019"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/check_rtc_noisy_v2.py",
+      "git_blob_sha": "8f27acda27420d74a62e9eea141425326415d73e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/main_eval_rtc_noisy.py",
+      "git_blob_sha": "152ee9150755f3fcf0b61489e96643cdc4495347"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train.py",
+      "git_blob_sha": "605e5194668078ae8f9068a08fdcaf836282e5f5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc.py",
+      "git_blob_sha": "22caee8cb54781eac54001744d1cf5d045676af8"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc_noisy.py",
+      "git_blob_sha": "353d87cb70eb5dcaa60625a9f2deed34de9cd2cb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc_noisy_v2.py",
+      "git_blob_sha": "d9eabffaec095df5ace6556beb758231456731e2"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/model/model.py",
+      "git_blob_sha": "816b33cd8989da4930f86d34fe89953e60689533"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_noisy.py",
+      "git_blob_sha": "d0fd347b2ecb01e32c7bd96537537393c2b003b6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_noisy_v2.py",
+      "git_blob_sha": "cfa5bbd4173870fdbea4d2a6df20a0cfbbee67aa"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_pairs.py",
+      "git_blob_sha": "c91fee5878114573238b79a36bf5fcc5019fe542"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rollback_to_v2.py",
+      "git_blob_sha": "08f582cd0f8f43f89376ca0b7d6f4c8dc3817b0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/__init__.py",
+      "git_blob_sha": "9a12ea0d45ef3a7dbeb43875025909909b171bf3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/common.py",
+      "git_blob_sha": "c076513ac7b7b727429084827d519f8ba00eb71e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/data.py",
+      "git_blob_sha": "d73c5768af6686f129c460c8dca6fbe85eedf65b"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/simulator.py",
+      "git_blob_sha": "ffb1c14044e4c87ecc6e9978b8c1c041615816c6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/training.py",
+      "git_blob_sha": "b5aa1e89f8bd3cade289327574bd45a8fed11c0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/README_逐步实施.md",
+      "git_blob_sha": "792b9a9e3f90eb774d2afd60d7dcb35e424954ac"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/check_rtc_noisy.py",
+      "git_blob_sha": "df5ffb53b95dcdef0be5b2746fdd81e80c24f019"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/main_eval_rtc_noisy.py",
+      "git_blob_sha": "152ee9150755f3fcf0b61489e96643cdc4495347"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/main_train_rtc_noisy.py",
+      "git_blob_sha": "353d87cb70eb5dcaa60625a9f2deed34de9cd2cb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/prepare_rtc_noisy.py",
+      "git_blob_sha": "d0fd347b2ecb01e32c7bd96537537393c2b003b6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/__init__.py",
+      "git_blob_sha": "9a12ea0d45ef3a7dbeb43875025909909b171bf3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/common.py",
+      "git_blob_sha": "c076513ac7b7b727429084827d519f8ba00eb71e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/data.py",
+      "git_blob_sha": "d73c5768af6686f129c460c8dca6fbe85eedf65b"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/simulator.py",
+      "git_blob_sha": "ffb1c14044e4c87ecc6e9978b8c1c041615816c6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/training.py",
+      "git_blob_sha": "b5aa1e89f8bd3cade289327574bd45a8fed11c0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/run_eval_rtc_noisy.sh",
+      "git_blob_sha": "5417bfdb707880c7860651db1fc3dde843e29167"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/run_train_rtc_noisy.sh",
+      "git_blob_sha": "475c52227bb6091ad405fb1588bf05665c3cf166"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/tests/test_rtc_noisy.py",
+      "git_blob_sha": "b73d142b690e60bf24ce3d2d0ea15a0ca42ceafb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/__init__.py",
+      "git_blob_sha": "74d181c41cfe878caf21eeb1ab9244a8280f4d4d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/cache.py",
+      "git_blob_sha": "3d471a0eb95cbfca56e1eb9b337861b41462873d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/losses.py",
+      "git_blob_sha": "8ca389b16d950ac5945e3f389bf8894199a6d3c5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/plan.py",
+      "git_blob_sha": "fb62fbb8802f4252e95c653b8bbec1f9b356d7c4"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/sampling.py",
+      "git_blob_sha": "8b83236eb8740dedcdf4fd3876050b58b9eff5bf"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/training.py",
+      "git_blob_sha": "0f3cf4136e495d230cee4d3427ac5b302af59ce6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval_rtc.sh",
+      "git_blob_sha": "6a6265df0bd5635fd85b78e09ffeb732c33a3c32"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval_rtc_noisy.sh",
+      "git_blob_sha": "5417bfdb707880c7860651db1fc3dde843e29167"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/run_prepare_rtc_noisy_v2.sh",
+      "git_blob_sha": "8cc9c428b3337a3b00ed2922add2be187203905f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc.sh",
+      "git_blob_sha": "bcc38cbdeba8bc69cf15e456d6f5f9de69bedca8"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc_noisy.sh",
+      "git_blob_sha": "475c52227bb6091ad405fb1588bf05665c3cf166"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc_noisy_v2.sh",
+      "git_blob_sha": "1ab8eedff5e4ea7e57e315c6c8af886ba62f2969"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_loss.py",
+      "git_blob_sha": "a5fcec5153d2bfac70e2e585e7199bca5c697ebb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_noisy_v2_logic.py",
+      "git_blob_sha": "970eb2a9559e345106f1603e5edf8a2048f4b490"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_noisy_v2_torch.py",
+      "git_blob_sha": "4093944b49de9e90cccd5d4e70a2bc20f36a859e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_pairs.py",
+      "git_blob_sha": "d685704002c4edcef775696449b243d510432d09"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_training.py",
+      "git_blob_sha": "a3ac79632560f1988b0b963663139d05d651dee7"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/RawBoost.py",
+      "git_blob_sha": "0339f666a804805c7bb4c77024e1d88998b8aaf5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/__init__.py",
+      "git_blob_sha": "8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/data_utils.py",
+      "git_blob_sha": "f9cbe17cc2be1f669e0d615cce5291c70a18cca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/rtc_data.py",
+      "git_blob_sha": "aff9f6f62b4eddbee035da16ff9a2115d40eaa34"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/rtc_loss.py",
+      "git_blob_sha": "8df6968d3f466217cdaf45abcd446a151fb07d9d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/rtc_pairs.py",
+      "git_blob_sha": "fc12513a28a8d09d244dcc52ae93048d9627dca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/README_RTC_NOISY_V2.md",
+      "git_blob_sha": "2ce511602e06b6344336609f4d2a6d83f08a0534"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/README_RTC_PAIR.md",
+      "git_blob_sha": "15b4261a53b19c0bfb679cfc2e503ff8e2c60cc7"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/README_使用说明.md",
+      "git_blob_sha": "003425dd7e7e5c3097c4c7faa12031ed5b743a82"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/evaluate_b.py",
+      "git_blob_sha": "ebe8ef2541dee0b199553de01c4da479b0a5ca25"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/install_b.py",
+      "git_blob_sha": "ef11b30e2909e9eb61bafbc76a0f21a7fa8119fa"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/prepare_noise.py",
+      "git_blob_sha": "bf159240b37bc0c79cd2b907ccb57dc7be36ea22"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/smoke_test.py",
+      "git_blob_sha": "9ad24b98ac355ca26990a308ce91ea74ddf15b72"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_train.py",
+      "git_blob_sha": "eb438fdee5df434fd832987de5946500013010d9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/model/model.py",
+      "git_blob_sha": "273c22b5e6e1c54d9a9ce3de2aa561f7751d58eb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/RawBoost.py",
+      "git_blob_sha": "0339f666a804805c7bb4c77024e1d88998b8aaf5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/__init__.py",
+      "git_blob_sha": "8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/data_utils.py",
+      "git_blob_sha": "f9cbe17cc2be1f669e0d615cce5291c70a18cca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/check_rtc_noisy.py",
+      "git_blob_sha": "df5ffb53b95dcdef0be5b2746fdd81e80c24f019"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/check_rtc_noisy_v2.py",
+      "git_blob_sha": "8f27acda27420d74a62e9eea141425326415d73e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_eval_rtc_noisy.py",
+      "git_blob_sha": "152ee9150755f3fcf0b61489e96643cdc4495347"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train.py",
+      "git_blob_sha": "605e5194668078ae8f9068a08fdcaf836282e5f5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc.py",
+      "git_blob_sha": "22caee8cb54781eac54001744d1cf5d045676af8"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc_noisy.py",
+      "git_blob_sha": "353d87cb70eb5dcaa60625a9f2deed34de9cd2cb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc_noisy_v2.py",
+      "git_blob_sha": "d9eabffaec095df5ace6556beb758231456731e2"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/model/model.py",
+      "git_blob_sha": "816b33cd8989da4930f86d34fe89953e60689533"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_noisy.py",
+      "git_blob_sha": "d0fd347b2ecb01e32c7bd96537537393c2b003b6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_noisy_v2.py",
+      "git_blob_sha": "cfa5bbd4173870fdbea4d2a6df20a0cfbbee67aa"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_pairs.py",
+      "git_blob_sha": "c91fee5878114573238b79a36bf5fcc5019fe542"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rollback_to_v2.py",
+      "git_blob_sha": "08f582cd0f8f43f89376ca0b7d6f4c8dc3817b0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/__init__.py",
+      "git_blob_sha": "9a12ea0d45ef3a7dbeb43875025909909b171bf3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/common.py",
+      "git_blob_sha": "c076513ac7b7b727429084827d519f8ba00eb71e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/data.py",
+      "git_blob_sha": "d73c5768af6686f129c460c8dca6fbe85eedf65b"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/simulator.py",
+      "git_blob_sha": "ffb1c14044e4c87ecc6e9978b8c1c041615816c6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/training.py",
+      "git_blob_sha": "b5aa1e89f8bd3cade289327574bd45a8fed11c0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/README_逐步实施.md",
+      "git_blob_sha": "792b9a9e3f90eb774d2afd60d7dcb35e424954ac"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/check_rtc_noisy.py",
+      "git_blob_sha": "df5ffb53b95dcdef0be5b2746fdd81e80c24f019"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/main_eval_rtc_noisy.py",
+      "git_blob_sha": "152ee9150755f3fcf0b61489e96643cdc4495347"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/main_train_rtc_noisy.py",
+      "git_blob_sha": "353d87cb70eb5dcaa60625a9f2deed34de9cd2cb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/prepare_rtc_noisy.py",
+      "git_blob_sha": "d0fd347b2ecb01e32c7bd96537537393c2b003b6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/__init__.py",
+      "git_blob_sha": "9a12ea0d45ef3a7dbeb43875025909909b171bf3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/common.py",
+      "git_blob_sha": "c076513ac7b7b727429084827d519f8ba00eb71e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/data.py",
+      "git_blob_sha": "d73c5768af6686f129c460c8dca6fbe85eedf65b"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/simulator.py",
+      "git_blob_sha": "ffb1c14044e4c87ecc6e9978b8c1c041615816c6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/training.py",
+      "git_blob_sha": "b5aa1e89f8bd3cade289327574bd45a8fed11c0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/run_eval_rtc_noisy.sh",
+      "git_blob_sha": "5417bfdb707880c7860651db1fc3dde843e29167"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/run_train_rtc_noisy.sh",
+      "git_blob_sha": "475c52227bb6091ad405fb1588bf05665c3cf166"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/tests/test_rtc_noisy.py",
+      "git_blob_sha": "b73d142b690e60bf24ce3d2d0ea15a0ca42ceafb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/__init__.py",
+      "git_blob_sha": "74d181c41cfe878caf21eeb1ab9244a8280f4d4d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/cache.py",
+      "git_blob_sha": "3d471a0eb95cbfca56e1eb9b337861b41462873d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/losses.py",
+      "git_blob_sha": "8ca389b16d950ac5945e3f389bf8894199a6d3c5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/plan.py",
+      "git_blob_sha": "fb62fbb8802f4252e95c653b8bbec1f9b356d7c4"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/sampling.py",
+      "git_blob_sha": "8b83236eb8740dedcdf4fd3876050b58b9eff5bf"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/training.py",
+      "git_blob_sha": "0f3cf4136e495d230cee4d3427ac5b302af59ce6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval_rtc.sh",
+      "git_blob_sha": "6a6265df0bd5635fd85b78e09ffeb732c33a3c32"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval_rtc_noisy.sh",
+      "git_blob_sha": "5417bfdb707880c7860651db1fc3dde843e29167"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_prepare_rtc_noisy_v2.sh",
+      "git_blob_sha": "8cc9c428b3337a3b00ed2922add2be187203905f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc.sh",
+      "git_blob_sha": "bcc38cbdeba8bc69cf15e456d6f5f9de69bedca8"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc_noisy.sh",
+      "git_blob_sha": "475c52227bb6091ad405fb1588bf05665c3cf166"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc_noisy_v2.sh",
+      "git_blob_sha": "1ab8eedff5e4ea7e57e315c6c8af886ba62f2969"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_loss.py",
+      "git_blob_sha": "a5fcec5153d2bfac70e2e585e7199bca5c697ebb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_noisy_v2_logic.py",
+      "git_blob_sha": "970eb2a9559e345106f1603e5edf8a2048f4b490"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_noisy_v2_torch.py",
+      "git_blob_sha": "4093944b49de9e90cccd5d4e70a2bc20f36a859e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_pairs.py",
+      "git_blob_sha": "d685704002c4edcef775696449b243d510432d09"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_training.py",
+      "git_blob_sha": "a3ac79632560f1988b0b963663139d05d651dee7"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/RawBoost.py",
+      "git_blob_sha": "0339f666a804805c7bb4c77024e1d88998b8aaf5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/__init__.py",
+      "git_blob_sha": "8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/data_utils.py",
+      "git_blob_sha": "f9cbe17cc2be1f669e0d615cce5291c70a18cca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/rtc_data.py",
+      "git_blob_sha": "aff9f6f62b4eddbee035da16ff9a2115d40eaa34"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/rtc_loss.py",
+      "git_blob_sha": "8df6968d3f466217cdaf45abcd446a151fb07d9d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/rtc_pairs.py",
+      "git_blob_sha": "fc12513a28a8d09d244dcc52ae93048d9627dca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/README_RTC_NOISY_V2.md",
+      "git_blob_sha": "2ce511602e06b6344336609f4d2a6d83f08a0534"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/README_RTC_PAIR.md",
+      "git_blob_sha": "15b4261a53b19c0bfb679cfc2e503ff8e2c60cc7"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/README_使用说明.md",
+      "git_blob_sha": "003425dd7e7e5c3097c4c7faa12031ed5b743a82"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/evaluate_b.py",
+      "git_blob_sha": "ebe8ef2541dee0b199553de01c4da479b0a5ca25"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/install_b.py",
+      "git_blob_sha": "ef11b30e2909e9eb61bafbc76a0f21a7fa8119fa"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/prepare_noise.py",
+      "git_blob_sha": "bf159240b37bc0c79cd2b907ccb57dc7be36ea22"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/smoke_test.py",
+      "git_blob_sha": "9ad24b98ac355ca26990a308ce91ea74ddf15b72"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_train.py",
+      "git_blob_sha": "eb438fdee5df434fd832987de5946500013010d9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/model/model.py",
+      "git_blob_sha": "273c22b5e6e1c54d9a9ce3de2aa561f7751d58eb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/RawBoost.py",
+      "git_blob_sha": "0339f666a804805c7bb4c77024e1d88998b8aaf5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/__init__.py",
+      "git_blob_sha": "8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/data_utils.py",
+      "git_blob_sha": "f9cbe17cc2be1f669e0d615cce5291c70a18cca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/check_rtc_noisy.py",
+      "git_blob_sha": "df5ffb53b95dcdef0be5b2746fdd81e80c24f019"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/check_rtc_noisy_v2.py",
+      "git_blob_sha": "8f27acda27420d74a62e9eea141425326415d73e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_eval_rtc_noisy.py",
+      "git_blob_sha": "152ee9150755f3fcf0b61489e96643cdc4495347"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train.py",
+      "git_blob_sha": "605e5194668078ae8f9068a08fdcaf836282e5f5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc.py",
+      "git_blob_sha": "22caee8cb54781eac54001744d1cf5d045676af8"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc_noisy.py",
+      "git_blob_sha": "353d87cb70eb5dcaa60625a9f2deed34de9cd2cb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc_noisy_v2.py",
+      "git_blob_sha": "d9eabffaec095df5ace6556beb758231456731e2"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/model/model.py",
+      "git_blob_sha": "816b33cd8989da4930f86d34fe89953e60689533"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_noisy.py",
+      "git_blob_sha": "d0fd347b2ecb01e32c7bd96537537393c2b003b6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_noisy_v2.py",
+      "git_blob_sha": "cfa5bbd4173870fdbea4d2a6df20a0cfbbee67aa"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_pairs.py",
+      "git_blob_sha": "c91fee5878114573238b79a36bf5fcc5019fe542"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rollback_to_v2.py",
+      "git_blob_sha": "08f582cd0f8f43f89376ca0b7d6f4c8dc3817b0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/__init__.py",
+      "git_blob_sha": "9a12ea0d45ef3a7dbeb43875025909909b171bf3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/common.py",
+      "git_blob_sha": "c076513ac7b7b727429084827d519f8ba00eb71e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/data.py",
+      "git_blob_sha": "d73c5768af6686f129c460c8dca6fbe85eedf65b"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/simulator.py",
+      "git_blob_sha": "ffb1c14044e4c87ecc6e9978b8c1c041615816c6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy/training.py",
+      "git_blob_sha": "b5aa1e89f8bd3cade289327574bd45a8fed11c0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/README_逐步实施.md",
+      "git_blob_sha": "792b9a9e3f90eb774d2afd60d7dcb35e424954ac"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/check_rtc_noisy.py",
+      "git_blob_sha": "df5ffb53b95dcdef0be5b2746fdd81e80c24f019"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/main_eval_rtc_noisy.py",
+      "git_blob_sha": "152ee9150755f3fcf0b61489e96643cdc4495347"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/main_train_rtc_noisy.py",
+      "git_blob_sha": "353d87cb70eb5dcaa60625a9f2deed34de9cd2cb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/prepare_rtc_noisy.py",
+      "git_blob_sha": "d0fd347b2ecb01e32c7bd96537537393c2b003b6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/__init__.py",
+      "git_blob_sha": "9a12ea0d45ef3a7dbeb43875025909909b171bf3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/common.py",
+      "git_blob_sha": "c076513ac7b7b727429084827d519f8ba00eb71e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/data.py",
+      "git_blob_sha": "d73c5768af6686f129c460c8dca6fbe85eedf65b"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/simulator.py",
+      "git_blob_sha": "ffb1c14044e4c87ecc6e9978b8c1c041615816c6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/rtc_noisy/training.py",
+      "git_blob_sha": "b5aa1e89f8bd3cade289327574bd45a8fed11c0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/run_eval_rtc_noisy.sh",
+      "git_blob_sha": "5417bfdb707880c7860651db1fc3dde843e29167"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/run_train_rtc_noisy.sh",
+      "git_blob_sha": "475c52227bb6091ad405fb1588bf05665c3cf166"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_pair_manual/tests/test_rtc_noisy.py",
+      "git_blob_sha": "b73d142b690e60bf24ce3d2d0ea15a0ca42ceafb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/__init__.py",
+      "git_blob_sha": "74d181c41cfe878caf21eeb1ab9244a8280f4d4d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/cache.py",
+      "git_blob_sha": "3d471a0eb95cbfca56e1eb9b337861b41462873d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/losses.py",
+      "git_blob_sha": "8ca389b16d950ac5945e3f389bf8894199a6d3c5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/plan.py",
+      "git_blob_sha": "fb62fbb8802f4252e95c653b8bbec1f9b356d7c4"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/sampling.py",
+      "git_blob_sha": "8b83236eb8740dedcdf4fd3876050b58b9eff5bf"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rtc_noisy_v2/training.py",
+      "git_blob_sha": "0f3cf4136e495d230cee4d3427ac5b302af59ce6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval_rtc.sh",
+      "git_blob_sha": "6a6265df0bd5635fd85b78e09ffeb732c33a3c32"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval_rtc_noisy.sh",
+      "git_blob_sha": "5417bfdb707880c7860651db1fc3dde843e29167"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_prepare_rtc_noisy_v2.sh",
+      "git_blob_sha": "8cc9c428b3337a3b00ed2922add2be187203905f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc.sh",
+      "git_blob_sha": "bcc38cbdeba8bc69cf15e456d6f5f9de69bedca8"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc_noisy.sh",
+      "git_blob_sha": "475c52227bb6091ad405fb1588bf05665c3cf166"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc_noisy_v2.sh",
+      "git_blob_sha": "1ab8eedff5e4ea7e57e315c6c8af886ba62f2969"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_loss.py",
+      "git_blob_sha": "a5fcec5153d2bfac70e2e585e7199bca5c697ebb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_noisy_v2_logic.py",
+      "git_blob_sha": "970eb2a9559e345106f1603e5edf8a2048f4b490"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_noisy_v2_torch.py",
+      "git_blob_sha": "4093944b49de9e90cccd5d4e70a2bc20f36a859e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_pairs.py",
+      "git_blob_sha": "d685704002c4edcef775696449b243d510432d09"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/tests/test_rtc_training.py",
+      "git_blob_sha": "a3ac79632560f1988b0b963663139d05d651dee7"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/RawBoost.py",
+      "git_blob_sha": "0339f666a804805c7bb4c77024e1d88998b8aaf5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/__init__.py",
+      "git_blob_sha": "8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/data_utils.py",
+      "git_blob_sha": "f9cbe17cc2be1f669e0d615cce5291c70a18cca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/rtc_data.py",
+      "git_blob_sha": "aff9f6f62b4eddbee035da16ff9a2115d40eaa34"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/rtc_loss.py",
+      "git_blob_sha": "8df6968d3f466217cdaf45abcd446a151fb07d9d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/utils/rtc_pairs.py",
+      "git_blob_sha": "fc12513a28a8d09d244dcc52ae93048d9627dca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/README_RTC_NOISY_V2.md",
+      "git_blob_sha": "2ce511602e06b6344336609f4d2a6d83f08a0534"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/README_RTC_PAIR.md",
+      "git_blob_sha": "15b4261a53b19c0bfb679cfc2e503ff8e2c60cc7"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/README_使用说明.md",
+      "git_blob_sha": "003425dd7e7e5c3097c4c7faa12031ed5b743a82"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/evaluate_b.py",
+      "git_blob_sha": "ebe8ef2541dee0b199553de01c4da479b0a5ca25"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/install_b.py",
+      "git_blob_sha": "ef11b30e2909e9eb61bafbc76a0f21a7fa8119fa"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/prepare_noise.py",
+      "git_blob_sha": "bf159240b37bc0c79cd2b907ccb57dc7be36ea22"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/rtc_b_noise/smoke_test.py",
+      "git_blob_sha": "9ad24b98ac355ca26990a308ce91ea74ddf15b72"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/main_train.py",
+      "git_blob_sha": "eb438fdee5df434fd832987de5946500013010d9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/model/model.py",
+      "git_blob_sha": "273c22b5e6e1c54d9a9ce3de2aa561f7751d58eb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/RawBoost.py",
+      "git_blob_sha": "0339f666a804805c7bb4c77024e1d88998b8aaf5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/__init__.py",
+      "git_blob_sha": "8b137891791fe96927ad78e64b0aad7bded08bdc"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/data_utils.py",
+      "git_blob_sha": "f9cbe17cc2be1f669e0d615cce5291c70a18cca9"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/RTC-V1-upload/xlsr_aasist/utils/env_noise.py",
+      "git_blob_sha": "598294cd680fa95a5f19c36e7b465fd1c00c066e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/check_rtc_noisy.py",
+      "git_blob_sha": "df5ffb53b95dcdef0be5b2746fdd81e80c24f019"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/check_rtc_noisy_v2.py",
+      "git_blob_sha": "8f27acda27420d74a62e9eea141425326415d73e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_eval.py",
+      "git_blob_sha": "872acf2623408ea52e909fe6293470adf9af4ac3"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_eval_rtc_noisy.py",
+      "git_blob_sha": "152ee9150755f3fcf0b61489e96643cdc4495347"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train.py",
+      "git_blob_sha": "605e5194668078ae8f9068a08fdcaf836282e5f5"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc.py",
+      "git_blob_sha": "22caee8cb54781eac54001744d1cf5d045676af8"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc_noisy.py",
+      "git_blob_sha": "353d87cb70eb5dcaa60625a9f2deed34de9cd2cb"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/main_train_rtc_noisy_v2.py",
+      "git_blob_sha": "d9eabffaec095df5ace6556beb758231456731e2"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_noisy.py",
+      "git_blob_sha": "d0fd347b2ecb01e32c7bd96537537393c2b003b6"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_noisy_v2.py",
+      "git_blob_sha": "cfa5bbd4173870fdbea4d2a6df20a0cfbbee67aa"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/prepare_rtc_pairs.py",
+      "git_blob_sha": "c91fee5878114573238b79a36bf5fcc5019fe542"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/requirements.txt",
+      "git_blob_sha": "d7103f583435d5f6ed0dd751787f339491f8142d"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/rollback_to_v2.py",
+      "git_blob_sha": "08f582cd0f8f43f89376ca0b7d6f4c8dc3817b0e"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval.sh",
+      "git_blob_sha": "bda328354b78d55f067d04b21db9d3aa1344c76f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval_rtc.sh",
+      "git_blob_sha": "6a6265df0bd5635fd85b78e09ffeb732c33a3c32"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_eval_rtc_noisy.sh",
+      "git_blob_sha": "5417bfdb707880c7860651db1fc3dde843e29167"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_prepare_rtc_noisy_v2.sh",
+      "git_blob_sha": "8cc9c428b3337a3b00ed2922add2be187203905f"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train.sh",
+      "git_blob_sha": "d97e7ff29af52c892e31ccc2eea61422d301840a"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc.sh",
+      "git_blob_sha": "bcc38cbdeba8bc69cf15e456d6f5f9de69bedca8"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc_noisy.sh",
+      "git_blob_sha": "475c52227bb6091ad405fb1588bf05665c3cf166"
+    },
+    {
+      "path": "xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/xlsr_aasist/run_train_rtc_noisy_v2.sh",
+      "git_blob_sha": "1ab8eedff5e4ea7e57e315c6c8af886ba62f2969"
+    }
+  ]
+}

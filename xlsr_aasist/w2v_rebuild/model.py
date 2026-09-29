@@ -224,36 +224,3 @@ class Detector(nn.Module):
         return (*output, h) if return_frames else output
 
 
-def forward_chunks(model, features, mask, microbatch, pad_last=False, validated_mask=False,
-                   return_frames=False):
-    """Run fixed-size chunks while keeping one logical loss/optimizer step.
-
-    Training uses logical batches divisible by microbatch and normally leaves
-    pad_last=False. Validation/inference uses pad_last=True so every kernel sees
-    the same batch shape, including the final partial chunk. Padded copies are
-    discarded before metrics/losses.
-    """
-    if microbatch < 1:
-        raise ValueError('microbatch must be positive')
-    if len(features) != len(mask) or not len(features):
-        raise ValueError('features/mask must contain the same nonzero batch size')
-    if not validated_mask and not bool(mask.bool().all()):
-        raise ValueError('Fixed-length features require an all-valid mask')
-    logits, reps, frames = [], [], []
-    for i in range(0, len(features), microbatch):
-        f = features[i:i + microbatch]
-        m = mask[i:i + microbatch]
-        keep = len(f)
-        if pad_last and keep < microbatch:
-            pad = microbatch - keep
-            f = torch.cat((f, f[-1:].expand(pad, *f.shape[1:])), 0)
-            m = torch.cat((m, m[-1:].expand(pad, *m.shape[1:])), 0)
-        if return_frames:
-            z, h, sequence = model(f, m, validated_mask=True, return_frames=True)
-            frames.append(sequence[:keep])
-        else:
-            z, h = model(f, m, validated_mask=True)
-        logits.append(z[:keep])
-        reps.append(h[:keep])
-    output = torch.cat(logits), torch.cat(reps)
-    return (*output, torch.cat(frames)) if return_frames else output
