@@ -85,6 +85,14 @@ bash run_w2v_aasist.sh --resume "$(cat exp/.latest_aasist_run)" --upload-temp
 
 ## 保存、报告和提交
 
+已停止训练后，可清理旧的中间 checkpoint 来释放空间：
+
+```bash
+python cleanup_w2v_checkpoints.py --apply
+```
+
+它只扫描当前项目和原 AASIST 项目的 `exp`，清理可识别的 `last`、`latest`、按 epoch 编号的权重；所有命名含 best/candidate 的文件、留存目录及其目录清单指定的源权重均受保护。没有命名 best 的实验、未知命名的权重会跳过。原 91.68 best 在删除前后检查 SHA256。检测到同一用户仍有 Python 训练或启动器运行时停止清理；执行期间不要启动新的训练。删除 last 后不能从该文件恢复优化器状态，但保留的 best 仍可用于微调。此命令不删除音频、noisy 缓存或报告，也不复制大文件。省略 `--apply` 只预览。
+
 每个新实验只保留 `best_model.pt`（Weighted 最佳）、`best_noisy.pt`（Noisy 最佳）、`last.pt`（完整 epoch 的优化器状态）。最佳记录包含 Epoch 0，因此微调未改善时仍保留原权重＋整段策略。原 91.68 权重文件单独保留，绝不覆盖。
 
 每轮保存 JSON、逐样本分数、英文/中文与真假指标、Offline/Online/Seen/Heldout、组合实际曝光计数。默认选模指标为 `0.3 Online F1 + 0.35 Seen F1 + 0.35 Heldout F1`；Seen/Heldout 使用原四档平均方式。它是固定 Dev 代理指标，不是平台 91.68。
