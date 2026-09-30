@@ -186,7 +186,8 @@ def watch(path, log=None, pid=None, once=False, interval=1.):
 def run_job(kind, arguments):
     os.environ['AASIST_PROGRESS_OWNER'] = str(os.getpid())
     phase('Starting background job')
-    command = [sys.executable, '-u', '-m', 'w2v_aasist.' + ('full_workflow' if kind == 'full' else 'launch')]
+    module = 'w2v_v3.workflow' if kind == 'v3' else 'w2v_aasist.' + ('full_workflow' if kind == 'full' else 'launch')
+    command = [sys.executable, '-u', '-m', module]
     if kind == 'train':
         command.append('--run')
     if arguments[:1] == ['--']:
@@ -203,7 +204,7 @@ def run_job(kind, arguments):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--run', choices=('full', 'train'))
+    parser.add_argument('--run', choices=('full', 'train', 'v3'))
     parser.add_argument('--state', type=Path)
     parser.add_argument('--log', type=Path)
     parser.add_argument('--once', action='store_true')
