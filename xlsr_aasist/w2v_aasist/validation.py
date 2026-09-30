@@ -16,7 +16,8 @@ def validate(model, validation, cfg, device, score_path):
     with temporary.open('w', encoding='utf-8') as output:
         for condition, records in validation.items():
             batches = loader(records, cfg)
-            for examples in progress(batches, total=len(batches), label='Dev ' + condition, every=200):
+            epoch = Path(score_path).stem.removesuffix('_scores')
+            for examples in progress(batches, total=len(batches), label=epoch + ' Dev ' + condition, every=200):
                 predictions = predict(model, examples, device, cfg.get('eval_amp', 'none'), cfg['microbatch'], cfg['frame_budget'])
                 for i, ex in enumerate(examples):
                     logits = predictions[i:i+1]

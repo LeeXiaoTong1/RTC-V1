@@ -9,6 +9,7 @@ import sys
 from .launch import BASELINE, BASELINE_SHA256, ROOT, configuration, find_source, parser as train_parser, run_lock
 from .runtime import atomic_json, sha256
 from .full_cache import prepare
+from .progress import phase
 
 
 def ensure_idle():
@@ -20,6 +21,12 @@ def ensure_idle():
             if int(entry.name) == os.getpid() or entry.stat().st_uid != os.getuid(): continue
             args = (entry/'cmdline').read_bytes().decode(errors='replace').strip('\0').split('\0')
             if not args or not Path(args[0]).name.startswith('python'): continue
+            # Our status supervisor may itself carry a --source-config w2v_* path.
+            # Exclude only the authenticated immediate parent, never other jobs.
+            if (entry.name == os.environ.get('AASIST_PROGRESS_OWNER')
+                    and int(entry.name) == os.getppid()
+                    and any(Path(a).name == 'live_progress.py' for a in args[1:3])):
+                continue
             # Training, evaluation, audit or another cache writer can still depend on retired files.
             if any(any(tag in a.lower() for tag in ('w2v_', 'rtc_noisy', 'main_train')) for a in args[1:]):
                 active.append({'pid':int(entry.name),'command':' '.join(args)})
@@ -55,6 +62,7 @@ def main():
     args=p.parse_args()
     if args.workers < 1: p.error('workers must be positive')
     ensure_idle()
+    phase('Checking original best and full noisy setup')
     with run_lock(ROOT/'exp'/'.full2-workflow.lock'):
         with run_lock(ROOT/'exp'/'.aasist-launch.lock'):
             ensure_idle()
@@ -72,6 +80,7 @@ def main():
             cfg=configuration(source,training_args)
             # Exercise the actual training reader and fixed Dev role/noise isolation checks before deleting anything.
             from .data import build_data
+            phase('Validating full cache and fixed Dev inputs')
             plan,validation,_,_,fingerprints=build_data(cfg)
             if not plan.full or len(plan.banks)!=1: raise RuntimeError('New recipe still depends on a legacy Train cache')
             print('FULL_CACHE_TRAINING_READER_VALIDATED=True',flush=True)
@@ -80,6 +89,7 @@ def main():
             atomic_json(saved,source)
             atomic_json(ROOT/'exp'/'full2_training_config.json',cfg)
             from .cache_retirement import retire
+            phase('Checking and retiring obsolete caches')
             retire(source,cfg,ROOT,ensure_idle)
             if sha256(BASELINE)!=BASELINE_SHA256 or any(sha256(path)!=digest for path,digest in fingerprints.items()):
                 raise RuntimeError('Protected weights or active cache metadata changed')

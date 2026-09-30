@@ -7,7 +7,7 @@ from pathlib import Path
 import shutil
 import time
 import torch
-from .progress import training_bar
+from .progress import training_bar, phase
 from . import SCHEMA
 from .data import build_data, loader
 from .model import Detector
@@ -83,6 +83,7 @@ def write_report(run, history, best_epoch, noisy_epoch, status, cfg=None):
 
 
 def train(cfg, run, resume=None, smoke_steps=0):
+    phase('Checking weights, inputs and cache metadata')
     run = Path(run)
     run.mkdir(parents=True, exist_ok=True)
     device = torch.device(cfg['device'])
@@ -105,6 +106,7 @@ def train(cfg, run, resume=None, smoke_steps=0):
         model.load_state_dict(state['model'], strict=True)
         historical = state['baseline_dev']
     else:
+        phase('Loading original AASIST weights')
         model, historical = initialize(cfg)
     model.configure_trainable_layers(cfg['trainable_layers'])
     model.to(device)
@@ -139,6 +141,7 @@ def train(cfg, run, resume=None, smoke_steps=0):
     if not state and not smoke_steps:
         print('Epoch 0: original weights / FULL-input Dev evaluation; no update.', flush=True)
         dev = validate(model, validation, cfg, device, run / 'epoch_0_scores.jsonl')
+        phase('Epoch 0: saving baseline checkpoints')
         record = {'epoch': 0, 'dev': dev, 'train': {}, 'train_groups': {}, 'composition_counts': {}}
         history.append(record)
         atomic_json(run / 'epoch_0.json', record)
@@ -194,6 +197,7 @@ def train(cfg, run, resume=None, smoke_steps=0):
             return
         training_seconds = time.perf_counter() - started
         dev = validate(model, validation, cfg, device, run / f'epoch_{epoch}_scores.jsonl')
+        phase(f'Epoch {epoch}: saving checkpoints and report')
         record = {'epoch': epoch, 'seconds': time.perf_counter()-started, 'training_seconds': training_seconds,
                   'train': {k: v / len(batches) for k, v in aggregate.items()},
                   'train_groups': {k: v.result() for k, v in train_meters.items()},
@@ -222,6 +226,7 @@ def train(cfg, run, resume=None, smoke_steps=0):
         if stale >= cfg['patience']:
             reason = 'no_weighted_dev_improvement'
             break
+    phase('Final checkpoint and input verification')
     if sha256(cfg['baseline']) != cfg['baseline_sha256']:
         raise RuntimeError('Original best changed externally')
     # No cache writing is performed, and all cache manifests/configs must still match.

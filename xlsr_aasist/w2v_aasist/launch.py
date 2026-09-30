@@ -12,6 +12,7 @@ import subprocess
 import sys
 import zipfile
 from .runtime import atomic_json, sha256
+from .progress import phase
 
 ROOT = Path(__file__).resolve().parent.parent
 BASELINE_SHA256 = 'db3f8167742bf2fe41cfad028dec962d56f6c61295442870620421d7f3a9bbee'
@@ -171,6 +172,7 @@ def parser():
 
 
 def main():
+    phase('Checking training configuration and original best')
     args = parser().parse_args()
     check_environment(gpu=not args.cpu_check)
     if args.check:
@@ -226,6 +228,7 @@ def main():
                 print(line, end='', flush=True)
             code = process.wait()
         try:
+            phase('Exporting report / uploading if requested')
             export_report(run, args.download_dir, args.upload_temp)
         except Exception as exc:
             print('REPORT_EXPORT_FAILED=' + str(exc) + '; original report remains in ' + str(run), flush=True)
