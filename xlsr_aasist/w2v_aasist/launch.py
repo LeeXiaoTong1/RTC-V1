@@ -87,7 +87,10 @@ def configuration(source, args):
     cfg = {k: str(Path(source[k]).expanduser().resolve()) for k in (
         'train_protocol', 'dev_protocol', 'train_data_path', 'dev_data_path', 'ssl_path',
         'dev_noisy_cache', 'dev_heldout_cache')}
-    caches = [source['train_noisy_cache']]
+    full_cache = getattr(args, 'full_noisy_cache', None)
+    caches = [full_cache or source['train_noisy_cache']]
+    if full_cache and args.include_extra_cache:
+        raise ValueError('Full two-view mode replaces legacy Train caches; do not include extra cache')
     if args.include_extra_cache:
         extra = source.get('extra_train_noisy_cache') or []
         caches += [extra] if isinstance(extra, str) else extra
@@ -106,6 +109,8 @@ def configuration(source, args):
                score_column='P(fake)', decision_threshold=.5, input_policy='full utterance',
                composition_recipe='same-source: single 50%, temporal switch 25%, noisy prefix plus original tail 25%',
                algorithm='original w2v-BERT + AASIST weights; last-layer features; one-pass CE fine-tuning')
+    if full_cache:
+        cfg.update(full_noisy=True, composition_recipe='two full-duration processed views per Offline Train source; one view per noisy slot')
     return cfg
 
 
@@ -154,6 +159,7 @@ def parser():
     p.add_argument('--ordinary-batch', type=int, default=24)
     p.add_argument('--noisy-batch', type=int, default=4)
     p.add_argument('--include-extra-cache', action='store_true', help='Opt in to diverse bank; default uses original Train bank')
+    p.add_argument('--full-noisy-cache', help='Completed two-view full-duration Train cache; replaces old Train caches')
     p.add_argument('--download-dir', default='/home/ubuntu/LXT/temp')
     p.add_argument('--upload-temp', action='store_true', help='Upload diagnostic ZIP only, no audio/model')
     p.add_argument('--run', action='store_true')

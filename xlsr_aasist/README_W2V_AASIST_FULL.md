@@ -11,6 +11,54 @@ SHA256=db3f8167742bf2fe41cfad028dec962d56f6c61295442870620421d7f3a9bbee
 
 ## 部署、保留权重、启动
 
+### 新入口：两个整段 noisy 版本（2026-09-30）
+
+先让正在运行的旧实验完成，或明确停止它，再更新代码。不要在旧训练仍会启动 DataLoader worker 时替换源文件。旧 `last.pt` 的严格断点恢复需要旧版本代码（已保存在 `archive-before-full-noisy-20260930`）；本次是从原 91.68 best 开始的新实验。
+
+```bash
+conda activate sdd
+cd /home/ubuntu/LXT/RTC-w2v-improved &&
+git pull --ff-only origin w2vbert2-balanced-robust-fast &&
+cd xlsr_aasist &&
+bash run_w2v_full_noisy.sh --upload-temp
+```
+
+沿用已安装的 sdd 依赖，无需重新安装或执行旧的缓存脚本。该后台入口自动完成：
+
+1. 读取已有数据路径，校验原 best；使用与固定 Dev 缓存一致的 FFmpeg 版本。
+2. 对每条 Offline Train 录音生成两个**完整时长**的 FLOAT WAV：版本 0 的 SNR 在 5–15 dB，版本 1 在 15–25 dB。四个 5 dB 档位及处理设置在每个语言/真假组内均衡分配。
+3. 每个版本使用一段覆盖完整语音的连续 Train 噪声和一套固定 RTC 参数，从头到尾处理；不拼接语音、不重复前四秒、不接回干净尾段。所有语言/真假都从能够覆盖最长训练录音的共同噪声集合中抽取，避免按语音时长使用不同噪声库；实际集合大小会打印。背景噪声自身可有自然起伏，SNR 按整条录音的活跃帧计算，并非强制每一帧相同。
+4. 完整性和实际训练读取器验证通过后，清理被替代的旧 Train noisy WAV 与 sidecar，以及识别为旧固定长度输入特征的 NPY。保留其配置、清单和清理报告，Dev Seen/Heldout、原始语音、所有模型权重、新缓存不删除。
+5. 使用原 91.68 的全部前后端权重进行 Epoch 0，然后开始最多两轮微调。保留 24 ordinary + 4 noisy、原损失比例和学习率；每个 noisy 位置只选一个完整版本，不额外增加逻辑批次数。此次 full2 入口替代下文的旧 50/25/25 拼接策略。
+
+新缓存位于 `data/rtc_noisy_full2_v1/train`，按现有 38,660 条、71.73 小时 Offline Train 估计，WAV 约 **30.8 GiB**，含元数据建议为生成阶段预留 **34–36 GiB**。旧缓存会在新缓存成功之后才删，因此要先有这部分临时空间；清理 checkpoint 可先使用 `python cleanup_w2v_checkpoints.py --apply`。生成器按实际音频头估算余量，不会先删旧缓存来赌生成成功。
+
+生成可恢复：中断后重新执行相同入口，已完成且源/音频哈希匹配的版本直接复用。不同生成配方不会静默覆盖同一目录。若 FFmpeg 不在已有路径中，可加 `--ffmpeg /原来使用的/ffmpeg`；版本不同会停止。固定 Dev 不重新生成，训练/Dev 噪声录音和处理条件的隔离检查仍保留。
+
+清理只允许 `dataset/rtc_noisy_cache_v2/train_g*` 和本项目 `data/rtc_noisy_improved_v1/train_g*` 中经配置、清单证明归属的旧 Train 缓存，及 `data/w2v_feature_cache` 内符合旧哈希命名和浮点特征形状的文件。未知文件保留；发现活动训练、评估、审计或其他缓存生成进程时停止流程。旧 Train WAV 删除后，要重跑旧实验必须重新生成这些缓存。
+
+查看统一进度日志：
+
+```bash
+tail -n 60 -f "$(cat exp/.latest_aasist_log)"
+```
+
+后台日志不再写动态进度条：缓存每 100 条源录音、训练每 100 步、验证每 200 批输出一次进度与 ETA；第一步和最后一步也会输出。Epoch 0 会直接打印 Offline/Online/Seen/Heldout 的英文真假召回率。
+
+若只想生成并清理、暂不启动训练：加 `--prepare-only`。之后可单独启动：
+
+```bash
+bash run_w2v_aasist.sh \
+  --source-config exp/full2_source_config.json \
+  --full-noisy-cache data/rtc_noisy_full2_v1/train --upload-temp
+```
+
+生成或清理阶段的失败保留在统一日志；训练阶段结束后依旧导出报告并按 `--upload-temp` 打印 temp.sh 链接。提交导出仍用 `bash run_eval_w2v_aasist.sh --upload-temp`。
+
+### 旧入口：复用短 noisy 缓存的拼接实验
+
+以下入口依赖旧 Train 缓存；full2 流程清理后不能直接重跑该旧配方。
+
 ```bash
 conda activate sdd
 cd /home/ubuntu/LXT/RTC-w2v-improved

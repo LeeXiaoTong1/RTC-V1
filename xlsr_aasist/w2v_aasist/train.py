@@ -7,7 +7,7 @@ from pathlib import Path
 import shutil
 import time
 import torch
-from tqdm import tqdm
+from .progress import training_bar
 from . import SCHEMA
 from .data import build_data, loader
 from .model import Detector
@@ -56,7 +56,7 @@ def optimizer_for(model, cfg):
     return torch.optim.AdamW(groups, eps=1e-8)
 
 
-def write_report(run, history, best_epoch, noisy_epoch, status):
+def write_report(run, history, best_epoch, noisy_epoch, status, cfg=None):
     lines = ['# w2v-BERT 2.0 + AASIST / full audio', '', f'Status: {status}',
              f'Best weighted epoch: {best_epoch}; best noisy epoch: {noisy_epoch}', '',
              'Epoch 0 evaluates the original 91.68 checkpoint with the NEW full-input policy, before updating weights.',
@@ -70,10 +70,15 @@ def write_report(run, history, best_epoch, noisy_epoch, status):
             value = d['groups'].get(group, {}).get('recall', [None,None])[1]
             values.append('NA' if value is None else f'{100*value:.3f}')
         lines.append('| ' + str(r['epoch']) + ' | ' + ' | '.join(values) + ' |')
-    lines += ['', 'Training compositions: 50% unchanged cached view, 25% same-source condition switch,',
+    if cfg and cfg.get('full_noisy'):
+        lines += ['', 'Noisy training: two complete, continuously processed versions per Offline Train source.',
+                  'Version 0 uses 5-15 dB, version 1 uses 15-25 dB; conditions are stratified by language/class.',
+                  'Only one complete cached view is sampled per noisy slot; no prefix-tail or temporal stitching.']
+    else:
+        lines += ['', 'Training compositions: 50% unchanged cached view, 25% same-source condition switch,',
               '25% cached prefix + the SAME source original tail. Short originals fall back to a single cache view.',
-              'Prefix-tail contains a processed prefix and an unprocessed tail; it is not fully noisy long audio.',
-              'No Train/Dev audio, cache file, label, original checkpoint, or MultiConv checkpoint is overwritten.']
+              'Prefix-tail contains a processed prefix and an unprocessed tail; it is not fully noisy long audio.']
+    lines += ['Training does not overwrite audio/cache files or original/MultiConv checkpoints.']
     (Path(run) / 'report.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
@@ -141,8 +146,10 @@ def train(cfg, run, resume=None, smoke_steps=0):
         noisy_key = (dev['noisy_f1'], dev['weighted_f1'])
         atomic_save(run / 'best_model.pt', snapshot(0, dev))
         atomic_save(run / 'best_noisy.pt', snapshot(0, dev))
-        write_report(run, history, best_epoch, noisy_epoch, 'training')
+        write_report(run, history, best_epoch, noisy_epoch, 'training', cfg)
         print(f'Starting FULL-input Dev Weighted={100*best_key[0]:.3f} Noisy={100*noisy_key[0]:.3f}', flush=True)
+        for group in ('offline/en','online/en','seen/en','heldout/en'):
+            print('Epoch 0 ' + group + ' recall [fake,real]=' + str(dev['groups'].get(group,{}).get('recall')), flush=True)
     reason = 'epoch_budget'
     for epoch in range(start_epoch, cfg['epochs'] + 1):
         model.train()
@@ -152,8 +159,8 @@ def train(cfg, run, resume=None, smoke_steps=0):
         batches = plan.batches(epoch)
         if smoke_steps:
             batches = batches[:smoke_steps]
-        progress = tqdm(loader(plan.records, cfg, training=True, epoch=epoch, batches=batches),
-                        total=len(batches), desc=f'AASIST full epoch {epoch}/{cfg["epochs"]}')
+        progress = training_bar(loader(plan.records, cfg, training=True, epoch=epoch, batches=batches),
+                                len(batches), f'AASIST full epoch {epoch}/{cfg["epochs"]}')
         for step, examples in enumerate(progress):
             global_step = (epoch - 1) * plan.steps + step
             warm = max(1, cfg['lr_warmup_steps'])
@@ -172,11 +179,15 @@ def train(cfg, run, resume=None, smoke_steps=0):
                 group = ('noisy' if ex['noisy'] else 'ordinary') + '/' + ex['language']
                 train_meters[group].update(logits[i:i+1], [ex['label']])
                 modes[f'{ex["composition"]}/{ex["language"]}/{ex["label"]}'] += 1
+                if ex['noisy']:
+                    modes[f'condition/band{ex["band"]}/{ex["language"]}/{ex["label"]}'] += 1
                 aggregate['audio_seconds'] += ex['audio_seconds']
-            progress.set_postfix(loss=f'{stats["loss"]:.5f}')
-            if step == 0 or (step + 1) % 100 == 0:
+            progress.set_postfix(loss=f'{stats["loss"]:.5f}', refresh=False)
+            if step == 0 or (step + 1) % 100 == 0 or step+1 == len(batches):
+                seconds_per_step = (time.perf_counter()-started)/(step+1)
                 print(f'STEP {step+1}/{len(batches)} CE={stats["loss"]:.6f} '
-                      f'grad={stats["grad_norm"]:.3f} seconds/step={(time.perf_counter()-started)/(step+1):.3f}', flush=True)
+                      f'grad={stats["grad_norm"]:.3f} seconds/step={seconds_per_step:.3f} '
+                      f'ETA_min={seconds_per_step*(len(batches)-step-1)/60:.1f}', flush=True)
         if smoke_steps:
             atomic_json(run / 'smoke.json', {'passed': True, 'losses': dict(aggregate), 'steps': len(batches)})
             print('GPU_SMOKE_PASSED=True; no checkpoint saved.', flush=True)
@@ -207,7 +218,7 @@ def train(cfg, run, resume=None, smoke_steps=0):
         for group in ('offline/en','online/en','seen/en','heldout/en'):
             print(group + ' recall [fake,real]=' + str(dev['groups'].get(group,{}).get('recall')), flush=True)
         print('COMPOSITIONS=' + json.dumps(dict(modes)), flush=True)
-        write_report(run, history, best_epoch, noisy_epoch, 'training')
+        write_report(run, history, best_epoch, noisy_epoch, 'training', cfg)
         if stale >= cfg['patience']:
             reason = 'no_weighted_dev_improvement'
             break
@@ -216,7 +227,7 @@ def train(cfg, run, resume=None, smoke_steps=0):
     # No cache writing is performed, and all cache manifests/configs must still match.
     if any(sha256(p) != digest for p, digest in fingerprints.items()):
         raise RuntimeError('Input metadata changed during training')
-    write_report(run, history, best_epoch, noisy_epoch, 'complete')
+    write_report(run, history, best_epoch, noisy_epoch, 'complete', cfg)
     atomic_json(run / 'completed.json', {'reason': reason, 'best_epoch': best_epoch,
                 'best_noisy_epoch': noisy_epoch, 'best_weighted_dev_f1': best_key[0],
                 'original_best_preserved': True, 'cache_metadata_unchanged': True})

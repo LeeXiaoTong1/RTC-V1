@@ -1,6 +1,8 @@
 # RTC：w2v-BERT 2.0 + AASIST
 
-当前维护入口是 `xlsr_aasist/w2v_aasist`：从原平台 Weighted 91.68 的完整 AASIST checkpoint 微调，普通音频使用整段，已有 noisy 缓存只读并在内存组合。MultiConv 已撤出当前分支。
+当前维护入口是 `xlsr_aasist/w2v_aasist`：从原平台 Weighted 91.68 的完整 AASIST checkpoint 微调，普通音频使用整段，noisy 可使用新整段版本或历史短缓存组合。MultiConv 已撤出当前分支。
+
+最新训练入口 `bash run_w2v_full_noisy.sh --upload-temp` 会先为每条 Offline Train 生成两个完整时长 noisy 版本，验证后清理被替代的旧 Train 缓存和固定特征缓存，再从原 best 训练。固定 Dev 缓存保留；后台日志改为定期进度，避免每一步刷一行。请在旧任务结束后更新和执行。
 
 部署、训练、保留 checkpoint、日志、恢复及 submission 导出见 [使用说明](xlsr_aasist/README_W2V_AASIST_FULL.md)。
 

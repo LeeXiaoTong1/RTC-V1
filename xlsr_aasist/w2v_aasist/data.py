@@ -87,6 +87,9 @@ def read_protocol(path, root, labeled=True):
 def cache_index(folder, role, protocol, official_records):
     folder = Path(folder).resolve()
     cfg = json.loads((folder / 'config.json').read_text(encoding='utf-8'))
+    if cfg.get('format') == 'rtc_noisy_full2_cache_v1':
+        from .full_cache import read_index
+        return read_index(folder, role, protocol, official_records)
     expected_split = 'train' if role == 'train' else 'dev'
     if (cfg.get('format') != 'rtc_noisy_pair_cache_v1' or cfg.get('role') != role
             or cfg.get('split') != expected_split or cfg.get('protocol_sha256') != sha256(protocol)
@@ -167,7 +170,9 @@ class AudioDataset(Dataset):
                 raise ValueError('Compositions are Train-only')
         row = self.records[index]
         wave = read_wave(row['audio'])
-        if row['noisy'] and len(wave) != 64600:
+        if row.get('full_length') and len(wave) != row['output_samples']:
+            raise ValueError('Full noisy cache length changed')
+        if row['noisy'] and not row.get('full_length') and len(wave) != 64600:
             raise ValueError('Existing noisy cache must have exactly 64600 samples')
         if self.legacy_prefix and not row['noisy']:
             wave = np.tile(wave, math.ceil(CUT / len(wave)))[:CUT]
@@ -187,7 +192,12 @@ class AudioDataset(Dataset):
                         raise ValueError('Original source no longer matches the noisy cache')
                     self.verified_sources.add(source)
                 original = read_wave(source)
-            wave, composition = compose(wave, second, original, mode, rng)
+            if row.get('full_length'):
+                if mode != 'full' or index != partner:
+                    raise ValueError('Full noisy recipe uses one complete version per ticket')
+                composition = 'full_v' + str(row['version'])
+            else:
+                wave, composition = compose(wave, second, original, mode, rng)
         if self.max_samples and len(wave) > self.max_samples:
             start = int(rng.integers(len(wave) - self.max_samples + 1)) if self.training else 0
             wave = wave[start:start + self.max_samples]
@@ -268,13 +278,16 @@ class EpochPlan:
         self.indices = defaultdict(list)
         self.groups = {0: [], 1: []}
         self.records = list(ordinary)
+        self.full = bool(banks and banks[0] and banks[0][0].get('full_length'))
+        if self.full and (len(banks) != 1 or not all(r.get('full_length') for r in banks[0])):
+            raise ValueError('Use one complete two-view Train bank; no legacy/full cache mixing')
         for bank, rows in enumerate(banks):
             for row in rows:
                 self.indices[(row['id'], bank)].append(len(self.records))
                 self.records.append(row)
         if banks:
             for row in banks[0]:
-                if row['band'] == 0:
+                if (row.get('version') == 0 if self.full else row['band'] == 0):
                     self.groups[row['label']].append(row['id'])
             if not all(self.groups.values()):
                 raise ValueError('Both noisy source classes are required')
@@ -311,6 +324,11 @@ class EpochPlan:
                     bank = (offset + visit // 4) % len(self.banks)
                     band = (offset + visit) % 4
                     choices = self.indices[(source, bank)]
+                    if self.full:
+                        version = (offset + visit) % 2
+                        index = next(i for i in choices if self.records[i]['version'] == version)
+                        batch.append((index, index, 'full', ticket))
+                        continue
                     index = next(i for i in choices if self.records[i]['band'] == band)
                     partner_band = (band + 1 + stable_seed(self.seed, epoch, ticket) % 3) % 4
                     partner = next(i for i in choices if self.records[i]['band'] == partner_band)
@@ -352,5 +370,7 @@ def build_data(cfg):
     files = [cfg['train_protocol'], cfg['dev_protocol'], str(Path(cfg['ssl_path']) / 'preprocessor_config.json')]
     for path in cfg['train_caches'] + [cfg['dev_noisy_cache'], cfg['dev_heldout_cache']]:
         files.extend(str(Path(path) / name) for name in ('config.json', 'manifest.jsonl'))
+        if (Path(path)/'complete.json').is_file():
+            files.append(str(Path(path)/'complete.json'))
     fingerprints = {str(Path(p).resolve()): sha256(p) for p in files}
     return plan, validation, weights, counts, fingerprints

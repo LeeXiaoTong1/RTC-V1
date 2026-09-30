@@ -3,7 +3,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 import torch
-from tqdm import tqdm
+from .progress import progress
 from .data import loader
 from .runtime import Metrics, predict
 
@@ -15,7 +15,8 @@ def validate(model, validation, cfg, device, score_path):
     temporary = Path(str(score_path) + '.tmp')
     with temporary.open('w', encoding='utf-8') as output:
         for condition, records in validation.items():
-            for examples in tqdm(loader(records, cfg), desc='Dev ' + condition):
+            batches = loader(records, cfg)
+            for examples in progress(batches, total=len(batches), label='Dev ' + condition, every=200):
                 predictions = predict(model, examples, device, cfg.get('eval_amp', 'none'), cfg['microbatch'], cfg['frame_budget'])
                 for i, ex in enumerate(examples):
                     logits = predictions[i:i+1]

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import zipfile
 import torch
-from tqdm import tqdm
+from .progress import progress
 from .data import loader, read_protocol
 from .model import Detector
 from .runtime import amp_context, atomic_json, load_checkpoint, sha256, predict
@@ -71,7 +71,8 @@ def main():
     model.to(device).eval()
     ids, scores = [], []
     with torch.inference_mode():
-        for examples in tqdm(loader(rows, cfg), desc='Submission inference'):
+        batches = loader(rows, cfg)
+        for examples in progress(batches, total=len(batches), label='Submission inference', every=200):
             logits = predict(model, examples, device, cfg.get('eval_amp', 'none'), cfg['microbatch'], cfg['frame_budget'])
             for i, ex in enumerate(examples):
                 ids.append(ex['id'])
