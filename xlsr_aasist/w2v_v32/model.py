@@ -13,22 +13,29 @@ class Detector(ReferenceDetector):
     """
     supports_padded_training = True
 
-    def forward(self, features, mask):
+    def forward(self, features, mask, *, _validated=False):
         if not self.training:
             return super().forward(features, mask)
         if features.ndim != 3 or mask.ndim != 2 or features.shape[:2] != mask.shape:
             raise ValueError('Expected [B,T,D] acoustic features and [B,T] prefix mask')
-        if features.shape[1] < 1 or not bool(((mask == 0) | (mask == 1)).all()):
+        if features.shape[1] < 1 or (not _validated and not bool(((mask == 0) | (mask == 1)).all())):
             raise ValueError('A binary prefix mask and at least one frame are required')
         valid = mask.bool()
-        if not bool(valid.any(1).all()) or bool((~valid[:, :-1] & valid[:, 1:]).any()):
+        if not _validated and (not bool(valid.any(1).all()) or bool((~valid[:, :-1] & valid[:, 1:]).any())):
             raise ValueError('Each waveform requires one nonempty valid prefix')
         # Caller-provided padding content cannot leak through feature projection.
         # This is padding only; no valid frame is removed or re-normalized.
         features = features.masked_fill(~valid.unsqueeze(-1), 0)
         output = self.backbone(input_features=features, attention_mask=mask,
                                output_hidden_states=True, return_dict=True)
+        if isinstance(self.head,FusedMultiConvHead):
+            return self.head(output.hidden_states, mask, _validated=True)
         return self.head(output.hidden_states, mask)
+
+    def configure_trainable_layers(self,count):
+        result=super().configure_trainable_layers(count)
+        _set_frozen_flags(self)
+        return result
 
 
 def microbatches(examples, size=4, frame_budget=1600, max_padding_ratio=1.5):
@@ -42,6 +49,11 @@ def microbatches(examples, size=4, frame_budget=1600, max_padding_ratio=1.5):
         raise ValueError('Positive integer microbatch size and frame budget required')
     if not 1 <= max_padding_ratio < float('inf'):
         raise ValueError('max_padding_ratio must be finite and at least one')
+    # PreparedCollator already validates and groups the same waveform features.
+    if (hasattr(examples,'batches') and getattr(examples,'size',None)==size
+            and getattr(examples,'frame_budget',None)==frame_budget and max_padding_ratio==1.5):
+        yield from examples.batches
+        return
     for ex in examples:
         f, m = ex['features'], ex['mask']
         if f.ndim != 3 or f.shape[0] != 1 or f.shape[:2] != m.shape:
@@ -79,10 +91,10 @@ class FusedMultiConvHead(MultiConvHead):
     GEMM rounding can differ slightly, especially with BF16. Evaluation always
     uses the original implementation, including fixed-Dev checkpoint selection.
     """
-    def forward(self, hidden_states, mask):
+    def forward(self, hidden_states, mask, *, _validated=False):
         if not self.training:
             return super().forward(hidden_states, mask)
-        if not hidden_states or mask.ndim != 2 or not bool(mask.bool().any(1).all()):
+        if not hidden_states or mask.ndim != 2 or (not _validated and not bool(mask.bool().any(1).all())):
             raise ValueError('Nonempty hidden states and valid frames are required')
         for h in hidden_states:
             if h.shape[:2] != mask.shape or h.shape[-1] != self.config.input_dim:
@@ -124,5 +136,27 @@ def install_runtime(model, chunk_layers=5):
     if type(model) not in (ReferenceDetector, Detector):
         raise ValueError('Expected a checkpoint-compatible w2v-BERT MultiConv Detector')
     model.__class__ = Detector
+    _set_frozen_flags(model)
+    encoder=model.backbone.encoder
+    checkpoint=getattr(encoder,'_gradient_checkpointing_func',None)
+    if checkpoint is not None and not isinstance(checkpoint,_TrainableCheckpoint):
+        encoder._gradient_checkpointing_func=_TrainableCheckpoint(checkpoint)
     return install_fast_fusion(model, chunk_layers)
+
+
+def _set_frozen_flags(model):
+    for layer in model.backbone.encoder.layers:
+        layer._rtc_frozen_checkpoint=not any(p.requires_grad for p in layer.parameters())
+
+
+class _TrainableCheckpoint:
+    """Frozen prefix with no gradient input has no graph to checkpoint."""
+    def __init__(self,original): self.original=original
+
+    def __call__(self,function,*args,**kwargs):
+        layer=getattr(function,'__self__',None)
+        if (getattr(layer,'_rtc_frozen_checkpoint',False) and args
+                and isinstance(args[0],torch.Tensor) and not args[0].requires_grad):
+            return function(*args,**kwargs)
+        return self.original(function,*args,**kwargs)
 

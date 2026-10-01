@@ -9,6 +9,7 @@ from w2v_v3.data import (AudioDataset as FullAudioDataset, build_data as full_bu
                          loader as full_loader, read_protocol)
 from w2v_v31.data import crop_spec, short_settings, ViewCollator
 from .augment import processing_settings, process_wave
+from .batching import PreparedCollator
 
 
 class AudioDataset(FullAudioDataset):
@@ -67,7 +68,8 @@ def loader(records, cfg, *, training=False, epoch=0, batches=None):
                            rawboost_probability=cfg.get('rawboost_probability',.5),
                            **short_settings(cfg), **processing_settings(cfg))
     pin_memory = str(cfg.get('device', 'cpu')).startswith('cuda')
-    kwargs = dict(dataset=dataset, collate_fn=ViewCollator(cfg['ssl_path']),
+    kwargs = dict(dataset=dataset, collate_fn=PreparedCollator(cfg['ssl_path'],
+                  cfg.get('microbatch',4),cfg.get('frame_budget',1600)),
                   num_workers=cfg['workers'], pin_memory=pin_memory,
                   generator=torch.Generator().manual_seed(cfg['seed']+epoch))
     if cfg['workers']:

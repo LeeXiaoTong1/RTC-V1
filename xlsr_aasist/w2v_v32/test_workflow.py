@@ -97,6 +97,7 @@ class WorkflowTests(unittest.TestCase):
             run=Path((root/'exp'/'.latest_v32_run').read_text().strip())
             self.assertNotEqual(run,source)
             self.assertEqual(process.call_args.args[0][3], 'w2v_v32.train')
+            self.assertEqual(process.call_args.kwargs['env']['AASIST_PROGRESS_OWNER'],str(workflow.os.getpid()))
             self.assertTrue((run/'source.json').is_file())
             export.assert_called_once_with(run,args.download_dir,True)
             self.assertEqual((source/'best_model.pt').read_bytes(),b'existing best')

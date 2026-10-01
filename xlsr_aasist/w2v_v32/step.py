@@ -8,6 +8,7 @@ from w2v_v3.model import diversity_cka, microbatches as exact_microbatches
 from .model import Detector, microbatches
 from w2v_v31.step import view_components, loss_function
 from .runtime import HybridActivationStore
+from .batching import DeviceBatches
 
 
 def supervised_step(model, examples, optimizer, weights, device, amp='bf16',
@@ -31,10 +32,16 @@ def supervised_step(model, examples, optimizer, weights, device, amp='bf16',
     statistics = torch.zeros(4,device=device)
     classification = torch.zeros((),device=device)
     with storage if storage is not None else nullcontext():
-        batching = microbatches if isinstance(model,Detector) and model.training else exact_microbatches
-        for indices,features,mask in batching(examples,microbatch,frame_budget):
+        prepared_training = isinstance(model,Detector) and model.training
+        batching = microbatches if prepared_training else exact_microbatches
+        transfers = DeviceBatches(batching(examples,microbatch,frame_budget),device)
+        for indices,features,mask in transfers:
+            if storage is not None:
+                storage.refresh()
             with amp_context(device,amp):
-                z,h = model(features.to(device,non_blocking=True),mask.to(device,non_blocking=True))
+                # microbatches validates native CPU masks before transfer. Avoid
+                # repeating value checks that synchronize CUDA for every batch.
+                z,h = model(features,mask,_validated=True) if prepared_training else model(features,mask)
             finite.append(torch.isfinite(z).all() & torch.isfinite(h).all())
             ce = F.cross_entropy(z.float(),labels[indices],reduction='none')
             contribution = ce*coefficients[indices]
@@ -79,4 +86,8 @@ def supervised_step(model, examples, optimizer, weights, device, amp='bf16',
         'gpu_activation_limit_gib':storage.gpu_limit/1024**3 if storage else 0.,
         'gpu_peak_allocated_gib':torch.cuda.max_memory_allocated(device)/1024**3 if device.type=='cuda' else 0.,
         'gpu_peak_reserved_gib':torch.cuda.max_memory_reserved(device)/1024**3 if device.type=='cuda' else 0.,
+        'gpu_memory_driver_queries':storage.cuda_memory_queries if storage else 0,
+        'gpu_allocator_checks':storage.allocator_memory_checks if storage else 0,
+        'gpu_pinned_copy_batches':transfers.pinned_batches,
+        'gpu_copy_batches':transfers.copy_batches,
         'encoder_forward_microbatches':len(logits)},scores

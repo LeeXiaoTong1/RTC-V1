@@ -1,6 +1,7 @@
 """Reuse existing complete caches and V3 best in a separate bounded adaptation run."""
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import secrets
 import subprocess
@@ -48,7 +49,8 @@ def main():
         log = run/('execution_'+datetime.now().strftime('%Y%m%d_%H%M%S')+'.log')
         with log.open('x', encoding='utf-8') as output:
             child = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                     text=True, encoding='utf-8', errors='replace', bufsize=1)
+                                     text=True, encoding='utf-8', errors='replace', bufsize=1,
+                                     env={**os.environ,'AASIST_PROGRESS_OWNER':str(os.getpid())})
             for line in child.stdout:
                 output.write(line); output.flush(); print(line, end='', flush=True)
             code = child.wait()

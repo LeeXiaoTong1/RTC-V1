@@ -10,7 +10,7 @@ import shutil
 import time
 import numpy as np
 import torch
-from w2v_aasist.progress import phase, training_bar
+from w2v_aasist.progress import phase as publish_phase, training_bar
 from w2v_aasist.runtime import (Metrics, atomic_json, atomic_save, seed_all,
                                 sha256, storage_size)
 from w2v_v31.control import Controller, lr_scale
@@ -24,6 +24,26 @@ from w2v_v3.validation import validate
 from . import SCHEMA
 from w2v_v3.train import (read_state, optimizer_for, rng_state, restore_rng,
                           initialize as initialize_v3, source_fingerprints as v3_fingerprints)
+
+
+def phase(label):
+    publish_phase(label)
+    print('V32_EVENT='+json.dumps({'kind':'phase','label':label}),flush=True)
+
+
+def print_validation(record):
+    """Print only after report and paired checkpoint transaction are committed."""
+    tag,dev,decision=record['tag'],record['dev'],record['decision']
+    print('V32_EVENT='+json.dumps({'kind':'validation','tag':tag}),flush=True)
+    scores=' '.join(f'{label}={100*dev[key]:.3f}' for label,key in
+        (('Clean','clean_f1'),('Seen','seen_f1'),('Heldout','heldout_f1'),
+         ('Noisy','noisy_f1'),('Weighted','weighted_f1')))
+    print(f'Dev {tag} {scores} promoted={"best_safe" in decision["save"]} '
+          f'action={decision["action"]} LR={record["learning_rates"]}',flush=True)
+    for group in ('offline/en','online/en','seen/en','heldout/en'):
+        print(group+' recall [fake,real]='+str(dev['groups'][group]['recall']),flush=True)
+    if decision['warnings']:
+        print('Selection warnings: '+', '.join(decision['warnings']),flush=True)
 
 
 def source_fingerprints():
@@ -238,6 +258,7 @@ def train(cfg, run, resume=None, smoke_steps=0):
             'aggregate': {}, 'composition_counts': {}, 'meters': {}, 'rng': rng_state(),
             'complete': False, 'completion_reason': 'phase_budget'})
         write_report(run, history, controller, 'training')
+        print_validation(record)
         print('BASELINE_SAVED=True; original V3 best is the fallback, before training.', flush=True)
 
     reason = state.get('completion_reason', 'phase_budget') if state else 'phase_budget'
@@ -330,6 +351,7 @@ def train(cfg, run, resume=None, smoke_steps=0):
             print('GPU_SMOKE_PASSED=True; no checkpoint saved.', flush=True)
             return
         tag = f'epoch_{epoch}' if cursor == len(batches) else f'epoch_{epoch}_step_{cursor}'
+        phase('V3.2 validating '+tag)
         dev = validate(model, validation, cfg, device, run/(tag+'_scores.jsonl'))
         decision = controller.observe(dev, tag)
         record = {'tag': tag, 'epoch': epoch, 'cursor': cursor, 'phase': stage,
@@ -348,13 +370,6 @@ def train(cfg, run, resume=None, smoke_steps=0):
                 atomic_save(run/filename, snapshot(tag, dev))
         if 'best_safe' in decision['save']:
             atomic_save(run/'control_best.pt', {**snapshot(tag, dev, 'control'), 'optimizer': optimizer.state_dict()})
-        print(f'Dev {tag} Clean={100*dev["clean_f1"]:.3f} Seen={100*dev["seen_f1"]:.3f} '
-              f'Heldout={100*dev["heldout_f1"]:.3f} Weighted={100*dev["weighted_f1"]:.3f} '
-              f'promoted={"best_safe" in decision["save"]} action={decision["action"]} '
-              f'LR={record["learning_rates"]}', flush=True)
-        for group in ('offline/en','online/en','seen/en','heldout/en'):
-            print(group+' recall [fake,real]='+str(dev['groups'][group]['recall']), flush=True)
-        if decision['warnings']: print('Selection warnings: '+', '.join(decision['warnings']), flush=True)
         resume_tag, resume_dev = tag, dev
         if decision['action'] == 'restore_reduce':
             restored = restore_selected(model, optimizer, run, controller.state['best_safe']['tag'])
@@ -370,6 +385,7 @@ def train(cfg, run, resume=None, smoke_steps=0):
                                    'completion_reason': reason})
         commit_winners(run, replacing)
         write_report(run, history, controller, 'complete' if completed else 'training')
+        print_validation(record)
     phase('V3.2 verifying protected original and input metadata')
     if sha256(cfg['baseline']) != cfg['baseline_sha256']:
         raise RuntimeError('Original checkpoint changed externally')

@@ -42,6 +42,13 @@ class HybridActivationStore(torch.autograd.graph.saved_tensors_hooks):
     storage, ``bytes`` is copied host tensor bytes, ``gpu_limit`` and ``limit``
     are their effective byte budgets. ``gpu_kept_tensors`` / ``offloaded_tensors``
     count hooks; both are zero for an entirely CPU model.
+
+    ``refresh()`` snapshots driver memory before each physical microbatch. Hook
+    calls then use allocator counters, rather than querying the CUDA driver for
+    every saved tensor. Changes in this process's allocations are reflected at
+    every hook. Other processes' allocations are observed at the next refresh;
+    as with the original check-then-allocate policy, the reserve cannot protect
+    against an unrelated process taking arbitrary GPU memory during a forward.
     """
     def __init__(self, model, gpu_budget_gib=18., host_budget_gib=0., reserve_gib=6.,
                  pin_memory=True):
@@ -55,8 +62,10 @@ class HybridActivationStore(torch.autograd.graph.saved_tensors_hooks):
         self.device = next(iter(devices), None)
         self.reserve = int(reserve_gib * _GIB)
         self.gpu_limit = 0
+        self.cuda_memory_queries = self.allocator_memory_checks = 0
+        self._cuda_capacity = 0
         if self.device is not None:
-            free = _usable_cuda_bytes(self.device)
+            free = self.refresh()
             self.gpu_limit = min(int(gpu_budget_gib * _GIB), max(0, free - self.reserve))
         available = available_host_bytes()
         if available is None and not host_budget_gib and self.device is not None:
@@ -77,6 +86,30 @@ class HybridActivationStore(torch.autograd.graph.saved_tensors_hooks):
         storage = tensor.untyped_storage()
         return tensor.device, storage.data_ptr(), storage.nbytes()
 
+    def refresh(self):
+        """Refresh external-memory pressure once per physical microbatch.
+
+        Driver-free memory plus our allocator's reserved memory is the total
+        capacity currently available to this process. Subtracting live tensor
+        allocation at each hook accounts for growing activations without a
+        driver query. This does not call synchronize or change allocator state.
+        CPU callers may use the same entry point; they make no CUDA calls.
+        """
+        if self.device is None:
+            return 0
+        free, _ = torch.cuda.mem_get_info(self.device)
+        self.cuda_memory_queries += 1
+        reserved = torch.cuda.memory_reserved(self.device)
+        allocated = torch.cuda.memory_allocated(self.device)
+        # Clamp the reusable cache at zero, matching _usable_cuda_bytes.
+        usable = free + max(0, reserved - allocated)
+        self._cuda_capacity = usable + allocated
+        return usable
+
+    def _estimated_cuda_free(self):
+        self.allocator_memory_checks += 1
+        return max(0, self._cuda_capacity - torch.cuda.memory_allocated(self.device))
+
     def _pack(self, tensor):
         if tensor.device.type == 'cpu' or not tensor.numel():
             return tensor.device, tensor.detach()
@@ -89,7 +122,7 @@ class HybridActivationStore(torch.autograd.graph.saved_tensors_hooks):
             self.gpu_kept_tensors += 1
             return tensor.device, tensor.detach()
         size = key[2]
-        free = _usable_cuda_bytes(self.device)
+        free = self._estimated_cuda_free()
         if _keep_on_gpu(size, self.gpu_bytes, self.gpu_limit, free, self.reserve):
             saved = tensor.detach()
             self._kept_storages[key] = saved
