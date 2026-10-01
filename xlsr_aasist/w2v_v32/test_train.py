@@ -72,7 +72,8 @@ def fixture(root):
                short_max_seconds=.47, short_prefix_probability=.5,
                # Guarantee a protected fallback while still running actual Dev
                # inference and all training/gradient/optimizer/control paths.
-               processing_enabled=True, processing_identity_probability=.5, processing_single_probability=.4,
+               processing_enabled=True, processing_identity_probability=.5,
+               processing_single_probability=.35, processing_silence_probability=.05,
                fusion_chunk_layers=3, selection_min_delta=.99, en_real_tolerance=.005,
                noisy_fake_tolerance=.003, clean_tolerance=.001)
     discovery = lambda _: (plan, validation, torch.ones(2), torch.tensor([4, 4]), fingerprints)

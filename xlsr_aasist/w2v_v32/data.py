@@ -16,14 +16,15 @@ class AudioDataset(FullAudioDataset):
     def __init__(self, *args, short_min_seconds=3., short_max_seconds=6.,
                  short_prefix_probability=.5, short_loss_weight=.3,
                  processing_enabled=True, processing_identity_probability=.5,
-                 processing_single_probability=.4, **kwargs):
+                 processing_single_probability=.4, processing_silence_probability=0., **kwargs):
         super().__init__(*args, **kwargs)
         self.short = short_settings(dict(short_min_seconds=short_min_seconds,
                 short_max_seconds=short_max_seconds, short_prefix_probability=short_prefix_probability,
                 short_loss_weight=short_loss_weight))
         self.processing = processing_settings(dict(processing_enabled=processing_enabled,
                 processing_identity_probability=processing_identity_probability,
-                processing_single_probability=processing_single_probability))
+                processing_single_probability=processing_single_probability,
+                processing_silence_probability=processing_silence_probability))
 
     def __getitem__(self, ticket):
         row = super().__getitem__(ticket)
@@ -32,17 +33,18 @@ class AudioDataset(FullAudioDataset):
         identity = json.dumps([self.epoch, ticket], sort_keys=True, separators=(',', ':'))
         group = hashlib.sha256(identity.encode('utf-8')).hexdigest()
         wave = row['wave']
+        weight = self.short['short_loss_weight']
+        start, count, mode = crop_spec(row['id'], len(wave), seed=self.seed, epoch=self.epoch,
+                                      **{k:v for k,v in self.short.items() if k != 'short_loss_weight'})
+        protected=[(start,count)] if count<len(wave) and weight>0 else []
         if row['noisy']:
             if not row.get('full_length') or row.get('version') not in (0, 1):
                 raise ValueError('V3.2 processing requires existing full-length noisy versions 0 and 1')
             wave, processing = process_wave(wave, row['id'], row['version'], seed=self.seed,
-                                           epoch=self.epoch, **self.processing)
+                                           epoch=self.epoch, protected_views=protected, **self.processing)
         else:
             processing = dict(processing_condition='ordinary_unchanged',
                               processing_parameters=[], processing_applied=False)
-        weight = self.short['short_loss_weight']
-        start, count, mode = crop_spec(row['id'], len(wave), seed=self.seed, epoch=self.epoch,
-                                      **{k:v for k,v in self.short.items() if k != 'short_loss_weight'})
         common = {**row, **processing, 'wave':wave, 'source_group':group, 'source_id':row['id'],
                   'source_audio_seconds':len(wave)/16000, 'source_samples':len(wave),
                   'short_crop_mode':mode}

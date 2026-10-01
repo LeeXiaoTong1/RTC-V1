@@ -6,6 +6,7 @@ simulator, or a reconstruction of any evaluation platform. No new audio is read.
 import math
 import numpy as np
 from w2v_aasist.data import stable_seed
+from .silence import apply_local_silence
 
 SAMPLE_RATE = 16000
 OPERATORS = ('frequency_response', 'smooth_gain', 'local_attenuation')
@@ -16,11 +17,14 @@ def processing_settings(cfg):
         'processing_enabled': cfg.get('processing_enabled', True),
         'processing_identity_probability': float(cfg.get('processing_identity_probability', .5)),
         'processing_single_probability': float(cfg.get('processing_single_probability', .4)),
+        # Old configurations remain non-silencing unless explicitly opted in.
+        'processing_silence_probability': float(cfg.get('processing_silence_probability', 0.)),
     }
     if type(values['processing_enabled']) is not bool:
         raise ValueError('processing_enabled must be boolean')
-    identity, single = values['processing_identity_probability'], values['processing_single_probability']
-    if not all(math.isfinite(x) and 0 <= x <= 1 for x in (identity, single)) or identity + single > 1 + 1e-12:
+    identity, single, silence = (values[k] for k in ('processing_identity_probability',
+        'processing_single_probability','processing_silence_probability'))
+    if not all(math.isfinite(x) and 0 <= x <= 1 for x in (identity, single, silence)) or identity + single + silence > 1 + 1e-12:
         raise ValueError('Processing probabilities must be finite, nonnegative, and sum to at most one')
     return values
 
@@ -37,6 +41,9 @@ def processing_plan(source_id, version, *, seed, epoch, **settings):
     identity, single = settings['processing_identity_probability'], settings['processing_single_probability']
     if not settings['processing_enabled'] or draw < identity:
         return []
+    if identity + single <= draw < identity + single + settings['processing_silence_probability']:
+        return [dict(operator='local_silence',duration_seconds=float(rng.uniform(.04,.16)),
+                     position=float(rng.random()),maximum_fraction=.05,fade_seconds=.005)]
     count = 1 if draw < identity + single else 2
     choices = rng.choice(len(OPERATORS), count, replace=False)
     plan = []
@@ -67,6 +74,10 @@ def apply_plan(wave, plan):
         raise ValueError('Processing requires finite, nonempty mono audio')
     if len(plan) > 2 or len({p['operator'] for p in plan}) != len(plan):
         raise ValueError('At most two distinct processing operators are supported')
+    if any(p['operator']=='local_silence' for p in plan):
+        if len(plan)!=1:
+            raise ValueError('Local silence must not be combined with other processing')
+        return apply_local_silence(wave,plan[0])[0]
     result = np.array(wave, dtype=np.float32, copy=True)
     for parameters in plan:
         name = parameters['operator']
@@ -102,11 +113,17 @@ def apply_plan(wave, plan):
     return np.ascontiguousarray(result)
 
 
-def process_wave(wave, source_id, version, *, seed, epoch, **settings):
+def process_wave(wave, source_id, version, *, seed, epoch, protected_views=(), **settings):
     plan = processing_plan(source_id, version, seed=seed, epoch=epoch, **settings)
-    result = apply_plan(wave, plan)
+    details={}
+    if plan and plan[0]['operator']=='local_silence':
+        result,details=apply_local_silence(wave,plan[0],protected_views)
+    else:
+        result = apply_plan(wave, plan)
+    applied=bool(plan) and details.get('silence_applied',True)
     return result, {
-        'processing_condition': '+'.join(sorted(p['operator'] for p in plan)) or 'unchanged',
+        'processing_condition': ('+'.join(sorted(p['operator'] for p in plan)) if applied else 'unchanged'),
         'processing_parameters': plan,
-        'processing_applied': bool(plan),
+        'processing_applied': applied,
+        **details,
     }

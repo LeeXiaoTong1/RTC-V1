@@ -6,13 +6,18 @@
 
 完整遍历原始 Train 和每个 Offline Train 来源的两个整段 noisy 版本。保留 V3.1 的整段/短段监督：默认每条来源的分类损失预算为整段 70%、短段 30%，无法产生不同短段时仅保留整段。先在波形上裁剪，再分别计算官方特征及归一化；不截取已归一化特征冒充短录音。
 
-在读取 noisy 时，约 50% 保持不变、40% 施加一种、10% 施加两种不同的轻处理：
+在读取 noisy 时，约 50% 保持不变、35% 施加一种轻处理、10% 施加两种不同的轻处理、5% 单独尝试局部静音：
 
 | 处理 | 默认范围 | 目的 |
 |---|---|---|
 | 频率响应变化 | 温和带通，高端截止 3.4–7.2 kHz，低端 60–160 Hz | 减少对单一通道频谱的依赖 |
 | 平滑动态音量 | ±3 dB，0.5–1.5 秒平滑变化 | 覆盖时间变化的增益，避免只改变被归一化抵消的全局音量 |
 | 局部衰减 | 3–9 dB，80–240 ms，最多覆盖录音的 10% | 局部线索变弱时仍利用其余证据，不直接把语音置零 |
+| 局部完全静音 | 40–160 ms，含两端各 5 ms 平滑过渡；中央真正置零 | 覆盖短时信号完全缺失，单独使用，不与其他处理叠加 |
+
+局部静音新增限制：受影响的整个区间（包括渐变）不得超过整段和实际短片段各自长度的 5%；按最短视图的 5% 保守限长，低于 40 ms 则跳过。完整和短视图都必须保留至少 90% 的原信号能量，否则跳过，以免清除安静录音中唯一有声片段。这是信号能量保护，并不是语音识别或 VAD。原本已静音的区域不算成功增强。因此 5% 是抽中该方案的概率，实际应用比例可能更低；epoch JSON 会分别记录应用和各类跳过次数。
+
+同一整段只处理一次，短视图截取同一结果。内部静音时间仍标记为有效帧，不能与合批 padding 混淆。Noisy/ordinary 的样本数、full/short 损失预算、学习率和两份缓存均不因此改变。
 
 这些是通用信号扰动，并不声称复现某个 RTC 平台或真实 codec。范围没有按 Progress 样本或其预测结果拟合。处理方案只取决于录音身份、版本、epoch 和种子，与真假和语言标签无关。先处理整段，再从同一结果生成短段，不增加第三、第四个模型输入。普通 Train 沿用既有原始/RawBoost 分配；Dev 不施加新处理。每个条件按语言、类别的实际次数写入 epoch JSON。
 
@@ -31,12 +36,16 @@
 
 已有 V3.1 在训练时，应先到合适的保存点，或接受丢弃最近保存点之后的未保存步数，再停止它。不要同时启动两轮训练。
 
+如果已启动之前未包含局部静音的 V3.2，应在拉取更新**之前**执行 `python -m w2v_v32.stop --version v32 --apply`。更新后开一个新运行，不用 `--resume` 接续旧配方；源码指纹变化会拒绝旧断点恢复。旧 checkpoint 文件保留，必要时可用 `--source-run 旧运行目录` 将其中已验证的 best 作为新起点。尚未启动 V3.2 则正常更新、启动即可。
+
 ```bash
 conda activate sdd
-cd /home/ubuntu/LXT/RTC-w2v-improved &&
+cd /home/ubuntu/LXT/RTC-w2v-improved/xlsr_aasist &&
+python -m w2v_v32.stop --version v31 --apply &&
+python -m w2v_v32.stop --version v32 --apply &&
+cd .. &&
 git pull --ff-only origin w2vbert2-balanced-robust-fast &&
 cd xlsr_aasist &&
-python -m w2v_v32.stop --version v31 --apply &&
 bash setup_w2v_v32.sh &&
 bash run_w2v_v32.sh --upload-temp
 ```
@@ -61,7 +70,7 @@ bash show_w2v_v32.sh
 cat "$(cat exp/.latest_v32_run)/performance_latest.json"
 ```
 
-可选参数：`--gpu-activation-gib 12` 降低中间结果驻留上限；`--workers 4` 减少 CPU worker；`--condition-probability 0` 关闭新增处理以运行相同 V3.1 训练目标的加速路径。高级参数 `--no-gradient-checkpointing` 减少重计算但增加显存，不作为默认。上述参数只用于新运行；恢复必须使用原配置。
+可选参数：`--gpu-activation-gib 12` 降低中间结果驻留上限；`--workers 4` 减少 CPU worker；`--condition-probability 0` 关闭新增处理以运行相同 V3.1 训练目标的加速路径；`--silence-probability 0` 仅关闭局部静音并恢复原 50%/40%/10% 条件分配。默认静音占总处理概率的 10%（即 5%），从单种轻处理份额中划出，不增加总增强概率。高级参数 `--no-gradient-checkpointing` 减少重计算但增加显存，不作为默认。上述参数只用于新运行；恢复必须使用原配置。
 
 ```bash
 bash run_w2v_v32.sh --resume exp/你的V32目录 --upload-temp

@@ -37,7 +37,9 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(c['noisy_weight_start'],c['noisy_weight'])
             self.assertEqual(c['short_loss_weight'],.3)
             self.assertEqual(c['clean_tolerance'],.002)
-            self.assertEqual((c['processing_identity_probability'],c['processing_single_probability']),(.5,.4))
+            self.assertEqual(c['processing_identity_probability'],.5)
+            self.assertAlmostEqual(c['processing_single_probability'],.35)
+            self.assertEqual(c['processing_silence_probability'],.05)
             self.assertEqual((c['gpu_activation_gib'],c['gpu_reserve_gib']),(18.,8.))
             self.assertTrue(c['checkpointing'])
             self.assertEqual(before,(source/'config.json').read_bytes())
@@ -51,13 +53,26 @@ class WorkflowTests(unittest.TestCase):
                          ['--encoder-lr','inf'],['--workers','-1'],
                          ['--condition-probability','nan'],['--condition-probability','1.1'],
                          ['--gpu-activation-gib','-1'],['--gpu-reserve-gib','1'],
-                         ['--prefetch-factor','0'],['--fusion-chunk-layers','0']):
+                         ['--prefetch-factor','0'],['--fusion-chunk-layers','0'],
+                         ['--silence-probability','nan'],['--silence-probability','-1'],
+                         ['--silence-probability','.41']):
                 args=config.parser().parse_args(['--source-run',str(source),*argv])
                 with self.subTest(argv=argv), patch('w2v_v31.config.sha256',side_effect=self.digest):
                     with self.assertRaises(ValueError): config.configuration(args)
             args=config.parser().parse_args(['--source-run',str(source)])
             with patch('w2v_v31.config.sha256',return_value='wrong'):
                 with self.assertRaisesRegex(ValueError,'Protected original'): config.configuration(args)
+
+    def test_silence_can_be_disabled_and_does_not_expand_total_processing_budget(self):
+        with tempfile.TemporaryDirectory() as td:
+            source=self.source(Path(td))
+            for flags,expected in ((['--silence-probability','0'],(.5,.4,0.)),
+                                   (['--condition-probability','0'],(1.,0.,0.))):
+                args=config.parser().parse_args(['--source-run',str(source),*flags])
+                with patch('w2v_v31.config.sha256',side_effect=self.digest):
+                    c=config.configuration(args)
+                self.assertEqual(tuple(c[k] for k in ('processing_identity_probability',
+                    'processing_single_probability','processing_silence_probability')),expected)
 
     def test_workflow_reuses_cache_and_exports_no_models(self):
         from contextlib import nullcontext

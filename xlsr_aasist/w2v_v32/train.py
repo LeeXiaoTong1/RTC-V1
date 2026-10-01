@@ -306,6 +306,9 @@ def train(cfg, run, resume=None, smoke_steps=0):
                 modes[f'augmentation/{ex.get("augmentation", "unknown")}/{ex["language"]}/{ex["label"]}/{ex["view"]}'] += 1
                 if ex['view']=='full':
                     modes[f'processing/{ex.get("processing_condition","unknown")}/{ex["language"]}/{ex["label"]}'] += 1
+                    if 'silence_applied' in ex:
+                        status='applied' if ex['silence_applied'] else ex['silence_skip_reason']
+                        modes[f'local_silence/{status}/{ex["language"]}/{ex["label"]}'] += 1
                 if ex['noisy']: modes[f'band{ex["band"]}/{ex["language"]}/{ex["label"]}/{ex["view"]}'] += 1
                 aggregate['audio_seconds'] += ex['audio_seconds']
             cursor += 1; epoch_steps += 1; global_steps += 1; controller.state['phase_steps'] += 1

@@ -15,6 +15,8 @@ def parser():
     p.add_argument('--gpu-reserve-gib', type=float, default=8.)
     p.add_argument('--prefetch-factor', type=int, default=2)
     p.add_argument('--condition-probability', type=float, default=.5)
+    p.add_argument('--silence-probability',type=float,default=None,
+                   help='Exclusive noisy silence probability; default 10%% of the processing budget (0.05)')
     p.add_argument('--no-gradient-checkpointing', action='store_true')
     p.add_argument('--fusion-chunk-layers', type=int, default=5)
     return p
@@ -39,13 +41,18 @@ def configuration(args):
         raise ValueError('Reserve >=2 GiB; positive prefetch and fusion chunk required')
     if not math.isfinite(args.condition_probability) or not 0 <= args.condition_probability <= 1:
         raise ValueError('Condition probability must be in [0,1]')
+    silence=.1*args.condition_probability if args.silence_probability is None else args.silence_probability
+    if not math.isfinite(silence) or not 0<=silence<=.8*args.condition_probability:
+        raise ValueError('Silence probability must fit within the single-processing budget')
     cfg = previous_configuration(args)
     cfg.update(version='3.2', gpu_activation_gib=args.gpu_activation_gib,
         gpu_reserve_gib=args.gpu_reserve_gib, prefetch_factor=args.prefetch_factor,
         condition_probability=args.condition_probability,
         processing_enabled=args.condition_probability>0,
         processing_identity_probability=1-args.condition_probability,
-        processing_single_probability=.8*args.condition_probability,
+        processing_single_probability=.8*args.condition_probability-silence,
+        processing_silence_probability=silence,
+        processing_recipe='v32-local-silence-1; exclusive, 40-160ms including 5ms ramps, <=5% per view, >=90% energy retained',
         fusion_chunk_layers=args.fusion_chunk_layers,
         checkpointing=not args.no_gradient_checkpointing,
         coverage_policy='Full official Train traversal; two existing noisy versions; label-independent on-read processing; full/short views share source CE budget',
