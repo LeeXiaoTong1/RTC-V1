@@ -180,8 +180,13 @@ class CudaMemoryQueryTests(unittest.TestCase):
         self.assertGreater(store.bytes, 0)
         self.assertLessEqual(store.gpu_bytes, store.gpu_limit)
         torch.testing.assert_close(got, expected, rtol=0, atol=0)
-        for a, b in zip(actual.parameters(), reference.parameters()):
-            torch.testing.assert_close(a.grad, b.grad, rtol=0, atol=0)
+        for (name,a),(_,b) in zip(actual.named_parameters(),reference.named_parameters()):
+            with self.subTest(parameter=name):
+                self.assertTrue(bool(torch.isfinite(a.grad).all()))
+                # CPU spill preserves dtype/values, but restored strides may
+                # change CUDA backward reduction order. Storage roundtrips are
+                # checked bitwise separately in test_runtime.StorageTests.
+                torch.testing.assert_close(a.grad,b.grad,rtol=1e-5,atol=1e-8)
 
 
 if __name__ == '__main__':

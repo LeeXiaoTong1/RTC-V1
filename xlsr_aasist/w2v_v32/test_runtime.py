@@ -116,20 +116,31 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(HybridActivationStore(model).limit,0)
 
     @unittest.skipUnless(torch.cuda.is_available(),'CUDA residency/spill requires CUDA')
-    def test_cuda_residency_aliases_cpu_spill_and_exact_gradients(self):
+    def test_cuda_residency_aliases_cpu_spill_and_equivalent_gradients(self):
+        torch.manual_seed(127)
         reference=ToyDetector().cuda();actual=copy.deepcopy(reference)
         x=torch.randn(3,12,5,device='cuda');mask=torch.ones(3,12,dtype=torch.long,device='cuda')
         z,h=reference(x,mask);loss=z.square().sum()+.01*diversity_cka(h);loss.backward()
         # Force mixed residency/spill even for this tiny model.
         store=HybridActivationStore(actual,gpu_budget_gib=2000/1024**3,host_budget_gib=.1,reserve_gib=0)
         with store:
-            z,h=actual(x,mask);(z.square().sum()+.01*diversity_cka(h)).backward()
+            za,ha=actual(x,mask)
+            actual_loss=za.square().sum()+.01*diversity_cka(ha)
+            actual_loss.backward()
+        torch.testing.assert_close(za,z,atol=0,rtol=0)
+        torch.testing.assert_close(ha,h,atol=0,rtol=0)
+        torch.testing.assert_close(actual_loss,loss,atol=0,rtol=0)
         self.assertGreater(store.gpu_bytes,0)
         self.assertGreater(store.bytes,0)
         self.assertLessEqual(store.gpu_bytes,store.gpu_limit)
         self.assertEqual(len(store._kept_storages),0)
-        for a,b in zip(actual.parameters(),reference.parameters()):
-            torch.testing.assert_close(a.grad,b.grad,atol=0,rtol=0)
+        for (name,a),(_,b) in zip(actual.named_parameters(),reference.named_parameters()):
+            with self.subTest(parameter=name):
+                self.assertTrue(bool(torch.isfinite(a.grad).all()))
+                # save_on_cpu preserves values but can restore a strided view
+                # contiguously. CUDA backward may then change reduction order.
+                # Check FP32 numerical equivalence, not bitwise GEMM results.
+                torch.testing.assert_close(a.grad,b.grad,atol=1e-8,rtol=1e-5)
         aliases=HybridActivationStore(actual,gpu_budget_gib=.1,host_budget_gib=.1,reserve_gib=0)
         temp=torch.randn(100,device='cuda',requires_grad=True)
         with aliases:
@@ -137,6 +148,34 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(aliases.gpu_bytes,temp.untyped_storage().nbytes())
             self.assertEqual(aliases.gpu_kept_tensors,3)
             self.assertTrue(all(t.grad_fn is None for t in aliases._kept_storages.values()))
+
+    @unittest.skipUnless(torch.cuda.is_available(),'CUDA saved-tensor roundtrip requires CUDA')
+    def test_cuda_saved_values_remain_bitwise_exact_for_retained_and_spilled_views(self):
+        # Unlike a complete backward reduction, a storage roundtrip MUST be
+        # exact. Force each placement and exercise layouts that CPU spill packs
+        # contiguously, keeping this guard independent of gradient tolerances.
+        model=torch.nn.Linear(3,2).cuda()
+        dtypes=[torch.float32]
+        if torch.cuda.is_bf16_supported():dtypes.append(torch.bfloat16)
+        for dtype in dtypes:
+            base=(torch.arange(240,device='cuda',dtype=torch.float32).reshape(12,20)-120)/16
+            base=base.to(dtype)
+            views=(base,base.t(),base[::2,1::3],base[:1,:].expand(4,-1))
+            for keep in (False,True):
+                for index,value in enumerate(views):
+                    with self.subTest(dtype=dtype,keep=keep,view=index):
+                        store=HybridActivationStore(model,gpu_budget_gib=.1 if keep else 0.,
+                                                    host_budget_gib=.1,reserve_gib=0)
+                        with store:
+                            packed=store.pack_hook(value)
+                            self.assertEqual(packed[1].device.type,'cuda' if keep else 'cpu')
+                            if not keep:self.assertTrue(packed[1].is_pinned())
+                            restored=store.unpack_hook(packed)
+                            self.assertEqual(restored.device,value.device)
+                            self.assertEqual(restored.dtype,value.dtype)
+                            self.assertEqual(restored.shape,value.shape)
+                            torch.testing.assert_close(restored,value,atol=0,rtol=0)
+                        self.assertGreater(store.gpu_bytes if keep else store.bytes,0)
 
 
 class PaddedModelTests(unittest.TestCase):
