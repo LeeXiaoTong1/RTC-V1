@@ -97,3 +97,20 @@ bash run_eval_w2v_v33.sh --upload-temp
 ```
 
 导出要求请求的组全部完成，默认选择通过保护的单模型 winner。若两组都没有合格收益，会使用起点，报告明确标记 fallback；不会把无条件指标最优但违反召回底线的权重自动用于提交。
+
+## 数据加载传输错误后的恢复
+
+若日志先出现 `received 0 items of ancdata`，再出现 `Pin memory thread exited unexpectedly`，需要更新本次数据加载传输修复，然后恢复原实验。修复将 worker 间传输的 CPU tensor 合并为少量共享存储，并在 Linux worker 中采用文件名共享方式；预取限制为每 worker 一个完整 source batch。训练 batch、视图、损失预算、优化器和样本顺序保持不变。
+
+```bash
+conda activate sdd
+cd /home/ubuntu/LXT/RTC-w2v-improved &&
+git pull --ff-only origin w2vbert2-balanced-robust-fast &&
+cd xlsr_aasist &&
+bash setup_w2v_v33.sh &&
+bash run_w2v_v33.sh --resume "$(cat exp/.latest_v33_run)" --upload-temp
+```
+
+恢复复用已经完成并通过核验的新缓存，从该 arm 最后保存的验证边界继续；边界后的未保存更新会重新执行。若错误发生在第一次更新前，使用已保存的 baseline 状态，无需重新生成缓存或丢弃已有基线评估。
+
+兼容仅接受发布 `01c495c` 的全部已知 V3.3 源码 hash 到本次明确的 I/O 修复；配置、数据 hash、其他版本源码和依赖版本仍必须完全相同。不会通过关闭校验来接受未知变动。恢复时打印 `V33_TRANSPORT_RESUME_COMPAT=True`，并在对应 arm 下保存 `resume_transport_compat_*.json`，记录原 `last.pt` 的 SHA256 及逐文件差异；兼容步骤本身不改写 checkpoint。之后正常训练按原有保存事务更新 `last.pt`，新版本的后续恢复继续执行完整精确校验。

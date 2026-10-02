@@ -18,6 +18,7 @@ from w2v_aasist.runtime import sha256
 from w2v_v3.data import class_weights, stratified_order, loader as validation_loader
 from w2v_v31.data import crop_spec, short_settings
 from w2v_v32.batching import PreparedCollator
+from .transport import PackedPreparedBatch, paired_worker_init
 
 CONDITIONS = ('offline', 'online', 'noisy_a', 'noisy_b')
 
@@ -219,7 +220,7 @@ class PairedCollator(PreparedCollator):
             if audible.numel() != ex['mask'].shape[1]:
                 raise ValueError('Auxiliary audibility length differs from official feature frames')
             ex['audibility_mask'] = audible
-        return result
+        return PackedPreparedBatch(result)
 
 
 def loader(records, cfg, *, training=False, epoch=0, batches=None):
@@ -232,9 +233,14 @@ def loader(records, cfg, *, training=False, epoch=0, batches=None):
     if cfg['workers']:
         prefetch = cfg.get('prefetch_factor', 2)
         if type(prefetch) is not int or prefetch < 1: raise ValueError('Invalid prefetch_factor')
-        kwargs.update(multiprocessing_context='spawn', worker_init_fn=worker_init, prefetch_factor=prefetch)
+        # A source expands into up to eight long views; bound in-flight memory
+        # independently of the saved mathematical training recipe.
+        kwargs.update(multiprocessing_context='spawn', worker_init_fn=paired_worker_init, prefetch_factor=min(prefetch, 1))
     if batches is None: kwargs.update(batch_size=cfg.get('source_batch', 16), shuffle=False)
     else: kwargs['batch_sampler'] = batches
+    print('V33_LOADER transport=packed_3_storages workers='+str(cfg['workers'])+
+          ' prefetch='+str(kwargs.get('prefetch_factor', 0))+
+          ' pin_memory='+str(kwargs['pin_memory']), flush=True)
     return DataLoader(**kwargs)
 
 

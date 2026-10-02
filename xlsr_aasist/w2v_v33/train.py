@@ -233,9 +233,9 @@ def train(cfg, run, resume=None, smoke_steps=0):
     plan, validation, weights, counts, fingerprints = build_data(cfg)
     codes = source_fingerprints()
     state = read_state(resume) if resume else None
-    if state and (state.get('schema') != SCHEMA or state.get('kind') != 'training' or
-                  state['config'] != cfg or state['data_fingerprints'] != fingerprints or state['source_hashes'] != codes):
-        raise ValueError('Exact resume requires a V3 training checkpoint and identical config, metadata, code, versions')
+    if state:
+        from .resume_compat import validate_resume
+        validate_resume(state, cfg, fingerprints, codes, resume, run)
     if state:
         model = Detector.from_checkpoint(state, checkpointing=cfg['checkpointing'])
         historical = state['baseline_dev']
