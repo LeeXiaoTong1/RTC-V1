@@ -277,12 +277,12 @@ class Display:
         self.stream.flush()
 
 
-def watch(log, state, run=None, once=False, interval=1., stream=None):
+def watch(log, state, run=None, once=False, interval=1., stream=None, version='V3.3'):
     output = Display(stream or sys.stdout)
     if not output.tty and not once:
         raise SystemExit('Open the viewer in a terminal. For pipes/files use --once.')
     events, tail = Events(run), LogTail(log)
-    output.messages(['V3.3 console: completed Dev results stay above the live line.',
+    output.messages([version + ' console: completed Dev results stay above the live line.',
                      'ETA is for the current phase. Ctrl+C closes only this viewer.',
                      'LOG=' + str(log) if log else 'STATE=' + str(state)])
     try:
