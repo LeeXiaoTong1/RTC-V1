@@ -31,7 +31,8 @@
 - 6 个 CPU DataLoader worker 懒生成 Noisy，预取深度 1，与 GPU 训练重叠；使用已有的三存储传输方式，避免大量共享内存句柄。
 - GPU 优先保留激活，默认激活预算 16 GiB、预留 8 GiB，必要时卸载到 CPU。EMA 放在模型设备，只跟踪当前可训练参数；冻结阶段不逐步复制整个编码器。
 - 每轮只做一次完整 Dev；初次额外测一次受保护对照。不对随机后端做一次无意义的全 Dev 验证。
-- Train 缓存位于 `data/rtc_v35/train`，同一时刻最多保存当前与上一轮两代。保存可恢复的 `last.pt` 并关闭读取器后，自动淘汰更早的一代。断点重放复用已生成文件。
+- Train 缓存位于 `data/rtc_v35/train`。存储修复版在下一轮开始、尚无读取器时，先淘汰已经完成的上一轮派生缓存，只保留即将执行轮次已生成的文件。`last.pt` 保存的是整轮结束状态，恢复下一轮无需上一轮的 Noisy 文件。断点重放复用当前轮缓存。
+- 每轮训练前检查完整 Noisy、原子替换 `last.pt`、可能同时晋升的两个 EMA 权重文件的磁盘峰值；旧 checkpoint 仍保留。空间不足时提前停止并写出 `storage_budget.json`。
 - 固定完整 Dev 位于 `data/rtc_v35/dev`，首次生成后复用。旧训练缓存、旧短 Dev、官方音频均保留；新版本不会擅自把仍可用于复现旧 best 的缓存删除。
 - 每步保存 `performance.jsonl`：数据等待、计算耗时、来源吞吐、显存峰值和卸载量，便于区分处理生成与模型计算瓶颈。
 
@@ -103,3 +104,31 @@ bash run_eval_w2v_v35.sh --upload-temp
 ```
 
 `--upload-temp` 只上传报告 ZIP 或 submission ZIP，不上传模型权重、训练音频或数据集。报告下载链接和 submission 下载链接是两种不同产物。
+
+## 保存时磁盘空间不足的恢复
+
+例如 `Insufficient checkpoint space: need 9.19 GiB free` 表示保存检查要求该卷至少有 9.19 GiB 空闲（包括安全余量），不表示还差 9.19 GiB。完整恢复状态含模型、Adam 与 EMA；原子保存时旧 `last.pt` 仍占空间。这是磁盘问题，不是 GPU 显存问题。
+
+旧版在大 checkpoint 保存后才删除上一轮缓存、写 Dev 汇总，导致第三轮可能完成训练和验证却没有提交新的恢复点。修复版提前回收不再需要的派生缓存，并在保存权重前写 `epoch_N_pending.json` 和打印未提交指标；`epoch_N.json` 仍仅表示已提交结果。
+
+针对 `w2v_v35_20261003_161443_4fb5`，训练进程已经失败退出后运行：
+
+```bash
+conda activate sdd
+cd /home/ubuntu/LXT/RTC-w2v-improved &&
+git pull --ff-only origin w2vbert2-balanced-robust-fast &&
+cd xlsr_aasist &&
+python recover_w2v_v35.py --run exp/w2v_v35_20261003_161443_4fb5 --apply
+```
+
+恢复工具先验证已保存状态和元数据。若 `epoch_3_scores.jsonl` 完整，就从逐样本 logits 还原第三轮指标，无需模型推理；如果第三轮 EMA 权重已经先保存，使用同卷硬链接保留它，避免复制大文件。随后只删除已完成轮次、恢复不再读取的 V3.5 派生缓存，不删除 best、`last.pt`、`.previous`、当前轮缓存、固定 Dev 或官方音频。默认不加 `--apply` 时只检查和打印。
+
+当输出 `V35_STORAGE_RECOVERY_READY=True` 后，可以按原配置恢复：
+
+```bash
+bash run_w2v_v35.sh --resume exp/w2v_v35_20261003_161443_4fb5 --upload-temp
+```
+
+若最后成功提交的是 epoch 2，恢复会重跑 epoch 3；已保存的第三轮 EMA 可供评估，但不能替代缺失的第三轮原始参数和 Adam 状态。是否值得继续训练应先看恢复出的第三轮指标。若空间预检仍失败，先按 `storage_budget.json` 处理剩余磁盘容量，不要删除 `last.pt` 或 `.previous`。
+
+原 `4e32fd6` 版本的 checkpoint 可以通过明确的代码哈希白名单恢复：仅允许本次存储顺序、空间检查和指标落盘改动，配置、数据身份、训练目标及其余代码仍须一致。迁移记录为 `storage_resume_compat.json`。

@@ -19,6 +19,7 @@ from .validation import validate
 from .optim import optimizer_for, apply_learning_rates, schedule_scale, EMA
 from .control import Controller
 from .step import supervised_step
+from .storage import compatible_code, checkpoint_peak_bytes, check_space
 
 
 def phase(label):
@@ -59,7 +60,7 @@ def _save_weights(model, cfg, tag, phase_name, epoch, dev, fingerprints, codes):
 def _check_resume(state, cfg, fingerprints, codes):
     if (state.get('schema') != SCHEMA or state.get('kind') != 'training'
             or state.get('config') != cfg or state.get('data_fingerprints') != fingerprints
-            or state.get('source_hashes') != codes or 'ema' not in state):
+            or not compatible_code(state.get('source_hashes', {}), codes) or 'ema' not in state):
         raise ValueError('Exact V3.5 resume requires matching config, data metadata, code and EMA')
 
 
@@ -149,6 +150,10 @@ def train(cfg, run, resume=None, smoke_steps=0):
     state = read_state(resume) if resume else None
     if state:
         _check_resume(state, cfg, fingerprints, codes)
+        if state['source_hashes'] != codes:
+            atomic_json(run/'storage_resume_compat.json',dict(patch='v35_disk_peak_v1',
+                old_source_hashes=state['source_hashes'],new_source_hashes=codes,
+                note='Storage/report ordering only; config, data, model, optimizer, EMA and RNG unchanged.'))
     controller_cfg = {**cfg, 'patience': cfg.get('early_stop_patience', 2)}
     controller = Controller(controller_cfg, state['controller'] if state else None)
     history = state['history'] if state else []
@@ -224,6 +229,11 @@ def train(cfg, run, resume=None, smoke_steps=0):
             del old_optimizer
             phase_name, phase_steps = wanted_phase, 0
             ema.add_trainable(model)
+        # last.pt at epoch N resumes N+1; it never needs N's derived noisy WAVs.
+        # No training loader is alive here. Retain a partial upcoming generation
+        # for deterministic replay, retiring only older regenerable generations.
+        retire_generations(cfg, keep_epochs=[epoch])
+        check_space(cfg, run, epoch, checkpoint_peak_bytes(model, ema))
         atomic_json(run / ('optimizer_groups_' + phase_name + '.json'), [dict(name=group['name'],
             base_lr=group['base_lr'], weight_decay=group['weight_decay'],
             parameters=sum(p.numel() for p in group['params'])) for group in optimizer.param_groups])
@@ -278,12 +288,19 @@ def train(cfg, run, resume=None, smoke_steps=0):
             atomic_json(run / 'smoke.json', dict(steps=len(selected_batches), optimizer_updates=global_steps,
                 metrics=dict(aggregate), saved_training_boundary='bootstrap_or_last_completed_epoch'))
             return
+        del progress, timed
         tag = 'epoch_' + str(epoch)
         phase('V3.5 validating ' + tag + ' EMA (one inference pass)')
         replacing = []
         with ema.average_parameters(model):
             dev = validate(model, validation, cfg, device, run / (tag + '_scores.jsonl'))
             decision = controller.observe(dev, tag, phase_name)
+            # Scalars survive a later large-checkpoint failure. This is explicitly
+            # pending and does not claim that last.pt or selection has committed.
+            atomic_json(run/(tag+'_pending.json'),dict(tag=tag,phase=phase_name,
+                epoch=epoch,dev=dev,decision=decision,checkpoint_committed=False))
+            print('Dev measured '+tag+' '+ ' '.join(f'{key}={100*dev[key]:.3f}'
+                for key in ('clean_f1','noisy_f1','weighted_f1'))+'; checkpoint pending',flush=True)
             for name in decision['save']:
                 filename = 'best_model.pt' if name == 'best_model' else 'best_candidate.pt'
                 path, previous = run / filename, run / (filename + '.previous')
@@ -311,8 +328,10 @@ def train(cfg, run, resume=None, smoke_steps=0):
         atomic_json(run / (tag + '.json'), record)
         write_report(run, history, controller, 'complete' if complete else 'training')
         print_validation(record)
+        pending=run/(tag+'_pending.json')
+        if pending.exists():
+            pending.unlink()
         # Workers have been exhausted and the new resume boundary is durable.
-        del progress, timed
         retire_generations(cfg, keep_epochs=[epoch])
     verify_protected(cfg)
     completed = dict(selection=controller.dump(), selected_tag=controller.state['best_selected']['tag'],
