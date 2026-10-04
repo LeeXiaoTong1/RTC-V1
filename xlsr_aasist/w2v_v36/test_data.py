@@ -28,15 +28,55 @@ def fixture(root,missing_online=False,duplicate_source=False):
         atomic_json(folder/'config.json',dict(ffmpeg_version=FakeRTC.version,
             noise=dict(recording_ids=['dev-noise'],file_sha256=['dev-sha'],manifest_sha256='dev-manifest')))
         cfg[key]=str(folder)
-    cfg['paired_cache_v33']=str(Path(root)/'paired_train')
+    cfg['train_noisy_cache_v33']=str(Path(root)/'paired_train')
     with patch.object(old_cache,'PairedRTC',FakeRTC),patch.object(dev_cache,'DiverseRTC',FakeRTC):
-        old_cache.prepare_cache(cfg,cfg['paired_cache_v33'],workers=1)
+        old_cache.prepare_cache(cfg,cfg['train_noisy_cache_v33'],workers=1)
         dev_cache.prepare_base(cfg,records['train'],records['dev'])
         dev_cache.prepare_dev(cfg,[r for r in records['dev'] if r['domain']=='offline'])
     return cfg
 
 
 class DataTests(unittest.TestCase):
+    def test_production_v33_configuration_passes_through_v36_to_cache_reader(self):
+        from w2v_v33 import config as v33
+        from . import config as v36
+        with tempfile.TemporaryDirectory() as d:
+            cfg=fixture(d)
+            args=v33.parser().parse_args(['--full-noisy-cache',cfg['train_noisy_cache_v33'],
+                '--noise-manifest',cfg['train_noise_manifest'],
+                '--train-pair-manifest',cfg['train_pair_manifest']])
+            previous=dict(cfg,warm_checkpoint=str(Path(d)/'old_best.pt'),
+                          train_caches=[str(Path(d)/'previous_full')])
+            state=dict(schema='rtc_w2v_multiconv_v3',kind='weights',tag=v33.EXPECTED_TAG)
+            with patch.object(v33,'previous_configuration',return_value=previous), \
+                 patch('w2v_v3.train.read_state',return_value=state):
+                # Execute the actual producer of the saved V3.3 recipe, not a
+                # hand-written fixture that can repeat the reader's typo.
+                source_cfg=v33.configuration(args)
+            source_cfg=json.loads(json.dumps(source_cfg))
+            self.assertNotIn('paired_cache_v33',source_cfg)
+            self.assertEqual(Path(source_cfg['train_noisy_cache_v33']).resolve(),
+                             Path(cfg['train_noisy_cache_v33']).resolve())
+            dev_run=Path(d)/'dev_run';dev_run.mkdir()
+            atomic_json(dev_run/'config.json',dict(cfg,version='3.5'))
+            source=dict(config=source_cfg,checkpoint=str(Path(d)/'best_model.pt'),
+                        checkpoint_sha256='0'*64,checkpoint_tag='baseline',provenance={})
+            with patch.object(v36,'resolve_source',return_value=source):
+                current=v36.configuration(v36.parser().parse_args(['--dev-run',str(dev_run),'--device','cpu']))
+            self.assertEqual(current['source_config']['seed'],cfg['seed'])
+            before={str(p):sha256(p) for p in Path(d).rglob('*') if p.is_file()}
+            with patch.object(old_cache,'prepare_cache',side_effect=AssertionError('no regeneration')), \
+                 patch.object(dev_cache,'prepare_dev',side_effect=AssertionError('no regeneration')):
+                result=build_records(current['source_config'],current['dev_config'])
+            self.assertEqual(result['coverage']['train_conditions'],
+                             dict(offline=4,online=4,noisy_a=4,noisy_b=4))
+            self.assertEqual(len(result['dev']),12)
+            self.assertEqual(before,{str(p):sha256(p) for p in Path(d).rglob('*') if p.is_file()})
+
+    def test_missing_saved_cache_field_has_actionable_error(self):
+        with self.assertRaisesRegex(ValueError,'missing train_noisy_cache_v33'):
+            build_records({}, {})
+
     def test_complete_reuse_missing_online_and_source_grouping_without_generation(self):
         with tempfile.TemporaryDirectory() as d:
             cfg=fixture(d,missing_online=True)
@@ -73,7 +113,7 @@ class DataTests(unittest.TestCase):
             value=json.loads(owner.read_text());value['role']='train';atomic_json(owner,value)
             with self.assertRaisesRegex(ValueError,'owner'):build_records(cfg,cfg)
         with tempfile.TemporaryDirectory() as d:
-            cfg=fixture(d);folder=Path(cfg['paired_cache_v33'])
+            cfg=fixture(d);folder=Path(cfg['train_noisy_cache_v33'])
             raw=json.loads((folder/'manifest.jsonl').read_text().splitlines()[0]);audio=folder/raw['audio']
             payload=bytearray(audio.read_bytes());payload[-1]^=1;audio.write_bytes(payload)
             with self.assertRaisesRegex(ValueError,'audio hash'):build_records(cfg,cfg)

@@ -103,13 +103,19 @@ def _fixed_dev(cfg, official):
 def build_records(source_cfg, dev_cfg):
     """Reuse Train V3.3 full cache and Dev V3.5 fixed cache without mutations."""
     source_cfg=dict(source_cfg)
+    # This is the field emitted by w2v_v33.config.configuration and saved in
+    # its selected checkpoint. Never infer a different cache from a directory.
+    cache_path=source_cfg.get('train_noisy_cache_v33')
+    if not isinstance(cache_path,str) or not cache_path.strip():
+        raise ValueError('Selected V3.3 source config is missing train_noisy_cache_v33; '
+                         'use the completed V3.3 run configuration')
+    cache=Path(cache_path).expanduser().resolve()
     train=read_protocol(source_cfg['train_protocol'],source_cfg['train_data_path'])
     official_dev=read_protocol(dev_cfg['dev_protocol'],dev_cfg['dev_data_path'])
     if Path(source_cfg['train_data_path']).resolve()==Path(dev_cfg['dev_data_path']).resolve():
         raise ValueError('Train and Dev roots must differ')
     pair_file=resolve_pair_manifest(source_cfg)
     sources=canonical_sources(train,pair_file)
-    cache=Path(source_cfg['paired_cache_v33']).expanduser().resolve()
     noisy,(raw,train_recipe)=read_index(cache,source_cfg,train,verify_audio_hash=True)
     assert_noise_disjoint({'noise':train_recipe['noise']},
                          _json(Path(dev_cfg['full_dev_cache_root'])/'recipe.json'))

@@ -94,3 +94,20 @@ bash run_eval_w2v_v36.sh --upload-temp
 
 安装脚本运行本地小型真实 w2v-BERT/MultiConv 测试：固定特征重放、断点恢复、缓存身份验证、同源分组、梯度、平衡损失预算、Dev不参与拟合、退化回退、patch完整性、原模型与新分类层的完整音频导出、协议顺序与分数方向。
 CPU测试验证实现和保护机制；不替代 A100 全量运行和官方成绩。
+
+## 首次启动报 `KeyError: paired_cache_v33` 的修复
+
+这是最初 V3.6 读取缓存字段的错误；V3.3 配置实际保存的是 `train_noisy_cache_v33`。
+修复直接读取原字段，不迁移、重建或删除已有缓存。
+此异常发生在特征提取之前，更新后直接新建一次 V3.6 运行即可：
+
+```bash
+conda activate sdd
+cd /home/ubuntu/LXT/RTC-w2v-improved/xlsr_aasist &&
+git -C .. pull --ff-only origin w2vbert2-balanced-robust-fast &&
+bash setup_w2v_v36.sh &&
+bash run_w2v_v36.sh --upload-temp
+```
+
+这一次不要加 `--resume`：旧失败目录保存的是修复前代码指纹，且尚无可复用的已提取特征。
+无需再次运行清理脚本。测试现已覆盖实际 V3.3 配置生成函数、V3.6 配置传递和完整缓存读取。
