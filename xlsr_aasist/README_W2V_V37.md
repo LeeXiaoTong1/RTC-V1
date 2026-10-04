@@ -91,3 +91,26 @@ bash run_eval_w2v_v37.sh --upload-temp
 离线小模型测试覆盖特征复用、来源分组、Train-only 拟合、去偏映射、单模型重放、保护回退、patch 身份、完整音频导出、分数方向和协议顺序。控制台测试确认所有指标在进度上方保留，退出查看器不向训练进程发送信号。Shell 入口做语法检查。固定版本的真实语言教师权重已通过本地 CPU 加载及完整分段推理检查。最终选模前还会在服务器实际设备上用部署模块重放候选 Dev 向量并核对误差，随后按部署模块的分数选模。它们验证实现和保护机制，不替代服务器完整运行或官方成绩。
 
 方法参考：[Language Orthogonalization, 2026](https://arxiv.org/html/2609.16458v1)。这里使用训练期教师蒸馏、中心化、可调强度和原分类器锚定，与论文的直接语言编码器推理不同。学习到的语言向量还可能包含来源和通信条件信息，不能把收益自动解释为已经剥离了纯语言因素。
+
+## 下载教师时报 LocalEntryNotFoundError
+
+若报错停在 `ensure_language_assets -> hf_hub_download`，说明固定版本的教师文件未能从 Hugging Face 下载，且本地没有对应缓存。截图中的错误本身不能区分网络、代理或下载服务的具体原因。这一步发生在检测器特征提取和模型训练之前；没有更新原 best。
+
+可在能够下载的电脑导出公共教师依赖包（不包含用户训练的 checkpoint、音频或向量）：
+
+```bash
+python -m w2v_v37.language --cache-dir models/v37_language_teacher \
+  --export-bundle /path/to/v37_language_teacher.zip --offline
+```
+
+将 ZIP 传至服务器后，在 `xlsr_aasist` 目录导入：
+
+```bash
+python -m w2v_v37.language --cache-dir models/v37_language_teacher \
+  --import-bundle /path/to/v37_language_teacher.zip --offline
+bash run_w2v_v37.sh --upload-temp
+```
+
+导入校验固定 revision、三个文件的 SHA256 和大小，原子保存到 `models/v37_language_teacher/v37_offline/`；完整导入后优先使用本地文件，不再发出 Hugging Face 请求。重复导入不会复制权重，失败导入不会删除已有数据。下载 ZIP 约76 MiB，解压后的教师约81 MiB；导入成功后可以删除 ZIP，保留导入目录。
+
+从最初发布的 V3.7 更新到此修复时，对于截图中这种尚未提取特征的失败运行，请直接新开运行，**不要加 `--resume`**：旧运行固定了修复前的代码指纹。无需重建或清理 Train/Dev 音频缓存，也无需重新安装依赖。若已有完整 V3.6 特征，仍可通过 `--feature-run` 显式复用。

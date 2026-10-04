@@ -36,20 +36,34 @@ def ensure_language_assets(cfg):
     """
     from huggingface_hub import hf_hub_download
     from huggingface_hub.utils import LocalEntryNotFoundError
+    from .language_bundle import imported_paths
 
     if cfg.get('language_repo_id', REPO_ID) != REPO_ID or cfg.get('language_revision', REVISION) != REVISION:
         raise ValueError('V3.7 requires the pinned official LID repository/revision')
     kwargs = dict(repo_id=REPO_ID, revision=REVISION)
     if cfg.get('language_cache_dir'):
         kwargs['cache_dir'] = str(Path(cfg['language_cache_dir']).expanduser().resolve())
+    imported = imported_paths(kwargs.get('cache_dir'))
     files = {}
     for name in ASSET_FILES:
-        try:
-            path = hf_hub_download(filename=name, local_files_only=True, **kwargs)
-        except LocalEntryNotFoundError:
-            if cfg.get('language_offline', False):
-                raise RuntimeError('Pinned LID asset missing from offline cache: ' + name) from None
-            path = hf_hub_download(filename=name, local_files_only=False, **kwargs)
+        if imported is not None:
+            path = imported[name]
+        else:
+            try:
+                path = hf_hub_download(filename=name, local_files_only=True, **kwargs)
+            except LocalEntryNotFoundError:
+                if cfg.get('language_offline', False):
+                    raise RuntimeError('Pinned LID asset missing from offline cache: ' + name +
+                        '. Import the verified ZIP with python -m w2v_v37.language '
+                        '--cache-dir models/v37_language_teacher --import-bundle /path/to/v37_language_teacher.zip --offline') from None
+                try:
+                    path = hf_hub_download(filename=name, local_files_only=False, **kwargs)
+                except Exception as exc:
+                    raise RuntimeError('Cannot download pinned V3.7 language teacher file '+name+
+                        '. This happened before model training. Import the verified offline ZIP with '
+                        'python -m w2v_v37.language --cache-dir models/v37_language_teacher '
+                        '--import-bundle /path/to/v37_language_teacher.zip --offline. '
+                        'Use your configured language cache path if different. Original error: '+str(exc)) from exc
         path = Path(path).resolve()
         files[name] = dict(path=str(path), sha256=sha256(path), size=path.stat().st_size)
     assets = dict(format=ASSET_FORMAT, repo_id=REPO_ID, revision=REVISION,
@@ -213,9 +227,19 @@ def main(argv=None):
     parser.add_argument('--smoke', action='store_true')
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--segment-seconds', type=float, default=8.)
+    bundle = parser.add_mutually_exclusive_group()
+    bundle.add_argument('--import-bundle', help='Import a SHA256-pinned public teacher ZIP without network access')
+    bundle.add_argument('--export-bundle', help='Package the existing public teacher files for offline transfer')
     args = parser.parse_args(argv)
     cfg = dict(language_cache_dir=args.cache_dir, language_assets_manifest=args.manifest,
                language_offline=args.offline, language_segment_seconds=args.segment_seconds, device=args.device)
+    if args.import_bundle:
+        from .language_bundle import import_bundle
+        import_bundle(args.import_bundle, args.cache_dir)
+        cfg['language_offline'] = True
+    if args.export_bundle:
+        from .language_bundle import export_bundle
+        export_bundle(args.cache_dir, args.export_bundle)
     assets = ensure_language_assets(cfg)
     print(json.dumps(assets, sort_keys=True, indent=2), flush=True)
     if args.smoke:
