@@ -1,0 +1,8 @@
+# Train-only language teacher extras. Install with --no-deps so the existing
+# CUDA torch / torchaudio and the detector's working dependencies are untouched.
+speechbrain==1.0.2
+hyperpyyaml==1.2.3
+sentencepiece==0.2.2
+ruamel.yaml==0.18.17
+ruamel.yaml.clib==0.2.15
+threadpoolctl==3.6.0
