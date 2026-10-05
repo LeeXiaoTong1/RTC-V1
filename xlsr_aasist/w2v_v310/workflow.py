@@ -25,6 +25,7 @@ def report(run):
     lines = ['# V3.10 feature language debias', '',
         'Local full-wave Online Dev proxy, not the official Progress/Eval score.',
         'Weighted = 0.3 Clean + 0.7 mean(Seen, Heldout); P(fake) threshold = 0.5.',
+        'The original baseline is freshly measured under the same FP32/batching policy; historical cache drift is diagnostic only.',
         'Frozen prefix referenced from original best. Last 8 encoder layers, MultiConv and feature adapter trained.',
         'Language probes use source-disjoint real Train partitions held out from this adaptation.', '',
         '| Checkpoint | Clean | Noisy | Weighted | EN online real | EN seen real | EN heldout real | Promoted | Probe evidence |',

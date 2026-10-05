@@ -58,7 +58,9 @@ class WorkflowTests(unittest.TestCase):
             source,cfg,_,_ = fixture(Path(temp))
             self.assertEqual(cfg['source_version'],'3.9')
             verify_inputs(cfg)
-            self.assertEqual(configuration(parser().parse_args(['--source-run',str(source),'--device','cpu']))['trainable_layers'],8)
+            defaults = configuration(parser().parse_args(['--source-run',str(source),'--device','cpu']))
+            self.assertEqual(defaults['trainable_layers'],8)
+            self.assertEqual(defaults['epochs'],4)
             weights = source/'best_patch.pt'
             saved = torch.load(weights,map_location='cpu',weights_only=True)
             saved['config']['base_tag'] = 'wrong'
@@ -91,7 +93,8 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(state['cursor'],3)
             self.assertEqual(len(state['history']),1)
             with patch('w2v_v310.train.bundles',synthetic_expanded_bundles):
-                done = run_experiment(cfg,run)
+                with patch('w2v_v310.replay.check_initial',side_effect=AssertionError('Committed baseline must be reused')):
+                    done = run_experiment(cfg,run)
             self.assertTrue(done['baseline_fallback'])
             self.assertEqual(done['completed_updates'],6)
             self.assertEqual(digest(cfg['base_checkpoint']),base_hash)

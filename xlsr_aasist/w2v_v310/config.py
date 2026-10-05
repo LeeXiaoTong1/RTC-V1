@@ -11,7 +11,7 @@ def parser():
     p.add_argument('--source-run', help='Completed V3.9/3.8/3.7 baseline run')
     p.add_argument('--resume', help='Resume the latest atomically committed V3.10 validation boundary')
     p.add_argument('--device', default='auto')
-    p.add_argument('--epochs', type=int, default=2)
+    p.add_argument('--epochs', type=int, default=4)
     p.add_argument('--workers', type=int, default=4)
     p.add_argument('--microbatch', type=int, default=4)
     p.add_argument('--frame-budget', type=int, default=2400)

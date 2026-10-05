@@ -16,12 +16,13 @@ from w2v_v3.model import microbatches as exact_microbatches
 from w2v_v32.model import microbatches as padded_microbatches
 from w2v_v36.features import inference_batches
 from w2v_v39.common import announce, atomic_json, digest
-from w2v_v39.data import base_weights, replay_base
+from w2v_v39.data import base_weights
 from w2v_v39.metrics import measure, selection, change_audit
 from .config import verify_inputs
 from .data import bundles, probe_split, SourcePlan, loader, loss_weights
 from .model import load_model, LanguageAdversary, optimizer_for
 from .probes import run_probes, compare
+from .replay import fp32_inference, baseline as prepare_baseline
 from .state import (SCHEMA, identity, partial_state, apply_partial, to_cpu, atomic_save,
                     capture_rng, restore_rng, storage_budget, load_resume)
 
@@ -30,30 +31,42 @@ def infer(model, rows, cfg, label, capture=False):
     model.eval()
     all_logits, all_features = [], []
     width = model.head.classifier[-1].in_features
-    with torch.inference_mode():
-        for examples in progress(inference_batches(rows, cfg),
-                                 total=math.ceil(len(rows)/cfg['feature_batch']), label=label, every=200):
-            logits = np.empty((len(examples),2), dtype=np.float32)
-            features = np.empty((len(examples),width), dtype=np.float32) if capture else None
-            visited = []
-            for indices, x, mask in exact_microbatches(examples, cfg['microbatch'], cfg['frame_budget']):
-                z, _ = model(x.to(cfg['device']), mask.to(cfg['device']))
-                h = model.head.classifier.features
-                if not bool(torch.isfinite(z).all() and torch.isfinite(h).all()):
-                    raise FloatingPointError('Nonfinite validation representation')
-                logits[indices] = z.float().cpu().numpy()
+    captured = []
+    handle = model.head.classifier[-1].register_forward_pre_hook(lambda _module,args: captured.append(args[0]))
+    try:
+        with fp32_inference(cfg['device']):
+            for examples in progress(inference_batches(rows, cfg),
+                                     total=math.ceil(len(rows)/cfg['feature_batch']), label=label, every=200):
+                logits = np.empty((len(examples),2), dtype=np.float32)
+                features = np.empty((len(examples),width), dtype=np.float32) if capture else None
+                visited = []
+                for indices, x, mask in exact_microbatches(examples, cfg['microbatch'], cfg['frame_budget']):
+                    captured.clear()
+                    z, _ = model(x.to(cfg['device']), mask.to(cfg['device']))
+                    if len(captured)!=1:
+                        raise ValueError('Expected one final classifier call per inference microbatch')
+                    h = captured[0]
+                    if not bool(torch.isfinite(z).all() and torch.isfinite(h).all()):
+                        raise FloatingPointError('Nonfinite validation representation')
+                    logits[indices] = z.float().cpu().numpy()
+                    if capture:
+                        features[indices] = h.float().cpu().numpy()
+                    if hasattr(model.head.classifier,'features'):
+                        model.head.classifier.features = None
+                    visited.extend(indices)
+                if sorted(visited) != list(range(len(examples))):
+                    raise ValueError('Validation microbatch coverage changed')
+                start = sum(len(z) for z in all_logits)
+                if [(r['id'],r.get('condition')) for r in examples] != [(r['id'],r.get('condition')) for r in rows[start:start+len(examples)]]:
+                    raise ValueError('Validation row order changed')
+                all_logits.append(logits)
                 if capture:
-                    features[indices] = h.float().cpu().numpy()
-                model.head.classifier.features = None
-                visited.extend(indices)
-            if sorted(visited) != list(range(len(examples))):
-                raise ValueError('Validation microbatch coverage changed')
-            start = sum(len(z) for z in all_logits)
-            if [(r['id'],r.get('condition')) for r in examples] != [(r['id'],r.get('condition')) for r in rows[start:start+len(examples)]]:
-                raise ValueError('Validation row order changed')
-            all_logits.append(logits)
-            if capture:
-                all_features.append(features)
+                    all_features.append(features)
+    finally:
+        handle.remove()
+        captured.clear()
+        if hasattr(model.head.classifier,'features'):
+            model.head.classifier.features = None
     return np.concatenate(all_logits), np.concatenate(all_features) if capture else None
 
 
@@ -153,14 +166,13 @@ def run_experiment(cfg, run):
     trained = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f'V310_TRAINABLE encoder_last_layers={cfg["trainable_layers"]}; all MultiConv; feature adapter; parameters={trained:,}', flush=True)
     with bundles(cfg) as (train, dev):
-        weight, bias = base_weights(cfg)
-        baseline_logits = replay_base(dev, weight, bias, cfg['device'])
-        baseline = measure(dev['rows'], baseline_logits, target=cfg['matched_fake_recall'])
-        training, probe_rows, probe_indices, split = probe_split(train['rows'], cfg)
+        base_weights(cfg)  # Verify the submitted classifier and source checkpoint binding.
+        training, probe_rows, _, split = probe_split(train['rows'], cfg)
         atomic_json(run/'probe_split.json', split)
+        baseline_logits, baseline, baseline_probe = prepare_baseline(model,dev,probe_rows,split,cfg,run,infer)
         plan = SourcePlan(training, cfg['source_batch'], cfg['seed'])
         total = plan.steps * cfg['epochs']
-        cursor, history, best_state, selected, best_score, stale, baseline_probe = 0, [], None, 'baseline', baseline['weighted_f1'], 0, None
+        cursor, history, best_state, selected, best_score, stale = 0, [], None, 'baseline', baseline['weighted_f1'], 0
         if (run/'last.pt').is_file():
             saved = load_resume(run/'last.pt',cfg)
             apply_partial(model,saved['model'])
@@ -168,23 +180,15 @@ def run_experiment(cfg, run):
             optimizer.load_state_dict(saved['optimizer'])
             cursor, history, best_state = saved['cursor'], saved['history'], saved['best_model']
             selected, best_score, stale = saved['selected'], saved['best_score'], saved['stale']
-            baseline_probe = saved['baseline_probe']
+            if baseline_probe != saved['baseline_probe']:
+                raise ValueError('Resume probe baseline differs from the committed original baseline')
             restore_rng(saved['rng'])
             print(f'V310_RESUME committed_updates={cursor}/{total}; selected={selected}',flush=True)
             del saved
         else:
-            # Actual deployment path, exact native lengths and FP32, not just metadata.
-            check_indices = list(range(min(32,len(dev['rows']))))
-            replay, _ = infer(model,[dev['rows'][i] for i in check_indices],cfg,'V3.10 zero-adapter base replay')
-            if not np.allclose(replay,baseline_logits[check_indices],rtol=3e-5,atol=1e-3) or not np.array_equal(replay.argmax(1),baseline_logits[check_indices].argmax(1)):
-                raise ValueError('Zero-adapter detector no longer reproduces the submitted base')
-            baseline_probe = run_probes(np.asarray(train['x'])[probe_indices],probe_rows,split,cfg)
             print_metrics('protected baseline', baseline, True, [])
-        atomic_json(run/'baseline_metrics.json', baseline)
-        atomic_json(run/'baseline_probes.json', baseline_probe)
         atomic_json(run/'dev_rows.json', [{k:r[k] for k in ('id','source_id','group_id','condition','language','label')}
                                          for r in dev['rows']])
-        np.savez_compressed(run/'dev_scores_baseline.npz',logits=baseline_logits)
         atomic_json(run/'data_reuse.json', dict(train_rows=len(training), dev_rows=len(dev['rows']),
             probe_rows=len(probe_rows), source_groups={str(k):len(v) for k,v in plan.pools.items()},
             steps_per_epoch=plan.steps, source_budget_per_epoch=plan.steps*cfg['source_batch'],
