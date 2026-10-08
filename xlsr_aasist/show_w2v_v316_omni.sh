@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-RUN=${V316_TFCL_RUN:-$(cat exp/.latest_v316_tfcl_run)}
+RUN=${V316_RUN:-$(cat exp/.latest_v316_run)}
 if [[ -f "$RUN/report.md" ]]; then cat "$RUN/report.md"; else
   printf '%s\n' 'Final Dev comparison is not ready. The log shows current Train fitting stages.'
 fi

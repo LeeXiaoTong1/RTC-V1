@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-exec python -u v316_tfcl_console.py "$@"
+python -u w2v_v316/cleanup.py --root "$PWD" "$@"

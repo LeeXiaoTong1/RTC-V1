@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-exec python -u v316_tfcl_console.py "$@"
+exec python -u v316_console.py "$@"

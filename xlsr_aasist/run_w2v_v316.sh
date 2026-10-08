@@ -10,12 +10,12 @@ for ARG in "$@"; do
 done
 python -c 'from w2v_aasist.full_workflow import ensure_idle; ensure_idle()'
 mkdir -p exp
-LOG="$PWD/exp/v316_$(date +%Y%m%d_%H%M%S)_$$.log"
-nohup bash v316_supervise.sh "$LOG" "${ARGS[@]}" >"$LOG" 2>&1 < /dev/null &
+LOG="$PWD/exp/v316_tfcl_$(date +%Y%m%d_%H%M%S)_$$.log"
+nohup bash v316_tfcl_supervise.sh "$LOG" "${ARGS[@]}" >"$LOG" 2>&1 < /dev/null &
 PID=$!
-printf '%s\n' "$LOG" > exp/.latest_v316_log
-printf '%s\n' "$PID" > exp/.latest_v316_pid
+printf '%s\n' "$LOG" > exp/.latest_v316_tfcl_log
+printf '%s\n' "$PID" > exp/.latest_v316_tfcl_pid
 printf 'PID=%s\nLOG=%s\n' "$PID" "$LOG"
-printf '%s\n' 'V3.16: OmniASR W2V 7B + LoRA, new detection head + TFCL; 16 sources/48 views; max 4 epochs; no audio/feature cache'
+printf '%s\n' 'V3.16 TFCL: default original pretrained SSL + fresh detection head; reliable Offline reference; up to 48 full views; max 4 epochs'
 printf '%s\n' 'Live view: bash watch_w2v_v316.sh; results: bash show_w2v_v316.sh'
-if [[ "$WATCH" == 1 && -t 1 ]]; then exec python -u v316_console.py --log "$LOG" --owner-pid "$PID"; fi
+if [[ "$WATCH" == 1 && -t 1 ]]; then exec python -u v316_tfcl_console.py --log "$LOG" --owner-pid "$PID"; fi
