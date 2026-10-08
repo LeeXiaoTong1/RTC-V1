@@ -1,5 +1,4 @@
 """V3.16 TFCL design, explicit initialization and immutable source provenance."""
-import argparse
 import json
 from pathlib import Path
 import torch
@@ -9,22 +8,7 @@ from w2v_v315.augment import bind_augmentation,runtime
 from w2v_v39.common import ROOT,digest,read_json,verify_files
 from w2v_v39.config import runtime_versions
 from .selection import DEFAULTS
-
-
-def parser():
-    p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--parent-run','--source-run',dest='parent_run')
-    p.add_argument('--parent-checkpoint',choices=('best_guarded','best_weighted','last'))
-    p.add_argument('--init',dest='init_mode',choices=('pretrained','parent'))
-    p.add_argument('--tfcl',choices=('weighted','uniform','original','ce'))
-    p.add_argument('--ssl-path',help='Local original official w2v-BERT weights for pretrained initialization')
-    p.add_argument('--resume');p.add_argument('--device',default='auto')
-    p.add_argument('--epochs',type=int,default=4);p.add_argument('--workers',type=int,default=4)
-    p.add_argument('--microbatch',type=int,default=18);p.add_argument('--frame-budget',type=int,default=10800)
-    p.add_argument('--no-autotune',action='store_true');p.add_argument('--seed',type=int,default=31601)
-    p.add_argument('--fixed-budget',action='store_true',help='Run all requested epochs for equal-budget controls; nonfinite safety still applies')
-    p.add_argument('--download-dir',default='/home/ubuntu/LXT/temp');p.add_argument('--upload-temp',action='store_true')
-    return p
+from .arguments import parser,validate_arguments
 
 
 def code_fingerprints():
@@ -57,7 +41,7 @@ def pretrained_assets(path):
 
 
 def configuration(args):
-    if not 1<=args.epochs<=4 or args.workers<0 or args.microbatch<3 or args.frame_budget<1:raise ValueError('Invalid epoch/worker/batch budget')
+    validate_arguments(args)
     parent=args.parent_run
     if not parent:
         pointer=ROOT/'exp'/'.latest_v315_run'

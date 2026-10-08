@@ -8,6 +8,12 @@ ARGS=()
 for ARG in "$@"; do
   if [[ "$ARG" == --no-watch ]]; then WATCH=0; else ARGS+=("$ARG"); fi
 done
+for ARG in "${ARGS[@]}"; do
+  if [[ "$ARG" == --help || "$ARG" == -h ]]; then
+    exec python -m w2v_v316_tfcl.arguments "${ARGS[@]}"
+  fi
+done
+python -m w2v_v316_tfcl.arguments "${ARGS[@]}"
 python -c 'from w2v_aasist.full_workflow import ensure_idle; ensure_idle()'
 mkdir -p exp
 LOG="$PWD/exp/v316_tfcl_$(date +%Y%m%d_%H%M%S)_$$.log"
@@ -16,6 +22,6 @@ PID=$!
 printf '%s\n' "$LOG" > exp/.latest_v316_tfcl_log
 printf '%s\n' "$PID" > exp/.latest_v316_tfcl_pid
 printf 'PID=%s\nLOG=%s\n' "$PID" "$LOG"
-printf '%s\n' 'V3.16 TFCL: default original pretrained SSL + fresh detection head; reliable Offline reference; up to 48 full views; max 4 epochs'
+printf '%s\n' 'V3.16 TFCL: default original pretrained SSL + fresh detection head; reliable Offline reference; up to 48 full views; default epoch budget 4 (explicit override allowed)'
 printf '%s\n' 'Live view: bash watch_w2v_v316.sh; results: bash show_w2v_v316.sh'
 if [[ "$WATCH" == 1 && -t 1 ]]; then exec python -u v316_tfcl_console.py --log "$LOG" --owner-pid "$PID"; fi
