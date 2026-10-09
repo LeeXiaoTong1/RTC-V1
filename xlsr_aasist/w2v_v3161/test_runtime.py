@@ -77,7 +77,8 @@ class RuntimeTests(unittest.TestCase):
                 return [row for group in groups for row in group]
         with patch('w2v_v3161.performance.Triplets', return_value=CaptureDataset()), \
              patch('w2v_v3161.performance.TripletCollator', return_value=Collator()):
-            result = probe_examples(plan, dict(seed=11, ssl_path='unused',sampling_epoch_offset=4), '.')
+            result = probe_examples(plan, dict(seed=11, ssl_path='unused',sampling_epoch_offset=4,
+                source_committed_updates=4*plan.steps), '.')
         self.assertEqual(len(result), 48)
         self.assertTrue(all(isinstance(row['features'], torch.Tensor) for row in result))
         for ticket in seen:

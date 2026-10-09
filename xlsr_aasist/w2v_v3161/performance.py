@@ -13,6 +13,7 @@ from w2v_v39.common import atomic_json, read_json
 from w2v_v316_tfcl.data import Triplets, TripletCollator, tensors, GROUPS
 from .state import identity, partial_state, apply_partial, to_cpu, capture_rng, restore_rng
 from .step import train_step, clear_features
+from .cursor import source_cursor
 
 
 def checkpointing(model, enabled):
@@ -22,7 +23,8 @@ def checkpointing(model, enabled):
 
 
 def probe_examples(plan, cfg, run):
-    tickets = plan.batches(cfg['sampling_epoch_offset'])[0]
+    epoch, step = divmod(source_cursor(cfg, plan.steps), plan.steps)
+    tickets = plan.batches(epoch, step, step+1)[0]
     rank = {g:sorted(pool,key=lambda s:max(plan.rows[plan.inventory[s]['indices'][kind]].get('output_samples',0)
                                         for kind in plan.inventory[s]['indices'] if kind in ('offline','online')))
             for g,pool in plan.pools.items()}

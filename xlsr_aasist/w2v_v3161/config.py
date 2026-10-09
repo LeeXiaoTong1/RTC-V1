@@ -3,9 +3,9 @@ from pathlib import Path
 import re
 import torch
 from w2v_v39.common import ROOT, digest, read_json, verify_files
-from w2v_v316_tfcl.config import verify_inputs as verify_source
 from w2v_v316_tfcl.state import load_selected as source_selected
 from .arguments import validate
+from .compatibility import verify_source
 
 
 def configuration(args):
@@ -16,11 +16,13 @@ def configuration(args):
     source = Path(source).expanduser().resolve()
     checkpoint, meta = source_selected(source, 'last')
     original = checkpoint['config']
-    verify_source(original)
+    source_code, migrations = verify_source(original)
     if meta['baseline_fallback'] or not meta['committed_updates']:
         raise ValueError('A genuinely trained V3.16 LAST is required')
     match = re.fullmatch(r'epoch_(\d+)_step_(\d+)', meta['selected'])
     if match is None: raise ValueError('Cannot identify the last completed V3.16 sampling epoch')
+    if Path(meta['checkpoint_path']).name != 'last.pt':
+        raise ValueError('An un-compacted V3.16 LAST with Adam state is required for continuation')
     del checkpoint
     device = ('cuda:0' if torch.cuda.is_available() else 'cpu') if args.device == 'auto' else args.device
     if device != 'cpu' and not device.startswith('cuda'):
@@ -33,6 +35,7 @@ def configuration(args):
         source_checkpoint=meta['checkpoint_path'], source_checkpoint_sha256=meta['checkpoint_sha256'],
         source_last_tag=meta['selected'], source_committed_updates=meta['committed_updates'],
         sampling_epoch_offset=int(match.group(1)),
+        source_last_step=int(match.group(2)), source_code_migrations=migrations,
         continuation_files={str(source/name):digest(source/name) for name in
                             ('config.json', 'completed.json', 'execution_plan.json')},
         device=device, epochs=args.epochs, workers=args.workers, feature_workers=args.workers,
@@ -48,7 +51,7 @@ def configuration(args):
         augmentation_policy='preserve_v316_train_distribution_for_continuation',
         best_policy='highest_complete_fixed_dev_weighted_among_trained_v316_candidates',
         effective_objective='full SSL bidirectional soft attention + per-source global channel CKA + three-view CE',
-        code_fingerprints=dict(original['code_fingerprints']))
+        code_fingerprints=source_code)
     cfg['code_fingerprints'].update({str(p.resolve()):digest(p)
         for p in (ROOT/'w2v_v3161').glob('*.py') if not p.name.startswith('test_')})
     return cfg
@@ -57,7 +60,9 @@ def configuration(args):
 def verify_inputs(cfg):
     if cfg.get('variant') != 'ssl_bidirectional_tfcl_continuation_v1':
         raise ValueError('Not a V3.16 continuation')
-    verify_source(cfg['continuation_source_config'])
+    _, migrations = verify_source(cfg['continuation_source_config'])
+    if migrations != cfg.get('source_code_migrations', []):
+        raise ValueError('Source-code compatibility record changed')
     verify_files(cfg['continuation_files'])
     verify_files({cfg['source_checkpoint']:cfg['source_checkpoint_sha256']})
     verify_files(cfg['code_fingerprints'])

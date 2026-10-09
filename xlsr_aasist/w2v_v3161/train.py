@@ -18,6 +18,7 @@ from .objectives import TFCL
 from .step import train_step
 from .performance import select_execution, checkpointing
 from .output import infer, print_metrics
+from .cursor import source_cursor, segments, completed_tag
 from .state import (SCHEMA, identity, partial_state, apply_partial, to_cpu, atomic_save,
                     capture_rng, restore_rng, source_state, storage_budget, promote,
                     load_resume, load_selected)
@@ -74,6 +75,7 @@ def run_experiment(cfg, run):
         if rows_signature(dev['rows'])!=rows_signature(old_rows): raise ValueError('Fixed Dev changed')
         atomic_json(run/'dev_rows.json',dev['rows'])
         plan=SourcePlan(train['rows'],cfg['source_batch'],cfg['seed'],cfg)
+        start_cursor=source_cursor(cfg,plan.steps)
         total=plan.steps*cfg['epochs']
         if (run/'last.pt').exists():
             state=load_resume(run,cfg)
@@ -108,13 +110,22 @@ def run_experiment(cfg, run):
             while state['cursor']<total:
                 epoch,within=divmod(state['cursor'],plan.steps)
                 if within: raise ValueError('Continuation commits complete epochs only')
-                source_epoch=cfg['sampling_epoch_offset']+epoch
-                atomic_json(run/f'sampling_epoch_{source_epoch+1}.json',plan.coverage(source_epoch))
-                phase=Phase(f'V3.16.1 epoch {source_epoch+1} (+{epoch+1}/{cfg["epochs"]})',plan.steps)
+                portions=list(segments(start_cursor+state['cursor'],plan.steps,plan.steps))
+                tag=completed_tag(start_cursor+state['cursor']+plan.steps,plan.steps)
+                sampling=[]
+                for source_epoch,first,stop in portions:
+                    sampling.append(dict(epoch=source_epoch+1,start_step=first+1,stop_step=stop,
+                        plan_coverage=plan.coverage(source_epoch)))
+                atomic_json(run/f'sampling_additional_epoch_{epoch+1}.json',sampling)
+                phase=Phase(f'V3.16.1 {tag} (+{epoch+1}/{cfg["epochs"]})',plan.steps)
                 totals=dict(updates=0,compute_seconds=0.,data_wait_seconds=0.,groups={})
                 ready=time.monotonic()
                 with (run/'training_steps.jsonl').open('a',encoding='utf-8',buffering=1) as log:
-                    for batch in loader.segment(source_epoch,0,plan.steps):
+                    def source_batches():
+                        for source_epoch,first,stop in portions:
+                            for step,batch in enumerate(loader.segment(source_epoch,first,stop),first+1):
+                                yield source_epoch,step,batch
+                    for source_epoch,source_step,batch in source_batches():
                         waiting=time.monotonic()-ready
                         batch=tensors(batch)
                         schedule(optimizer,state['cursor'],total,cfg)
@@ -130,11 +141,11 @@ def run_experiment(cfg, run):
                         for k,v in stats['groups'].items():
                             cell=totals['groups'].setdefault(k,dict(attempted=0,valid=0))
                             for name,count in v.items(): cell[name]+=count
-                        log.write(json.dumps(dict(cursor=state['cursor'],epoch=source_epoch+1,step=within,
+                        log.write(json.dumps(dict(cursor=state['cursor'],epoch=source_epoch+1,step=source_step,
+                            additional_epoch=epoch+1,additional_epoch_step=within,
                             warm=warm,compute_seconds=elapsed,data_wait_seconds=waiting,**stats),allow_nan=False)+'\n')
                         phase.update(within,stats['total_loss']); ready=time.monotonic()
                 if within!=plan.steps: raise RuntimeError('Incomplete source coverage')
-                tag=f'epoch_{source_epoch+1}_step_{within}'
                 logits=infer(model,dev['rows'],effective,'V3.16.1 '+tag+' Dev',run)
                 value=measure(dev['rows'],logits,target=cfg['matched_fake_recall'])
                 current=partial_state(model)

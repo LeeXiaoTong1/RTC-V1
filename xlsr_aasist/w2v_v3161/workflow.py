@@ -56,6 +56,9 @@ def main():
             run.mkdir(parents=True,exist_ok=False);atomic_json(run/'config.json',cfg)
         (ROOT/'exp'/'.latest_v3161_run').write_text(str(run)+'\n',encoding='utf-8')
         print('V3161_RUN='+str(run),flush=True)
+        if cfg.get('source_code_migrations'):
+            print('[Compatibility] approved V3.16 argument-only update; source checkpoint and data unchanged',flush=True)
+            atomic_json(run/'source_code_migrations.json',cfg['source_code_migrations'])
         try:
             if (run/'completed.json').exists(): load_selected(run)
             else: run_experiment(cfg,run)
