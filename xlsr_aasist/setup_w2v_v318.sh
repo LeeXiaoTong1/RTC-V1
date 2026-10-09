@@ -11,5 +11,5 @@ python -m pip install 'fairseq2==0.6.0' --extra-index-url https://fair.pkg.atmet
 python -m pip install -r requirements_w2v_v318.txt
 python -m pip check
 python -m w2v_v318.preflight
-python -m unittest w2v_v318.test_core w2v_v318.test_assets -v
+python -m unittest w2v_v318.test_core w2v_v318.test_assets w2v_v318.test_runtime -v
 printf '%s\n' 'V318_SETUP_COMPLETE=True; old sdd environment unchanged; model download is a separate resumable step'

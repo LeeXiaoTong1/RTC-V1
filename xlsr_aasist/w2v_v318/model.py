@@ -123,8 +123,8 @@ class Detector(nn.Module):
 def load_model(cfg):
     from .assets import configured_spec
     item=configured_spec(cfg)
-    from importlib.metadata import version
-    if version('fairseq2') != '0.6.0': raise RuntimeError('Use sdd-v318 with fairseq2==0.6.0')
+    from .runtime import require_version
+    require_version('fairseq2','0.6.0')
     import omnilingual_asr
     from fairseq2.models.wav2vec2 import get_wav2vec2_model_hub
     from fairseq2.nn.batch_layout import BatchLayout

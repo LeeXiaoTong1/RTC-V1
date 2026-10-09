@@ -87,7 +87,7 @@ class TestAssets(unittest.TestCase):
         modules={name:ModuleType(name) for name in ('omnilingual_asr','fairseq2','fairseq2.models','fairseq2.models.wav2vec2','fairseq2.nn','fairseq2.nn.batch_layout')}
         modules['fairseq2.models.wav2vec2'].get_wav2vec2_model_hub=lambda:hub
         modules['fairseq2.nn.batch_layout'].BatchLayout=TinyLayout
-        with patch.dict('sys.modules',modules),patch('importlib.metadata.version',return_value='0.6.0'),patch('w2v_v318.model.Detector',return_value=nn.Identity()):
+        with patch.dict('sys.modules',modules),patch('w2v_v318.runtime.version',return_value='0.6'),patch('w2v_v318.model.Detector',return_value=nn.Identity()):
             load_model(config('3b'));hub.get_arch_config.assert_called_once_with('3b')
             self.assertIs(hub.load_custom_model.call_args.args[1],arch)
             self.assertTrue(hub.load_custom_model.call_args.kwargs['mmap'])

@@ -86,6 +86,8 @@ python -m w2v_v318.preflight --omni-size 3b --weights
 bash prepare_omni3b_v318.sh --checkpoint /absolute/path/omniASR-W2V-3B.pt
 ```
 
+如果旧代码在安装完成后报 `fairseq2 must be 0.6.0`：官方该版本的包元数据写作 `0.6`，它与 `0.6.0` 在 PEP 440 中等价。新版预检查和模型加载统一按版本语义比较，同时检查 fairseq2n、Torch 和 torchaudio，错误会显示实际版本。拉取更新后直接重跑 `python -m w2v_v318.preflight --omni-size 3b` 即可核验，无需因这个字符串误判重建环境或重下权重。回归测试：`python -m unittest w2v_v318.test_runtime w2v_v318.test_assets -v`。
+
 复用已存在 V3.16 的数据身份，先审计、再训练：
 
 ```bash

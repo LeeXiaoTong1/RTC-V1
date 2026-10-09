@@ -1,10 +1,10 @@
 """Validate native ABI and optionally run the selected real SSL/LoRA smoke test."""
 import argparse
-from importlib.metadata import version
 import numpy as np
 import torch
 from .common import read_json,digest,seed_all
 from .assets import DEFAULT_ARCH,MODELS,spec,default_assets,validate_assets
+from .runtime import require_version
 
 
 def main():
@@ -14,10 +14,11 @@ def main():
     p.add_argument('--weights',action='store_true',help='Load selected public SSL weights and run one forward/backward')
     args=p.parse_args()
     item=spec(args.omni_size)
-    expected={'fairseq2':'0.6.0','omnilingual-asr':'0.2.0','webrtc-audio-processing':'0.1.3'}
-    for name,want in expected.items():
-        if version(name)!=want:raise RuntimeError(f'{name} must be {want}')
-    if torch.__version__.split('+')[0]!='2.8.0':raise RuntimeError('torch 2.8.0 required by fairseq2n ABI')
+    expected={'fairseq2':'0.6.0','fairseq2n':'0.6.0','omnilingual-asr':'0.2.0',
+        'webrtc-audio-processing':'0.1.3','torchaudio':'2.8.0'}
+    actual={name:require_version(name,want) for name,want in expected.items()}
+    actual['torch']=require_version('torch','2.8.0',torch.__version__)
+    print('V318_RUNTIME_VERSIONS='+'; '.join(f'{k}={v}' for k,v in actual.items()),flush=True)
     import omnilingual_asr
     from fairseq2.models.wav2vec2 import get_wav2vec2_model_hub
     arch=get_wav2vec2_model_hub().get_arch_config(item['arch'])
