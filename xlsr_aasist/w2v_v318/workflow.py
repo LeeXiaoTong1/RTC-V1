@@ -43,7 +43,7 @@ def main():
             run.mkdir(parents=True,exist_ok=False)
             atomic_json(run/'train_rows.json',train);atomic_json(run/'dev_rows.json',dev)
             cfg['saved_manifests']={n:digest(run/n) for n in ('train_rows.json','dev_rows.json')}
-            atomic_json(run/'config.json',cfg);atomic_json(run/'input_audit.json',describe(train,cfg['seed']))
+            atomic_json(run/'config.json',cfg);atomic_json(run/'input_audit.json',describe(train,cfg['seed'],cfg['stream_sources']))
         (ROOT/'exp'/'.latest_v318_run').write_text(str(run)+'\n',encoding='utf-8')
         print('V318_RUN='+str(run),flush=True)
         try:

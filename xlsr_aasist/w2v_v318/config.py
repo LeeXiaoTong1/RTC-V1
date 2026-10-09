@@ -23,7 +23,7 @@ def parser():
     p.add_argument('--lora-lr',type=float,default=1e-5);p.add_argument('--head-lr',type=float,default=3e-5)
     p.add_argument('--warm-lr',type=float,default=1e-4);p.add_argument('--evidence-lr',type=float,default=1e-4)
     p.add_argument('--label-smoothing',type=float,default=.02)
-    p.add_argument('--patience',type=int,default=3,help='0 disables early stopping; otherwise joint-phase patience')
+    p.add_argument('--patience',type=int,default=0,help='Default 0 runs all 10 epochs; positive values enable joint-phase early stopping')
     p.add_argument('--variant',choices=('C0','C1','C2','C3'),default='C3')
     p.add_argument('--seed',type=int,default=31801)
     p.add_argument('--download-dir',default='/home/ubuntu/LXT/temp');p.add_argument('--upload-temp',action='store_true')

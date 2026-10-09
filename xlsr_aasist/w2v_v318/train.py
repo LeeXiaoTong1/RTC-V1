@@ -40,7 +40,7 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model):
     trainable=sum(p.numel() for p in model.parameters() if p.requires_grad)
     head=sum(p.numel() for p in model.head.parameters() if p.requires_grad)
     inventory=dict(total=trainable,head=head,lora=trainable-head,lora_projections=model.lora_inventory,
-        encoder_frozen=True,tfcl_parameters=0,head_buffers_saved=True)
+        encoder_base_frozen=True,tfcl_parameters=0,head_buffers_saved=True)
     atomic_json(run/'parameter_inventory.json',inventory)
     if shutil.disk_usage(run).free<cfg['free_reserve_bytes']+1024**3:raise OSError('Need 1 GiB for partial checkpoints plus free-space reserve')
     print(f'[Model] V3.18 {cfg["variant"]}: trainable={trainable:,}; AASIST/aggregation={head:,}; LoRA={trainable-head:,}; TFCL=off',flush=True)

@@ -41,7 +41,7 @@ V3.18 每次逻辑更新：
 
 同源 Noisy 两个损失为 L1、L2，最终使用 `0.75 * mean(L1,L2) + 0.25 * max(L1,L2)`。较难版本占 62.5%，较容易版本仍占 37.5%；不只追逐最差版本，不要求不同说话人或语言特征被强行抹平。相等时两边梯度各半。
 
-AASIST 和较少可训练参数并不保证不发生过拟合。因此仍记录 Train/Dev 同口径指标，保存最佳与最后状态，并允许早停。
+AASIST 和较少可训练参数并不保证不发生过拟合。因此仍记录 Train/Dev 同口径指标，保存最佳与最后状态，并提供可选早停。
 
 ## 增强与泛化边界
 
@@ -57,7 +57,7 @@ AASIST 和较少可训练参数并不保证不发生过拟合。因此仍记录 
 - Train 改为固定较大抽测：每条流、每个交叉组最多 512 个来源。默认 2048 Online + 4096 Noisy = **6144 视图**，固定样本和增强参数，明确标为 PROBE，不冒充全量 Train。可以用 `--train-probe-per-group` 调整。
 - 在官方配对表与重复音频归并后，按来源隔离 Dev 的 80% 选模 / 20% 校准。每轮 full Dev 只用于历史可比展示；`best` 使用 80% 来源的原始 Weighted，Noisy/Clean 用于同分排序。完整来源及其 Online、Noisy 版本不会跨两部分。
 - 训练结束、checkpoint 固定之后，分别为 best/last 在保留的 20% Dev 上拟合一个所有语言/条件共享的正斜率仿射分数校准。它调整概率与边界，不改善排序，不使用 Progress。导出默认校准；`--raw` 可导出原始分数。校准后的全 Dev 含拟合样本，报告明确分开 select/calibration 指标，不将其宣称为独立验证成绩。
-- 默认总预算 10 轮，2 轮预热 + 8 轮联合。联合阶段连续 3 轮没有超过 0.02 个百分点的选模改善会早停，且至少完成 3 轮联合；`--patience 0` 强制跑满预算。较小改善仍能更新 best，早停计数与 best 身份分别记录。
+- 默认完整训练 10 轮，2 轮预热 + 8 轮联合，`--patience 0`，不会因早停自动缩短。`best` 始终保留本次选模最佳状态；可选 `--patience 3`：联合阶段连续 3 轮没有超过 0.02 个百分点的选模改善则早停，且至少完成 3 轮联合。较小改善仍能更新 best，早停计数与 best 身份分别记录。
 - 只保存一份 `last.pt` 事务文件，内部包括当前/最佳的 LoRA、后端、全部 BN 缓冲区、Adam、随机状态。冻结 1B 权重只引用。中断从最后完整轮次继续，未提交轮次会重跑。原始逐步日志可能保留重跑记录，图表按已提交状态生成。
 - 不生成增强音频或特征磁盘缓存。公开 1B 文件约 3.6 GiB，下载校验固定 SHA256；已存在时直接引用。新环境另占数 GiB以上，依赖安装期间也需要空间。部分权重/Adam 通常远小于 1 GiB，保存前保留 10 GiB 空闲；不要删除既有 Dev 波形清单所依赖的音频。
 - BF16 SSL、FP32 AASIST，冻结前端、最后 16 层重计算、持久 CPU 增强 workers、有限 RAM LRU、流式梯度累积。逻辑48视图与物理 microbatch 分开。完整长音频仍可能增加耗时/显存，未给出未经 A100 实测的速度保证。
@@ -122,6 +122,6 @@ bash run_eval_w2v_v318.sh --checkpoint best --upload-temp
 
 `--variant C0` 整段 AASIST + 双视图均值；C1 区域汇聚 + 均值；C2 整段 + 风险；默认 C3 区域汇聚 + 风险。提供可比开关，不自动启动四次训练。所有变体均使用独立 Online 流和相同四组预算。
 
-本地 CPU 验证使用真实 WAV、实际 AASIST 和小型可训练编码器，原生库边界有明确替代：检查 LoRA 梯度、冻结参数、覆盖、抽样预算、microbatch 梯度、BN 保存、断点恢复、源隔离、跨进程评估、best/last 及 submission 导出。另将当前 AASIST 与官方源码逐项比较，6 种 train/eval/长度组合的输出、输入梯度、BN 缓冲区完全一致；30 种实际 FFmpeg 处理组合保持长度和有限值。完整公开 1B、Linux fairseq2/WebRTC、A100 显存与性能需上述服务器 preflight 及正式实验确认，不能把 CPU 测试当作完整训练验证。
+本地 14 项 CPU 测试使用实际 WAV 文件（合成信号）、实际 AASIST 和小型可训练编码器，原生库边界有明确替代：检查 LoRA 梯度、冻结参数、覆盖、抽样预算、microbatch 梯度、BN 保存、断点恢复、源隔离、跨进程评估、best/last 及 submission 导出。另将当前 AASIST 与官方源码逐项比较，6 种 train/eval/长度组合的输出、输入梯度、BN 缓冲区完全一致；30 种实际 FFmpeg 处理组合保持长度和有限值。完整公开 1B、Linux fairseq2/WebRTC、A100 显存与性能需上述服务器 preflight 及正式实验确认，不能把 CPU 测试当作完整训练验证。
 
 来源：[Meta OmniASR](https://github.com/facebookresearch/omnilingual-asr)、[1B 模型卡](https://huggingface.co/facebook/omniASR-W2V-1B)、[RTC 官方后端](https://github.com/JunXue-tech/RTC-SDD/blob/main/xlsr_aasist/model/model.py)、[SSL-AASIST 上游](https://github.com/TakHemlata/SSL_Anti-spoofing)。后端许可见 `THIRD_PARTY_LICENSES/SSL_AASIST_V318.txt`。

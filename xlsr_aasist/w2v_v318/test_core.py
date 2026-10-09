@@ -73,6 +73,17 @@ def tiny_model(cfg):return Detector(TinyFrontend(),TinyEncoder(),cfg,TinyLayout)
 class TestCore(unittest.TestCase):
     @classmethod
     def setUpClass(cls):torch.set_num_threads(1)
+    def test_requested_epoch_default_and_configured_audit(self):
+        from .config import parser,validate
+        from .audit import describe
+        args=parser().parse_args([]);validate(args)
+        self.assertEqual((args.epochs,args.warm_epochs,args.patience),(10,2,0))
+        with tempfile.TemporaryDirectory() as d:
+            cfg,train,dev=make_fixture(Path(d))
+            report=describe(train,stream_sources=8)['v318']
+            self.assertEqual(report['steps'],2)
+            self.assertEqual(report['online_views'],16)
+            self.assertEqual(report['noisy_views'],32)
     def test_full_window_coverage_and_bounded_weights(self):
         head=RegionHead(SSLAASIST(16))
         for n in (12,127,128,129,191,192,193,300,999):
