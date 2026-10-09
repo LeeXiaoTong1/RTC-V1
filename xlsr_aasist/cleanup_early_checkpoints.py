@@ -11,7 +11,7 @@ from pathlib import Path
 import pickletools
 import zipfile
 
-from audit_w2v_storage import load, path_values
+from audit_w2v_storage import load, path_values, strings
 from w2v_v316.cleanup import idle_lock, safe, sha
 
 
@@ -63,11 +63,19 @@ def metadata_files(root):
 def references(root, targets):
     found = {p: set() for p in targets}
     checked = {}
+    names = {p.name for p in targets}
+    runs = {p.parent.name for p in targets}
     for path, kind in metadata_files(root):
         if path in targets: continue  # discarded resume state's own config is not a consumer
         before = stamp(path)
-        values = checkpoint_strings(path) if kind == 'weight' else [load(path)]
+        values = checkpoint_strings(path) if kind == 'weight' else strings(load(path))
         for value in values:
+            # Configs contain large audio/noise inventories. Only a target file
+            # name, run directory or relative parent can resolve to these exact
+            # candidates; avoid filesystem resolution for every audio path.
+            tail = value.replace('\\','/').rstrip('/').rsplit('/',1)[-1]
+            if tail not in names and tail not in ('.','..','') and not any(run in value for run in runs):
+                continue
             for candidate in path_values(value, root, path.parent):
                 for target in targets:
                     # Explicit file references always protect. A run-directory
