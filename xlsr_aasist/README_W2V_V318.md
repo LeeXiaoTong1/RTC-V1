@@ -88,6 +88,8 @@ bash prepare_omni3b_v318.sh --checkpoint /absolute/path/omniASR-W2V-3B.pt
 
 如果旧代码在安装完成后报 `fairseq2 must be 0.6.0`：官方该版本的包元数据写作 `0.6`，它与 `0.6.0` 在 PEP 440 中等价。新版预检查和模型加载统一按版本语义比较，同时检查 fairseq2n、Torch 和 torchaudio，错误会显示实际版本。拉取更新后直接重跑 `python -m w2v_v318.preflight --omni-size 3b` 即可核验，无需因这个字符串误判重建环境或重下权重。回归测试：`python -m unittest w2v_v318.test_runtime w2v_v318.test_assets -v`。
 
+如果报 `fairseq2 requires libsndfile`：Conda 下 fairseq2n 从当前环境的 `lib` 目录加载 `libsndfile.so.1`，不使用系统默认查找路径；pip 的 `soundfile` 包不能代替这一原生依赖。新版安装脚本会先安装并实际加载验证它。已有环境原地修复即可：`conda install -n sdd-v318 -c conda-forge libsndfile=1.0.31 --freeze-installed -y`，随后重新运行 preflight，无需重装 Torch 或重下模型。依据：[fairseq2n 0.6 原生库加载代码](https://github.com/facebookresearch/fairseq2/blob/v0.6.0/native/python/src/fairseq2n/__init__.py)。
+
 复用已存在 V3.16 的数据身份，先审计、再训练：
 
 ```bash
