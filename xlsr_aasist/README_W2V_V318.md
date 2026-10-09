@@ -1,4 +1,4 @@
-# V3.18：OmniASR W2V 1B + SSL-AASIST
+# V3.18：OmniASR W2V 3B + SSL-AASIST
 
 V3.18 从公开 Omni SSL 权重、全新 LoRA 和全新检测后端开始。`--data-run` 只复用官方音频、协议、噪声和完整 Dev 清单，不加载 V3.15–V3.17 的检测参数、优化器或特征缓存。旧版本文件不修改。
 
@@ -30,9 +30,9 @@ V3.18 每次逻辑更新：
 
 ## 模型与防过拟合设计
 
-- 前端使用 **omniASR_W2V_1B SSL**，48 层、1280 维，取最后一层；不是 CTC/LLM 版。输入为 16 kHz 完整波形，逐条录音进行 layer normalization。CNN 前端按真实长度执行，Transformer 使用长度掩码，后端只接收有效帧。
-- 原始编码器全部冻结。最后 16 层 Q/K/V/output 四个投影增加 LoRA，rank=16、alpha=32、dropout=0.05，共 2,621,440 个可训练参数。冻结参数不会进入 Adam。
-- 后端取竞赛官方 SSL-AASIST，1280→128 投影、原卷积/图注意力/BN/读出结构；保留原公式，不替换为 GN/LN。暴露 dropout 前的 160 维表示供汇聚。后端和汇聚共 485,195 个参数，总可训练量 **3,106,635**。
+- 默认前端使用 **omniASR-W2V-3B SSL**，60 层、2048 维，取最后一层；不是 CTC/LLM 版。输入为 16 kHz 完整波形，逐条录音进行 layer normalization。CNN 前端按真实长度执行，Transformer 使用长度掩码，后端只接收有效帧。保留 `--omni-size 1b` 选项，显式选择时使用 48 层、1280 维。
+- 原始编码器全部冻结。最后 16 层（3B 中第 45–60 层）Q/K/V/output 四个投影增加 LoRA，rank=16、alpha=32、dropout=0.05，共 4,194,304 个可训练参数。冻结参数不会进入 Adam。
+- 后端取竞赛官方 SSL-AASIST，3B 对应 2048→128 投影、原卷积/图注意力/BN/读出结构；保留原公式，不替换为 GN/LN。暴露 dropout 前的 160 维表示供汇聚。后端和汇聚共 583,499 个参数，总可训练量 **4,777,803**。选择 1B 时输入投影自动使用 1280→128。
 - 完整 SSL 序列分成 128 帧、步长 64 帧的重叠窗口，尾部补最后一个完整窗口，短录音直接使用其有效长度。所有窗口共享 AASIST，SSL 不因窗口重复计算。窗口只提取证据，不单独贴 fake/real 标签。
 - 根据帧覆盖次数修正窗口基础权重；贡献网络输出 `.5 + sigmoid(...)`，末层零初始化，因此初始等价于覆盖修正后的平均汇聚。倍率限制在 0.5–1.5，归一化后相对基础权重的理论范围为 1/3–3，不能误称归一化后的范围仍是 0.5–1.5。
 - 默认第 1–2 轮仅训练后端；第 3–10 轮训练后端、LoRA、贡献网络。联合阶段固定所有 AASIST BN 的 running mean/variance，保留 affine 可训练；BN 缓冲区随 checkpoint 保存。
@@ -58,8 +58,8 @@ AASIST 和较少可训练参数并不保证不发生过拟合。因此仍记录 
 - 在官方配对表与重复音频归并后，按来源隔离 Dev 的 80% 选模 / 20% 校准。每轮 full Dev 只用于历史可比展示；`best` 使用 80% 来源的原始 Weighted，Noisy/Clean 用于同分排序。完整来源及其 Online、Noisy 版本不会跨两部分。
 - 训练结束、checkpoint 固定之后，分别为 best/last 在保留的 20% Dev 上拟合一个所有语言/条件共享的正斜率仿射分数校准。它调整概率与边界，不改善排序，不使用 Progress。导出默认校准；`--raw` 可导出原始分数。校准后的全 Dev 含拟合样本，报告明确分开 select/calibration 指标，不将其宣称为独立验证成绩。
 - 默认完整训练 10 轮，2 轮预热 + 8 轮联合，`--patience 0`，不会因早停自动缩短。`best` 始终保留本次选模最佳状态；可选 `--patience 3`：联合阶段连续 3 轮没有超过 0.02 个百分点的选模改善则早停，且至少完成 3 轮联合。较小改善仍能更新 best，早停计数与 best 身份分别记录。
-- 只保存一份 `last.pt` 事务文件，内部包括当前/最佳的 LoRA、后端、全部 BN 缓冲区、Adam、随机状态。冻结 1B 权重只引用。中断从最后完整轮次继续，未提交轮次会重跑。原始逐步日志可能保留重跑记录，图表按已提交状态生成。
-- 不生成增强音频或特征磁盘缓存。公开 1B 文件约 3.6 GiB，下载校验固定 SHA256；已存在时直接引用。新环境另占数 GiB以上，依赖安装期间也需要空间。部分权重/Adam 通常远小于 1 GiB，保存前保留 10 GiB 空闲；不要删除既有 Dev 波形清单所依赖的音频。
+- 只保存一份 `last.pt` 事务文件，内部包括当前/最佳的 LoRA、后端、全部 BN 缓冲区、Adam、随机状态。冻结的公开 SSL 权重只引用。中断从最后完整轮次继续，未提交轮次会重跑。原始逐步日志可能保留重跑记录，图表按已提交状态生成。模型规格、维度和哈希同时校验，1B 与 3B 检测 checkpoint 不可混用。
+- 不生成增强音频或特征磁盘缓存。公开 3B 文件为 12,256,910,184 字节（约 **11.42 GiB / 12.26 GB**），校验官方固定 SHA256，支持断点续传；已存在时直接引用。环境已安装时，下载前建议至少 **25 GiB 空闲**，下载器要求剩余下载大小加 12 GiB 预留空间。新环境和依赖安装还需另外预留空间。部分权重/Adam 通常远小于 1 GiB，保存前保留 10 GiB 空闲；不要删除既有 Dev 波形清单所依赖的音频。
 - BF16 SSL、FP32 AASIST，冻结前端、最后 16 层重计算、持久 CPU 增强 workers、有限 RAM LRU、流式梯度累积。逻辑48视图与物理 microbatch 分开。完整长音频仍可能增加耗时/显存，未给出未经 A100 实测的速度保证。
 
 ## 第一次安装与运行
@@ -74,16 +74,16 @@ cd xlsr_aasist
 conda create -n sdd-v318 python=3.11 -y
 conda activate sdd-v318
 bash setup_w2v_v318.sh
-bash prepare_omni1b_v318.sh
-python -m w2v_v318.preflight --weights
+bash prepare_omni3b_v318.sh
+python -m w2v_v318.preflight --omni-size 3b --weights
 ```
 
-`sdd-v318` 若已经存在，跳过创建，直接激活。环境固定 torch/torchaudio 2.8.0 cu126、fairseq2 0.6.0、omnilingual-asr 0.2.0；机器需要兼容 CUDA 驱动、FFmpeg 和 WebRTC 包的构建环境。安装脚本检查实际原生处理库；`--weights` 额外加载真实 1B、运行正反向、确认 LoRA 梯度并打印显存。任何预检查失败应先修复，避免启动长训练。
+`sdd-v318` 若已经存在，跳过创建，直接激活。环境固定 torch/torchaudio 2.8.0 cu126、fairseq2 0.6.0、omnilingual-asr 0.2.0；机器需要兼容 CUDA 驱动、FFmpeg 和 WebRTC 包的构建环境。安装脚本检查实际原生处理库；`--weights` 额外加载所选的真实前端、运行正反向、确认 LoRA 梯度并打印显存。该预检查使用短合成音频，不能代替真实长音频下的显存与速度测试。任何预检查失败应先修复，避免启动长训练。
 
-如果公开 1B 已下载，避免重复保存：
+如果公开 3B 已下载，避免重复保存：
 
 ```bash
-bash prepare_omni1b_v318.sh --checkpoint /absolute/path/omniASR-W2V-1B.pt
+bash prepare_omni3b_v318.sh --checkpoint /absolute/path/omniASR-W2V-3B.pt
 ```
 
 复用已存在 V3.16 的数据身份，先审计、再训练：
@@ -92,11 +92,14 @@ bash prepare_omni1b_v318.sh --checkpoint /absolute/path/omniASR-W2V-1B.pt
 bash audit_w2v_v318.sh --data-run exp/w2v_v316_tfcl_20261009_020301_4d95
 bash run_w2v_v318.sh \
   --data-run exp/w2v_v316_tfcl_20261009_020301_4d95 \
+  --omni-size 3b \
   --epochs 10 \
   --upload-temp
 ```
 
-不指定 `--data-run` 时尝试最近的 V3.17、V3.16 数据配置。官方 Dev 配对表通常自动找到；特殊路径加 `--dev-pairs /absolute/path/dev_offline_online_pairs.csv`。默认物理 microbatch=8、frame budget=4800、workers=4；可以在第一次启动前调整 `--microbatch`、`--frame-budget`、`--workers`，保持逻辑来源数量和损失预算不变。联合阶段 BN 固定；预热阶段改变物理 batch 仍可能改变 BN 统计，不能保证不同物理配置完全等价。
+不指定 `--data-run` 时尝试最近的 V3.17、V3.16 数据配置。官方 Dev 配对表通常自动找到；特殊路径加 `--dev-pairs /absolute/path/dev_offline_online_pairs.csv`。3B 默认物理 microbatch=4、frame budget=2400、eval batch=8、workers=4；1B 为 8/4800/16。可以在第一次启动前调整 `--microbatch`、`--frame-budget`、`--eval-batch`、`--workers`，保持逻辑来源数量和损失预算不变。联合阶段 BN 固定；预热阶段改变物理 batch 仍可能改变 BN 统计，不能保证不同物理配置完全等价。3B 冻结参数仍参与前向和部分反向计算，不承诺与 1B 相同的速度或更高成绩。
+
+若显式使用旧的 1B 方案，执行 `bash prepare_omni1b_v318.sh`、`python -m w2v_v318.preflight --omni-size 1b --weights`，启动训练时加 `--omni-size 1b`。切换到 3B 必须开始新 run，不能通过 `--resume` 把已有 1B 检测器升级成 3B；公开权重和后端维度均不相同。
 
 查看与恢复：
 
@@ -122,6 +125,6 @@ bash run_eval_w2v_v318.sh --checkpoint best --upload-temp
 
 `--variant C0` 整段 AASIST + 双视图均值；C1 区域汇聚 + 均值；C2 整段 + 风险；默认 C3 区域汇聚 + 风险。提供可比开关，不自动启动四次训练。所有变体均使用独立 Online 流和相同四组预算。
 
-本地 14 项 CPU 测试使用实际 WAV 文件（合成信号）、实际 AASIST 和小型可训练编码器，原生库边界有明确替代：检查 LoRA 梯度、冻结参数、覆盖、抽样预算、microbatch 梯度、BN 保存、断点恢复、源隔离、跨进程评估、best/last 及 submission 导出。另将当前 AASIST 与官方源码逐项比较，6 种 train/eval/长度组合的输出、输入梯度、BN 缓冲区完全一致；30 种实际 FFmpeg 处理组合保持长度和有限值。完整公开 1B、Linux fairseq2/WebRTC、A100 显存与性能需上述服务器 preflight 及正式实验确认，不能把 CPU 测试当作完整训练验证。
+CPU 测试使用实际 WAV 文件（合成信号）、实际 AASIST 和小型可训练编码器，原生库边界有明确替代：检查 LoRA 梯度、冻结参数、覆盖、抽样预算、microbatch 梯度、BN 保存、断点恢复、源隔离、跨进程评估、best/last 及 submission 导出。新增检查覆盖 3B 选择、权重与规格错配、下载复用及剩余空间、60 层中最后 16 层的 LoRA 形状、2048 维 AASIST 的真实正反向、不同前端 checkpoint 混用拒绝。执行 `python -m unittest w2v_v318.test_core w2v_v318.test_assets -v`。完整公开 3B、Linux fairseq2/WebRTC、A100 显存与性能需上述服务器 preflight 及正式实验确认，不能把 CPU 测试当作完整训练验证。
 
-来源：[Meta OmniASR](https://github.com/facebookresearch/omnilingual-asr)、[1B 模型卡](https://huggingface.co/facebook/omniASR-W2V-1B)、[RTC 官方后端](https://github.com/JunXue-tech/RTC-SDD/blob/main/xlsr_aasist/model/model.py)、[SSL-AASIST 上游](https://github.com/TakHemlata/SSL_Anti-spoofing)。后端许可见 `THIRD_PARTY_LICENSES/SSL_AASIST_V318.txt`。
+来源：[Meta OmniASR](https://github.com/facebookresearch/omnilingual-asr)、[3B 模型卡](https://huggingface.co/facebook/omniASR-W2V-3B)、[3B 固定权重身份](https://huggingface.co/facebook/omniASR-W2V-3B/blob/b34b7fba5ac95adbffd9e60813a4425cb0fc6242/omniASR-W2V-3B.pt)、[RTC 官方后端](https://github.com/JunXue-tech/RTC-SDD/blob/main/xlsr_aasist/model/model.py)、[SSL-AASIST 上游](https://github.com/TakHemlata/SSL_Anti-spoofing)。后端许可见 `THIRD_PARTY_LICENSES/SSL_AASIST_V318.txt`。

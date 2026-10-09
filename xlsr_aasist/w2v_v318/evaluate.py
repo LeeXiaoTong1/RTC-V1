@@ -9,7 +9,7 @@ from w2v_aasist.data import read_protocol
 from w2v_aasist.evaluate import package_scores
 from w2v_aasist.launch import run_lock,upload_archive
 from w2v_aasist.full_workflow import ensure_idle
-from .common import ROOT,SCHEMA,read_json,atomic_json,digest,verify_files,fingerprint,apply_partial,seed_all
+from .common import ROOT,schema_for,read_json,atomic_json,digest,verify_files,fingerprint,apply_partial,seed_all
 from .config import verify_inputs
 from .model import load_model
 from .inference import infer
@@ -23,7 +23,7 @@ def selected(run,kind):
     if done.get('version')!='3.18' or done.get('status')!='complete':raise ValueError('A completed V3.18 run is required')
     if digest(run/'last.pt')!=done['checkpoint_sha256']:raise ValueError('Checkpoint hash changed')
     state=torch.load(run/'last.pt',map_location='cpu',weights_only=True)
-    if state.get('schema')!=SCHEMA or state['identity']!=fingerprint(cfg):raise ValueError('V3.18 checkpoint/config mismatch')
+    if state.get('schema')!=schema_for(cfg) or state['identity']!=fingerprint(cfg):raise ValueError('V3.18 checkpoint/config mismatch')
     tag=state['best_tag' if kind=='best' else 'last_tag']
     if tag!=done['best_tag' if kind=='best' else 'last_tag'] or not any(e['tag']==tag for e in state['history']):
         raise ValueError('Checkpoint is not a trained epoch of this V3.18 run')
@@ -56,7 +56,7 @@ def export(run,out,kind='best',device='cuda:0',workers=4,protocol=None,audio_roo
     else:scores_logits=logits
     metadata=dict(meta,version='3.18',run=str(run),initialization=cfg['initialization'],frontend=cfg['omni_provenance'],
         calibration=calibration,score='P(fake=0)',threshold=.5,count=len(rows),protocol_sha256=protocol_hash,
-        input='full 16kHz waveform; whole-wave layer_norm; final 1280-dim SSL',
+        input=f'full 16kHz waveform; whole-wave layer_norm; final {cfg["encoder_dim"]}-dim SSL',
         local_evidence=cfg['local_evidence'],window=cfg['window'],hop=cfg['hop'],eval_amp='SSL BF16 / AASIST FP32')
     if dev:
         raw_metrics=measure(rows,logits);metrics=measure(rows,scores_logits)

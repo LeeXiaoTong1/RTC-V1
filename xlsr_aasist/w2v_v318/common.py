@@ -14,6 +14,12 @@ GROUPS = (('en', 0), ('en', 1), ('zh', 0), ('zh', 1))
 SCHEMA = 'rtc_v318_omni1b_aasist_v1'
 
 
+def schema_for(cfg):
+    arch=cfg.get('omni_arch','1b')
+    if arch not in ('1b','3b'):raise ValueError('Unsupported V3.18 frontend')
+    return 'rtc_v318_omni'+arch+'_aasist_v1'
+
+
 def fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 

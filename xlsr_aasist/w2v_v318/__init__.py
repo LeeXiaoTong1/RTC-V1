@@ -1,1 +1,1 @@
-"""V3.18: OmniASR W2V 1B, SSL-AASIST and bounded condition risk."""
+"""V3.18: OmniASR W2V (default 3B), SSL-AASIST and bounded condition risk."""

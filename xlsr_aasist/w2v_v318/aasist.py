@@ -3,7 +3,7 @@
 Source: https://github.com/JunXue-tech/RTC-SDD/blob/main/xlsr_aasist/model/model.py
 Retrieved SHA256: 081f591f9fb8cf056342ee55dbe0765cb07ec2c714910327fbf0b3c0abe6101e
 Based on TakHemlata/SSL_Anti-spoofing and clovaai/aasist (MIT).
-Adaptations: remove fairseq encoder; 1280-input projection; expose pre-dropout
+Adaptations: remove fairseq encoder; configurable SSL input projection; expose pre-dropout
 160-dim readout. Graph equations, BN and residual ordering remain unchanged,
 including the upstream residual preactivation that is computed but discarded.
 """

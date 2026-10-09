@@ -20,6 +20,6 @@ PID=$!
 printf '%s\n' "$LOG" > exp/.latest_v318_log
 printf '%s\n' "$PID" > exp/.latest_v318_pid
 printf 'PID=%s\nLOG=%s\n' "$PID" "$LOG"
-printf '%s\n' 'V3.18: Omni W2V 1B + SSL-AASIST; 2 warmup + 8 joint epochs by default; fixed large Train probe; full Dev'
+printf '%s\n' 'V3.18: Omni W2V (default 3B) + SSL-AASIST; 2 warmup + 8 joint epochs by default; fixed large Train probe; full Dev'
 printf '%s\n' 'View: bash watch_w2v_v318.sh ; Ctrl+C closes the viewer only.'
 if [[ "$WATCH" == 1 && -t 1 ]]; then exec bash watch_w2v_v318.sh; fi

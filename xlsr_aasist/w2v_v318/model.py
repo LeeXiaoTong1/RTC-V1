@@ -1,4 +1,4 @@
-"""Official W2V 1B encoder only; fresh SSL-AASIST, final-layer Q/K/V/O LoRA."""
+"""Official W2V SSL encoder; fresh SSL-AASIST, final-layer Q/K/V/O LoRA."""
 from contextlib import nullcontext
 from pathlib import Path
 import torch
@@ -121,19 +121,21 @@ class Detector(nn.Module):
 
 
 def load_model(cfg):
+    from .assets import configured_spec
+    item=configured_spec(cfg)
     from importlib.metadata import version
     if version('fairseq2') != '0.6.0': raise RuntimeError('Use sdd-v318 with fairseq2==0.6.0')
     import omnilingual_asr
     from fairseq2.models.wav2vec2 import get_wav2vec2_model_hub
     from fairseq2.nn.batch_layout import BatchLayout
-    hub = get_wav2vec2_model_hub(); arch = hub.get_arch_config('1b')
+    hub = get_wav2vec2_model_hub(); arch = hub.get_arch_config(item['arch'])
     ec = arch.encoder_config
-    if ec.model_dim != 1280 or ec.num_encoder_layers != 48:
-        raise ValueError('Expected official Omni W2V 1B: 48 layers, 1280 dimensions')
+    if ec.model_dim != item['encoder_dim'] or ec.num_encoder_layers != item['encoder_layers']:
+        raise ValueError('Installed Omni architecture disagrees with the pinned '+item['arch']+' contract')
     device = torch.device(cfg['device'])
     dtype = torch.bfloat16 if device.type == 'cuda' else torch.float32
     ssl = hub.load_custom_model(Path(cfg['omni_checkpoint']), arch, device=device, dtype=dtype, mmap=True, restrict=True)
-    if len(ssl.encoder.layers) != 48: raise ValueError('Wrong SSL encoder')
+    if len(ssl.encoder.layers) != item['encoder_layers']: raise ValueError('Wrong SSL encoder')
     model = Detector(ssl.encoder_frontend, ssl.encoder, cfg, BatchLayout)
     del ssl
     return model.to(device)

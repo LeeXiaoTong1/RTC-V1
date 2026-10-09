@@ -5,7 +5,7 @@ import shutil
 import time
 import numpy as np
 import torch
-from .common import (SCHEMA,atomic_json,read_json,digest,fingerprint,seed_all,partial_state,apply_partial,
+from .common import (schema_for,atomic_json,read_json,digest,fingerprint,seed_all,partial_state,apply_partial,
     atomic_save,to_cpu,capture_rng,restore_rng,append_json)
 from .model import load_model,optimizer_for
 from .sampling import Plan,probe_tickets
@@ -40,10 +40,11 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model):
     trainable=sum(p.numel() for p in model.parameters() if p.requires_grad)
     head=sum(p.numel() for p in model.head.parameters() if p.requires_grad)
     inventory=dict(total=trainable,head=head,lora=trainable-head,lora_projections=model.lora_inventory,
-        encoder_base_frozen=True,tfcl_parameters=0,head_buffers_saved=True)
+        encoder_base_frozen=True,tfcl_parameters=0,head_buffers_saved=True,
+        omni_arch=cfg.get('omni_arch','1b'),encoder_dim=cfg['encoder_dim'],encoder_layers=cfg.get('encoder_layers'))
     atomic_json(run/'parameter_inventory.json',inventory)
     if shutil.disk_usage(run).free<cfg['free_reserve_bytes']+1024**3:raise OSError('Need 1 GiB for partial checkpoints plus free-space reserve')
-    print(f'[Model] V3.18 {cfg["variant"]}: trainable={trainable:,}; AASIST/aggregation={head:,}; LoRA={trainable-head:,}; TFCL=off',flush=True)
+    print(f'[Model] V3.18 {cfg["variant"]} Omni W2V {cfg.get("omni_arch","1b").upper()}: trainable={trainable:,}; AASIST/aggregation={head:,}; LoRA={trainable-head:,}; TFCL=off',flush=True)
     plan=Plan(train,cfg['stream_sources'],cfg['seed'])
     partition=dev_partition(dev,cfg['dev_pairs'],cfg['seed'],cfg['calibration_fraction'])
     atomic_json(run/'dev_partition.json',partition)
@@ -51,11 +52,11 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model):
     probes=probe_tickets(plan,cfg['train_probe_per_group']);atomic_json(run/'train_probe_tickets.json',probes)
     panels,panel_tickets=panel_rows(cfg)
     atomic_json(run/'independent_panel.json',dict(rows=panels,tickets=panel_tickets))
-    state=dict(schema=SCHEMA,identity=fingerprint(cfg),cursor=0,epoch=0,last_tag=None,best_tag=None,
+    state=dict(schema=schema_for(cfg),identity=fingerprint(cfg),cursor=0,epoch=0,last_tag=None,best_tag=None,
         best_metrics=None,best_model=None,best_logits=None,last_logits=None,history=[],steps=[],patience_anchor=None,no_progress=0)
     if (run/'last.pt').is_file():
         state=torch.load(run/'last.pt',map_location='cpu',weights_only=True)
-        if state.get('schema')!=SCHEMA or state.get('identity')!=fingerprint(cfg):raise ValueError('Resume configuration changed')
+        if state.get('schema')!=schema_for(cfg) or state.get('identity')!=fingerprint(cfg):raise ValueError('Resume configuration changed')
         apply_partial(model,state['model']);optimizer.load_state_dict(state['optimizer']);restore_rng(state['rng'])
         print(f'[Resume] committed epochs={state["epoch"]}; optimizer and BN restored',flush=True)
     sampler=TicketSampler();batches=loader(Waves(train,cfg),cfg,batch_sampler=sampler)
