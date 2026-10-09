@@ -101,6 +101,64 @@ class StorageAuditTests(unittest.TestCase):
         self.assertTrue(report['current_input_errors'])
         self.assertFalse(report['deletion_authorized'])
 
+    def test_large_manifest_over_64_mib_streams_and_preserves_dev(self):
+        path=self.producer/'features'/'train'/'rows.json'
+        original=path.read_bytes()
+        with path.open('wb') as stream:
+            stream.write(b'[')
+            for _ in range(65): stream.write(b' '*1024**2)
+            stream.write(original[1:])
+        complete=audit.load(path.parent/'complete.json')
+        complete['files']['rows.json']=audit.digest(path)
+        self.write(path.parent/'complete.json',complete)
+        # Neither digesting nor row parsing may read the entire manifest at once.
+        with patch.object(Path,'read_bytes',side_effect=AssertionError('unbounded read')):
+            report=self.collect()
+        self.assertEqual(report['current_input_errors'],[])
+        dev=next(r for r in report['entries'] if r['path']==str(self.dev.parent))
+        self.assertEqual(dev['status'],'KEEP_V318_INPUT_OR_METADATA')
+
+    def test_streaming_rows_across_tiny_chunks_and_invalid_arrays(self):
+        path=self.root/'rows.json'
+        rows=[{'audio':'中文/escaped\\path.wav','value':-12.5e12},{'nested':[1,2,3]}]
+        for indent in (None,2):
+            path.write_text(json.dumps(rows,ensure_ascii=False,indent=indent),encoding='utf-8')
+            self.assertEqual(list(audit.manifest_rows(path,chunk_size=3)),rows)
+        for invalid in ('[{},]','[{}','[{}] trailing','{}','[12]'):
+            path.write_text(invalid,encoding='utf-8')
+            with self.assertRaises(ValueError): list(audit.manifest_rows(path,chunk_size=3))
+
+    def test_train_error_does_not_skip_dev_or_noise_and_blocks_review_status(self):
+        self.write(self.producer/'features'/'train'/'rows.json',[])
+        report=self.collect()
+        rows={r['path']:r for r in report['entries']}
+        self.assertTrue(report['current_input_errors'])
+        self.assertEqual(rows[str(self.dev.parent)]['status'],'KEEP_V318_INPUT_OR_METADATA')
+        self.assertTrue(any('noise recording: train' in r['v318_reasons'] for r in rows.values()))
+        self.assertEqual(rows[str(self.legacy.parent.parent)]['status'],'REVIEW_INCOMPLETE')
+
+    def test_refresh_rechecks_dependencies_without_discovery_or_measure(self):
+        original=self.collect()
+        path=self.root/'exp'/'storage_audit_original.json'
+        self.write(path,original)
+        self.write(self.producer/'features'/'train'/'rows.json',[])
+        with patch.object(audit,'measure',side_effect=AssertionError('must not rescan')), \
+             patch.object(audit,'discover',side_effect=AssertionError('must not rediscover')):
+            result=audit.collect(self.root,str(self.source),lambda _:None,refresh_report=path)
+        self.assertEqual(result['size_snapshot_from'],str(path))
+        self.assertTrue(result['current_input_errors'])
+        self.assertEqual([r['logical_bytes'] for r in result['entries']],
+                         [r['logical_bytes'] for r in original['entries']])
+
+    def test_refresh_rejects_different_project_or_data_run(self):
+        original=self.collect()
+        path=self.root/'exp'/'storage_audit_original.json'
+        for key,value in (('root',str(self.root/'elsewhere')),('data_run','exp/another_run')):
+            changed={**original,key:value}
+            self.write(path,changed)
+            with self.assertRaisesRegex(ValueError,'same project'):
+                audit.collect(self.root,str(self.source),lambda _:None,refresh_report=path)
+
     def test_cli_only_creates_two_new_reports(self):
         before=self.snapshot()
         output=io.StringIO()

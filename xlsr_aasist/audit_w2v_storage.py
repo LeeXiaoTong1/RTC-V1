@@ -26,6 +26,34 @@ def load(path):
     return json.loads(path.read_text(encoding='utf-8'))
 
 
+def digest(path):
+    h = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024**2), b''): h.update(chunk)
+    return h.hexdigest()
+
+
+def manifest_rows(path, chunk_size=64*1024):
+    """Stream the canonical top-level array; memory bounded by one row.
+
+    The standard-library decoder also handles pretty printed and compact JSON.
+    The existing bounded reader has no cleanup side effects on import.
+    """
+    from w2v_v316.cleanup import _JSONReader
+    with Path(path).open(encoding='utf-8') as stream:
+        reader = _JSONReader(stream, chunk_size)
+        reader.expect('[')
+        if reader.peek() != ']':
+            while True:
+                row = reader.value()
+                if not isinstance(row, dict): raise ValueError('Manifest row must be an object')
+                yield row
+                if reader.peek() == ']': break
+                reader.expect(',')
+        reader.expect(']')
+        if reader.peek(): raise ValueError('Trailing data in canonical manifest')
+
+
 def strings(obj):
     if isinstance(obj, str): yield obj
     elif isinstance(obj, dict):
@@ -91,7 +119,7 @@ def discover(root, references):
                 p = parent/name
                 if p.suffix in WEIGHTS: items[p] = 'checkpoint'
     # Some old Train caches live outside the checkout and only appear in config.
-    families = {'rtc_noisy_cache_v2','rtc_noisy_improved_v1','rtc_noisy_full2_v1','rtc_v35','w2v_feature_cache'}
+    families = {'rtc_noisy_cache_v2','rtc_noisy_improved_v1','rtc_noisy_full2_v1','rtc_noisy_v33','rtc_v35','w2v_feature_cache'}
     found_roots = set()
     for p in references:
         for ancestor in (p, *p.parents):
@@ -125,11 +153,13 @@ def scan_references(root):
     return refs, skipped
 
 
-def current_inputs(root, source):
+def current_inputs(root, source, progress=lambda _:None):
     """Mirror V3.18's manifest-only inputs without importing torch/fairseq2."""
     protected = defaultdict(set)
     errors = []
-    def keep(p, reason): protected[Path(p).resolve()].add(reason)
+    def keep(p, reason):
+        p = Path(p)
+        protected[(p if p.is_absolute() else root/p).resolve()].add(reason)
     source = (root/source).resolve() if not Path(source).is_absolute() else Path(source).resolve()
     try:
         cfg = load(source/'config.json')
@@ -140,24 +170,36 @@ def current_inputs(root, source):
         producer = Path(old['v37_run'])
         if not producer.is_absolute(): producer = root/producer
         for split in ('train','dev'):
-            folder = producer/'features'/split
-            if not (folder/'complete.json').is_file():
-                reuse = producer/'feature_reuse.json'
-                keep(reuse, 'canonical manifest location')
-                folder = Path(load(reuse)[split]['path'])
-                if not folder.is_absolute(): folder = root/folder
-            for name in ('rows.json','owner.json','complete.json'):
-                keep(folder/name, 'V3.18 canonical manifest metadata')
-            rows, owner, complete = [load(folder/name) for name in ('rows.json','owner.json','complete.json')]
-            digest = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
-            signature = hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest()
-            if (complete['files']['rows.json'] != digest(folder/'rows.json') or
-                complete['owner_sha256'] != digest(folder/'owner.json') or
-                owner['records_digest'] != signature or len(rows) != owner['shape'][0] or owner['identity']['split'] != split):
-                raise ValueError('Canonical manifest identity mismatch: '+str(folder))
-            for row in rows:
-                if split=='dev' or row['condition'] in ('offline','online'):
-                    keep(row['audio'], 'fixed Dev audio' if split=='dev' else 'original Train audio')
+            try:
+                folder = producer/'features'/split
+                if not (folder/'complete.json').is_file():
+                    reuse = producer/'feature_reuse.json'
+                    keep(reuse, 'canonical manifest location')
+                    folder = Path(load(reuse)[split]['path'])
+                    if not folder.is_absolute(): folder = root/folder
+                for name in ('rows.json','owner.json','complete.json'):
+                    keep(folder/name, 'V3.18 canonical manifest metadata')
+                progress('Streaming '+split+' manifest: '+str(folder/'rows.json'))
+                before = {n:digest(folder/n) for n in ('rows.json','owner.json','complete.json')}
+                owner, complete = [load(folder/name) for name in ('owner.json','complete.json')]
+                signature = hashlib.sha256(b'['); count = 0
+                for row in manifest_rows(folder/'rows.json'):
+                    if count: signature.update(b',')
+                    signature.update(json.dumps(row,sort_keys=True,separators=(',',':'),allow_nan=False).encode())
+                    count += 1
+                    if split=='dev' or row['condition'] in ('offline','online'):
+                        keep(row['audio'], 'fixed Dev audio' if split=='dev' else 'original Train audio')
+                    if count % 10000 == 0: progress(f'  {split}: {count:,} manifest rows checked')
+                signature.update(b']')
+                if (complete['files']['rows.json'] != before['rows.json'] or
+                    complete['owner_sha256'] != before['owner.json'] or
+                    owner['records_digest'] != signature.hexdigest() or count != owner['shape'][0] or
+                    owner['identity']['split'] != split or
+                    any(digest(folder/n) != h for n,h in before.items())):
+                    raise ValueError('Canonical manifest identity mismatch: '+str(folder))
+                progress(f'  {split}: {count:,} rows verified')
+            except (OSError,ValueError,KeyError,TypeError,IndexError) as exc:
+                errors.append(split+': '+str(exc))
         for mapping in (old, old.get('source_config',{}), old.get('dev_config',{})):
             for key in ('train_data_path','dev_data_path','train_protocol','dev_protocol','train_noise_manifest','dev_noise_manifest'):
                 if mapping.get(key): keep(mapping[key], 'V3.18 '+key)
@@ -204,13 +246,24 @@ def measure(path, progress=print):
                 hardlinked_files=hardlinks,errors=errors)
 
 
-def collect(root, source, progress=print):
+def collect(root, source, progress=print, refresh_report=None):
     root=Path(root).resolve()
     if not (root/'exp').is_dir(): raise ValueError('Expected project containing exp/')
     progress('Reading current manifests and historical configurations; no tensor/audio loads...')
     refs, skipped=scan_references(root)
-    current, errors=current_inputs(root,source)
-    items=discover(root,refs)
+    current, errors=current_inputs(root,source,progress)
+    prior = None
+    if refresh_report is not None:
+        prior = load(refresh_report)
+        if (prior.get('schema') != 'rtc_storage_readonly_v1' or
+            Path(prior['root']).resolve() != root or
+            (root/prior['data_run']).resolve() != (root/source).resolve()):
+            raise ValueError('Refresh report must have the same project and data-run')
+        items={Path(row['path']):row['kind'] for row in prior['entries']}
+        previous={Path(row['path']):row for row in prior['entries']}
+        progress('Reusing previous size snapshot; no directory walk or audio stat scan.')
+    else:
+        items=discover(root,refs)
     # Assign references once, by ancestors, rather than comparing every audio to every item.
     matches=defaultdict(set); history=defaultdict(set)
     for inventory,index in ((current,matches),(refs,history)):
@@ -222,8 +275,11 @@ def collect(root, source, progress=print):
                 if ancestor in inventory: index[item].update(inventory[ancestor])
     rows=[]
     for index,(path,kind) in enumerate(sorted(items.items(),key=lambda v:str(v[0])),1):
-        progress(f'[{index}/{len(items)}] Measuring {path}')
-        size=measure(path,progress)
+        if prior is None:
+            progress(f'[{index}/{len(items)}] Measuring {path}')
+            size=measure(path,progress)
+        else:
+            size={k:previous[path][k] for k in ('logical_bytes','allocated_bytes','files','symlinks_skipped','hardlinked_files','errors')}
         status='REVIEW_UNKNOWN'
         if kind=='checkpoint':
             status='REVIEW_CHECKPOINT'
@@ -232,8 +288,9 @@ def collect(root, source, progress=print):
         elif kind=='audit_record': status='KEEP_AUDIT_RECORD'
         elif kind=='pretrained': status='KEEP_PRETRAINED'
         elif kind=='linked_path' or size['symlinks_skipped'] or size['errors']: status='REVIEW_INCOMPLETE'
-        elif kind in ('feature_cache','rolling_cache','historical_cache') or any(name in path.parts for name in ('rtc_v35','rtc_noisy_cache_v2','rtc_noisy_improved_v1','rtc_noisy_full2_v1','w2v_feature_cache')):
+        elif kind in ('feature_cache','rolling_cache','historical_cache') or any(name in path.parts for name in ('rtc_v35','rtc_noisy_cache_v2','rtc_noisy_improved_v1','rtc_noisy_full2_v1','rtc_noisy_v33','w2v_feature_cache')):
             status='REVIEW_OLD_CACHE'
+        if errors and status.startswith('REVIEW_'): status='REVIEW_INCOMPLETE'
         if matches[path]: status='KEEP_V318_INPUT_OR_METADATA'
         rows.append(dict(path=str(path),kind=kind,status=status,**size,
                          v318_reasons=sorted(matches[path]),historical_references=sorted(history[path])))
@@ -241,6 +298,7 @@ def collect(root, source, progress=print):
     rows.sort(key=lambda r:r['logical_bytes'],reverse=True)
     return dict(schema='rtc_storage_readonly_v1',read_only=True,deletion_authorized=False,root=str(root),
                 data_run=str(source),current_input_errors=errors,skipped_metadata=skipped,entries=rows,
+                size_snapshot_from=str(Path(refresh_report).resolve()) if prior is not None else None,
                 notes=['REVIEW does not mean safe to delete. No checkpoint score is inferred from its filename.',
                        'Directory references and embedded best/last require review before any deletion.',
                        'A features folder marked KEEP includes small required manifests; its arrays may be separately reviewable.',
@@ -253,9 +311,10 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--root',default=str(Path(__file__).resolve().parent))
     p.add_argument('--data-run',required=True)
+    p.add_argument('--refresh-report',help='Reuse this report\'s sizes and item list; recheck dependencies only, without rescanning audio directories')
     args=p.parse_args()
     root=Path(args.root).resolve()
-    result=collect(root,args.data_run,lambda text:print(text,flush=True))
+    result=collect(root,args.data_run,lambda text:print(text,flush=True),args.refresh_report)
     stamp=datetime.now().strftime('%Y%m%d_%H%M%S_%f')
     path=root/'exp'/('storage_audit_'+stamp+'.json')
     text_path=path.with_suffix('.txt')
@@ -263,6 +322,7 @@ def main():
     with path.open('x',encoding='utf-8') as f: json.dump(result,f,ensure_ascii=False,indent=2)
     with text_path.open('x',encoding='utf-8') as f:
         f.write('READ ONLY: no files deleted. REVIEW is not deletion approval.\n')
+        if result['size_snapshot_from']: f.write('SIZES/ITEMS REUSED (not freshly measured): '+result['size_snapshot_from']+'\n')
         for row in result['entries']:
             f.write(f'{row["logical_bytes"]/1024**3:.3f} GiB\t{row["status"]}\t{row["path"]}\n')
             for reason in row['v318_reasons']: f.write('  V318: '+reason+'\n')
