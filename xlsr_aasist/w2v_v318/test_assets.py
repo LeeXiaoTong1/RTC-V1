@@ -9,7 +9,7 @@ from torch import nn
 from .assets import spec,default_assets,validate_assets,configured_spec
 from .common import atomic_json,digest,fingerprint,schema_for
 from .config import parser,validate
-from .model import Detector,load_model
+from .model import Detector,load_model,inject,LoRALinear
 from .prepare import prepare
 from .test_core import TinyLayout
 
@@ -110,6 +110,17 @@ class TestAssets(unittest.TestCase):
         x=torch.randn(2,20,2048,requires_grad=True);head=SSLAASIST(2048).eval()
         logits=head(x);self.assertEqual(logits.shape,(2,2));logits.sum().backward()
         self.assertTrue(torch.isfinite(x.grad).all())
+
+    def test_attention_injection_does_not_touch_fairseq_ffn_output_projection(self):
+        layer=nn.Module();dim=32
+        layer.self_attn=nn.ModuleDict({name:nn.Linear(dim,dim) for name in ('q_proj','k_proj','v_proj','output_proj')})
+        layer.ffn=nn.ModuleDict({'inner_proj':nn.Linear(dim,4*dim),'output_proj':nn.Linear(4*dim,dim)})
+        layer.requires_grad_(False);ffn=layer.ffn['output_proj'];before=ffn.weight.detach().clone()
+        names=inject(layer,dict(encoder_dim=dim,lora_rank=4,lora_alpha=8.,lora_dropout=0.))
+        self.assertEqual(set(names),{'self_attn.'+n for n in ('q_proj','k_proj','v_proj','output_proj')})
+        self.assertIs(layer.ffn['output_proj'],ffn);self.assertTrue(torch.equal(before,ffn.weight))
+        self.assertFalse(ffn.weight.requires_grad)
+        self.assertTrue(all(isinstance(m,LoRALinear) for m in layer.self_attn.values()))
 
     def test_export_rejects_checkpoint_of_another_frontend(self):
         from .evaluate import selected

@@ -73,12 +73,14 @@ cd xlsr_aasist
 
 conda create -n sdd-v318 python=3.11 -y
 conda activate sdd-v318
-bash setup_w2v_v318.sh
-bash prepare_omni3b_v318.sh
-python -m w2v_v318.preflight --omni-size 3b --weights
+bash repair_w2v_v318.sh --omni-size 3b
 ```
 
 `sdd-v318` 若已经存在，跳过创建，直接激活。环境固定 torch/torchaudio 2.8.0 cu126、fairseq2 0.6.0、omnilingual-asr 0.2.0；机器需要兼容 CUDA 驱动、FFmpeg 和 WebRTC 包的构建环境。安装脚本检查实际原生处理库；`--weights` 额外加载所选的真实前端、运行正反向、确认 LoRA 梯度并打印显存。该预检查使用短合成音频，不能代替真实长音频下的显存与速度测试。任何预检查失败应先修复，避免启动长训练。
+
+`repair_w2v_v318.sh` 也是已有环境的统一修复入口：补齐原生库、统一解析固定依赖、汇总无权重检查、运行回归测试、复用或续传公开权重、最后执行实际模型 GPU 正反向。不会自动启动训练，不会强制重装已匹配的 Torch。NumPy 固定 1.26.4；Omni 导入链固定 PyArrow 20.0.0、Pandas 2.2.3、Polars 1.29.0、Numba 0.61.2、llvmlite 0.44.0；Torch、torchaudio 与 fairseq2n 明确固定 CUDA 12.6 构建。不要通过单独升级 NumPy 2 来绕过 Arrow 的错误，fairseq2 0.6 的依赖要求仍限制 NumPy 1.x。
+
+可以单独执行 `python -m w2v_v318.environment`。它以独立进程分别检查版本清单、Arrow/Pandas/NumPy 互转与 Parquet、Numba JIT、音频重采样与指标、Conda 原生库、CUDA/BF16、Omni 完整导入与模型注册、六种增强机制及 codec/长度保持、真实 fairseq2 小模型的加载/LoRA/Adam/状态保存接口，以及 pip 依赖完整性。某一项失败仍会继续收集其他问题，终端只打印逐项 PASS/FAIL，完整错误写入 `exp/v318_environment_report.json`。小模型采用实际 fairseq2 组件和随机参数，不下载公开权重，不代表完整 3B 或 A100 已验证。
 
 如果公开 3B 已下载，避免重复保存：
 
@@ -89,6 +91,8 @@ bash prepare_omni3b_v318.sh --checkpoint /absolute/path/omniASR-W2V-3B.pt
 如果旧代码在安装完成后报 `fairseq2 must be 0.6.0`：官方该版本的包元数据写作 `0.6`，它与 `0.6.0` 在 PEP 440 中等价。新版预检查和模型加载统一按版本语义比较，同时检查 fairseq2n、Torch 和 torchaudio，错误会显示实际版本。拉取更新后直接重跑 `python -m w2v_v318.preflight --omni-size 3b` 即可核验，无需因这个字符串误判重建环境或重下权重。回归测试：`python -m unittest w2v_v318.test_runtime w2v_v318.test_assets -v`。
 
 如果报 `fairseq2 requires libsndfile`：Conda 下 fairseq2n 从当前环境的 `lib` 目录加载 `libsndfile.so.1`，不使用系统默认查找路径；pip 的 `soundfile` 包不能代替这一原生依赖。新版安装脚本会先安装并实际加载验证它。已有环境原地修复即可：`conda install -n sdd-v318 -c conda-forge libsndfile=1.0.31 --freeze-installed -y`，随后重新运行 preflight，无需重装 Torch 或重下模型。依据：[fairseq2n 0.6 原生库加载代码](https://github.com/facebookresearch/fairseq2/blob/v0.6.0/native/python/src/fairseq2n/__init__.py)。
+
+本次同时修复 LoRA 注入边界：fairseq2 的前馈网络也有 `output_proj`，不能只按这个名字递归注入；现在仅识别完整 Q/K/V 注意力组并注入它的四个投影，保持前馈网络冻结。回归覆盖真实层级中的 `self_attn` 与 `ffn.output_proj` 共存情形。
 
 复用已存在 V3.16 的数据身份，先审计、再训练：
 

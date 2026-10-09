@@ -29,14 +29,20 @@ class LoRALinear(nn.Module):
 
 def inject(module, cfg):
     found = []
-    for name, child in list(module.named_children()):
-        if name in ('q_proj', 'k_proj', 'v_proj', 'output_proj') and hasattr(child, 'weight'):
+    # fairseq2 FFNs also have output_proj (model_dim x ffn_inner_dim).
+    # Recognize a complete attention group before touching any projection.
+    if all(hasattr(module, name) for name in ('q_proj', 'k_proj', 'v_proj')):
+        for name in ('q_proj', 'k_proj', 'v_proj', 'output_proj'):
+            child = getattr(module, name, None)
+            if child is None or not hasattr(child, 'weight'):
+                raise ValueError('Incomplete attention projection group: '+name)
             if child.weight.shape != (cfg['encoder_dim'], cfg['encoder_dim']):
                 raise ValueError('Unexpected attention projection shape: '+name)
             setattr(module, name, LoRALinear(child, cfg['lora_rank'], cfg['lora_alpha'], cfg['lora_dropout']))
             found.append(name)
-        else:
-            found.extend(name+'.'+s for s in inject(child, cfg))
+        return found
+    for name, child in list(module.named_children()):
+        found.extend(name+'.'+s for s in inject(child, cfg))
     return found
 
 

@@ -1,11 +1,22 @@
-torch==2.8.0
-torchaudio==2.8.0
+# One compatible Python 3.11 / CUDA 12.6 stack; also used as pip constraints.
+torch==2.8.0+cu126
+torchaudio==2.8.0+cu126
 fairseq2==0.6.0
+fairseq2n==0.6+cu126
 omnilingual-asr==0.2.0
 numpy==1.26.4
+# Omni imports its parquet/data modules even when only the SSL encoder is used.
+pyarrow==20.0.0
+pandas==2.2.3
+polars==1.29.0
+numba==0.61.2
+llvmlite==0.44.0
+kenlm==0.3.0
+packaging==24.2
 transformers==4.38.2
 soundfile==0.13.1
 scipy==1.13.1
 webrtc-audio-processing==0.1.3
 librosa==0.10.2.post1
 psutil==5.9.8
+scikit-learn==1.5.2

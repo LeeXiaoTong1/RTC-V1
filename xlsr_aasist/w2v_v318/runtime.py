@@ -8,7 +8,9 @@ def require_version(name,wanted,actual=None):
     try:
         # Accept release padding and local wheel tags, but not another release,
         # prerelease, development or postrelease. Native ABI is checked on import.
-        matches=Version(Version(actual).public)==Version(wanted)
+        expected=Version(wanted)
+        installed=Version(actual)
+        matches=(installed if expected.local else Version(installed.public))==expected
     except InvalidVersion:
         matches=False
     if not matches:
