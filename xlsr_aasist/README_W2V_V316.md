@@ -137,9 +137,19 @@ bash run_w2v_v316.sh \
 bash watch_w2v_v316.sh
 bash show_w2v_v316.sh
 
+# 训练中已自动执行固定 Dev 验证（每轮两次），无需另启验证进程。
+# 以下是训练完成后，单独重跑带标签的 Dev；只写小体积结果文件。
+bash run_validate_w2v_v316.sh --checkpoint best_guarded
+bash run_validate_w2v_v316.sh --checkpoint best_weighted
+bash run_validate_w2v_v316.sh --checkpoint last
+# 可用 --run exp/实际运行目录 指定运行，用 --out /新的结果目录 保存重复验证。
+# 打印 Clean/Noisy/Weighted、AP、AUC、EER、Recall、F1；不重新训练或改选模型。
+# 若 DEV_BASELINE_FALLBACK=True，本次验证的是保留的历史父模型；不会冒称新模型。
+
 # 恢复同一个新版本运行；不要拿 V3.15 的目录传给 --resume
 bash run_w2v_v316.sh --resume exp/实际的w2v_v316_tfcl运行目录 --upload-temp
 
+# 以下是对无标签 Progress 推理并生成比赛 submission，不是本地 Dev 验证。
 # 默认指向最新 TFCL 运行；需已完成，也可设置 V316_TFCL_RUN 指定目录
 bash run_eval_w2v_v316.sh --checkpoint best_guarded --upload-temp
 # 查看训练候选本身时明确选择 best_weighted 或 last
@@ -151,6 +161,8 @@ bash cleanup_w2v_v316.sh --run exp/实际的w2v_v316_tfcl运行目录
 ```
 
 Ctrl+C 只关闭查看器。确实需要停止本版本训练时，可运行 `python -m w2v_v316_tfcl.stop --apply`；只定位当前目录的新 TFCL 进程及子进程。最后一次验证后未提交的更新会在恢复时重放。
+
+独立验证入口为增量文件，不改动现有训练模块。已有运行固定了启动时的代码哈希；安装这个入口时，可只取 `run_validate_w2v_v316.sh` 和 `w2v_v316_tfcl/validate.py` 两个新增文件，保留该运行的原始训练代码。独立验证需训练结束后执行，会复用相同的固定 Dev 数据、全长输入、FP32 推理及历史指标口径，输出目录默认在 `/home/ubuntu/LXT/temp/<运行名>_dev_<checkpoint>`，不生成音频或特征缓存、不重跑最终审计面板。
 
 ## 7. 验证范围与研究来源
 
