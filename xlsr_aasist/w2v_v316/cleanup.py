@@ -56,6 +56,101 @@ def strings(value):
         for v in value: yield from strings(v)
 
 
+MAX_METADATA_BYTES = 256*1024**2
+
+
+class _JSONReader:
+    """Bounded JSON values for the large file array in legacy retirement audits."""
+    def __init__(self, stream, chunk_size=64*1024, max_value=8*1024**2):
+        self.stream, self.chunk_size, self.max_value = stream, chunk_size, max_value
+        self.buffer, self.pos, self.eof = '', 0, False
+        self.decoder = json.JSONDecoder()
+
+    def fill(self):
+        self.buffer = self.buffer[self.pos:]
+        self.pos = 0
+        chunk = self.stream.read(self.chunk_size)
+        self.buffer += chunk
+        self.eof = not chunk
+
+    def peek(self):
+        while True:
+            while self.pos < len(self.buffer) and self.buffer[self.pos] in ' \t\r\n':
+                self.pos += 1
+            if self.pos < len(self.buffer): return self.buffer[self.pos]
+            if self.eof: return ''
+            self.fill()
+
+    def expect(self, char):
+        if self.peek() != char: raise ValueError('Expected JSON delimiter '+repr(char))
+        self.pos += 1
+
+    def value(self):
+        self.peek()
+        while True:
+            if len(self.buffer)-self.pos > self.max_value:
+                raise ValueError('Retirement audit contains an oversized individual JSON value')
+            try:
+                obj, end = self.decoder.raw_decode(self.buffer, self.pos)
+            except ValueError:
+                if self.eof: raise ValueError('Invalid or truncated retirement audit JSON')
+            else:
+                # Wait for a delimiter, including when numbers/escapes straddle reads.
+                if end < len(self.buffer) and self.buffer[end] in ' \t\r\n,]}:':
+                    self.pos = end
+                    return obj
+                if self.eof and end == len(self.buffer):
+                    self.pos = end
+                    return obj
+                if self.eof: raise ValueError('Invalid retirement audit JSON value suffix')
+            self.fill()
+
+
+def retirement_strings(path, chunk_size=64*1024):
+    """Scan every audit reference, including protected paths AFTER the files array.
+
+    The producer (w2v_aasist.cache_retirement) writes one huge top-level files
+    array. Decode each record separately; never skip an audit by filename or
+    assume its deletion completed. Other fields remain bounded JSON values.
+    """
+    with Path(path).open(encoding='utf-8') as stream:
+        reader = _JSONReader(stream, chunk_size)
+        reader.expect('{')
+        if reader.peek() != '}':
+            while True:
+                key = reader.value()
+                if not isinstance(key, str): raise ValueError('Retirement audit key must be a string')
+                yield key
+                reader.expect(':')
+                if key == 'files':
+                    reader.expect('[')
+                    if reader.peek() != ']':
+                        while True:
+                            yield from strings(reader.value())
+                            if reader.peek() == ']': break
+                            reader.expect(',')
+                    reader.expect(']')
+                else:
+                    yield from strings(reader.value())
+                if reader.peek() == '}': break
+                reader.expect(',')
+        reader.expect('}')
+        if reader.peek(): raise ValueError('Trailing data in retirement audit JSON')
+
+
+def metadata_strings(path, exp):
+    # Only this documented top-level audit format has a streaming decoder.
+    # Unknown oversized metadata still stops cleanup rather than hiding references.
+    if path.parent == exp and re.fullmatch(r'cache_retirement_\d{8}_\d{6}_\d{6}\.json', path.name):
+        if path.stat().st_size > MAX_METADATA_BYTES:
+            print('Streaming large cache-retirement audit: '+str(path), flush=True)
+        yield from retirement_strings(path)
+    else:
+        if path.stat().st_size > MAX_METADATA_BYTES:
+            raise ValueError('Oversize metadata must be reviewed before cleanup: '+str(path))
+        yield from strings(read(path))
+
+
 def inventory(root):
     root=Path(root).resolve(); exp=root/'exp'
     if not exp.is_dir(): raise ValueError('Expected project root containing exp/')
@@ -66,21 +161,21 @@ def inventory(root):
     for path in exp.rglob('*.json'):
         safe(path,root)
         if path.name.startswith('cleanup_v316_'): continue
-        if path.stat().st_size>256*1024**2:
-            raise ValueError('Oversize metadata must be reviewed before cleanup: '+str(path))
-        try: obj=read(path)
+        before=sha(path)
+        try:
+            for value in metadata_strings(path, exp):
+                if '\x00' in value or len(value)>4096: continue
+                if not value.lower().endswith(('.pt','.pth','.ckpt','.wav','.flac','.npy')): continue
+                candidate=Path(value)
+                choices=[candidate] if candidate.is_absolute() else [root/candidate,path.parent/candidate]
+                for choice in choices:
+                    if choice.is_file():
+                        protected.add(str(choice.resolve())); reasons[str(choice.resolve())]='referenced by '+str(path.relative_to(root))
+                        referrers.setdefault(str(choice.resolve()),set()).add(str(path.resolve()))
         except (OSError,ValueError) as exc:
-            raise ValueError('Unreadable metadata; dependency scan cannot be trusted: '+str(path)) from exc
-        metadata[str(path)]=sha(path)
-        for value in strings(obj):
-            if '\x00' in value or len(value)>4096: continue
-            if not value.lower().endswith(('.pt','.pth','.ckpt','.wav','.flac','.npy')): continue
-            candidate=Path(value)
-            choices=[candidate] if candidate.is_absolute() else [root/candidate,path.parent/candidate]
-            for choice in choices:
-                if choice.is_file():
-                    protected.add(str(choice.resolve())); reasons[str(choice.resolve())]='referenced by '+str(path.relative_to(root))
-                    referrers.setdefault(str(choice.resolve()),set()).add(str(path.resolve()))
+            raise ValueError('Unreadable metadata; dependency scan cannot be trusted: '+str(path)+'; '+str(exc)) from exc
+        if sha(path)!=before: raise ValueError('Metadata changed during dependency scan: '+str(path))
+        metadata[str(path)]=before
     for run in runs:
         v=version(run)
         for path in run.rglob('*'):
