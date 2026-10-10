@@ -2,7 +2,7 @@
 import numpy as np
 from scipy.signal import butter,sosfilt
 from w2v_v315.augment import NoiseBank, common_inputs
-from rtc_noisy.simulator import LocalRTC
+from .rtc_process import IsolatedRTC
 from .common import seed_for,digest
 from .runtime import bundled_ffmpeg
 
@@ -58,7 +58,7 @@ def noise_wave(bank,length,kind,rng):
 
 class Engines:
     def __init__(self,ffmpeg=None):
-        self.rtc=LocalRTC(ffmpeg or bundled_ffmpeg())
+        self.rtc=IsolatedRTC(ffmpeg or bundled_ffmpeg())
     def checked(self,y,length,stage,r):
         if y.ndim!=1 or len(y)!=length or not np.isfinite(y).all():
             nonfinite=int((~np.isfinite(y)).sum())

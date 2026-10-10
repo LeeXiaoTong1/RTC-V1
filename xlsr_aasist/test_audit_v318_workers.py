@@ -3,10 +3,23 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from audit_v318_workers import recent_steps, failed_logs, kernel_evidence, cgroup_dirs
+from audit_v318_workers import recent_steps, failed_logs, kernel_evidence, cgroup_dirs, job_status
 
 
 class Tests(unittest.TestCase):
+    def test_failed_job_status_includes_exit_and_log_tail(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);exp=root/'exp';exp.mkdir()
+            log=exp/'v318_test.log'
+            log.write_text('Local RTC failed:\n[Exit] V3.18 exit_code=1\n')
+            Path(str(log)+'.exit').write_text('1\n')
+            (exp/'.latest_v318_log').write_text(str(log))
+            report=job_status(root)
+            self.assertEqual(report['exit_code'],'1')
+            self.assertIsNone(report['supervisor_alive'])
+            self.assertIn('[Exit] V3.18 exit_code=1',report['log_tail'])
+            self.assertGreaterEqual(report['log_age_seconds'],0)
+
     def test_recent_epoch_and_partial_line(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d)/'steps.jsonl'

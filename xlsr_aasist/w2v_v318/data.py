@@ -1,5 +1,6 @@
 """Persistent CPU decode/augment workers; NumPy IPC; no feature/waveform disk cache."""
 from collections import OrderedDict
+import json
 import math
 from pathlib import Path
 import numpy as np
@@ -58,7 +59,12 @@ class Waves(Dataset):
         for v in views:
             rec=recipe(self.cfg['seed'],t['occurrence'],r['group_id'],v,t['epoch'],self.cfg['warm_epochs'],
                        self.split,t.get('family'),t.get('probe',False))
-            wave,meta=generate(x,rec,self.bank,self.engines)
+            try:
+                wave,meta=generate(x,rec,self.bank,self.engines)
+            except Exception as exc:
+                raise RuntimeError(f'V3.18 augmentation failed: audio={r["audio"]!r} '
+                    f'occurrence={t["occurrence"]!r} family={rec["family"]} '
+                    f'codec={rec["codec"]}; {exc}') from exc
             result.append(dict(base,role=('noisy_a','noisy_b')[v],condition=t.get('family') or ('noisy_a','noisy_b')[v],wave=ready(wave),augmentation=meta))
         return result
 
@@ -76,12 +82,27 @@ class TicketSampler:
     def __len__(self):return len(self.batches)
 
 
+class DiagnosticLoader(DataLoader):
+    def __iter__(self):
+        iterator=None
+        try:
+            iterator=super().__iter__()
+            yield from iterator
+        except Exception as exc:
+            # Capture status before caller cleanup terminates surviving workers.
+            workers=[dict(pid=p.pid,exitcode=p.exitcode,alive=p.is_alive())
+                     for p in getattr(iterator,'_workers',())]
+            print('V318_DATA_FAILURE='+json.dumps(dict(num_workers=self.num_workers,
+                  workers=workers,error=str(exc)),ensure_ascii=True),flush=True)
+            raise
+
+
 def loader(dataset,cfg,**kwargs):
     options=dict(dataset=dataset,num_workers=cfg['workers'],collate_fn=passthrough,
                  generator=torch.Generator().manual_seed(cfg['seed']),**kwargs)
     if cfg['workers']:
         options.update(multiprocessing_context='spawn',persistent_workers=True,prefetch_factor=2,worker_init_fn=worker_init)
-    return DataLoader(**options)
+    return DiagnosticLoader(**options)
 
 
 def close(loader):

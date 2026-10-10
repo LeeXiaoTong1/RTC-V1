@@ -15,8 +15,7 @@ python -m w2v_v318.config "${ARGS[@]}"
 python -c 'from w2v_aasist.full_workflow import ensure_idle; ensure_idle()'
 mkdir -p exp
 LOG="$PWD/exp/v318_$(date +%Y%m%d_%H%M%S)_$$.log"
-nohup bash v318_supervise.sh "$LOG" "${ARGS[@]}" >"$LOG" 2>&1 < /dev/null &
-PID=$!
+PID=$(python v318_detach.py "$LOG" "${ARGS[@]}")
 printf '%s\n' "$LOG" > exp/.latest_v318_log
 printf '%s\n' "$PID" > exp/.latest_v318_pid
 printf 'PID=%s\nLOG=%s\n' "$PID" "$LOG"

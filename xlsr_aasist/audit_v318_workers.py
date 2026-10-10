@@ -12,6 +12,38 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import time
+
+
+def job_status(root):
+    log_name = read(root/'exp'/'.latest_v318_log').strip()
+    pid_value = read(root/'exp'/'.latest_v318_pid').strip()
+    result = dict(log=log_name, supervisor_pid=pid_value, supervisor_alive=None)
+    if pid_value.isdigit() and os.name == 'posix':
+        pid = int(pid_value)
+        try:
+            os.kill(pid, 0)
+            result['supervisor_alive'] = True
+        except ProcessLookupError:
+            result['supervisor_alive'] = False
+        except (PermissionError, OSError):
+            pass
+        if Path('/proc').is_dir():
+            status = pairs(read(Path('/proc')/str(pid)/'status'))
+            result['supervisor_state'] = status.get('State')
+            if status.get('State', '').startswith('Z'):
+                result['supervisor_alive'] = False
+            cmd = read(Path('/proc')/str(pid)/'cmdline')
+            result['supervisor_identity_matches'] = bool(cmd and 'v318_supervise.sh' in cmd and log_name in cmd)
+    if log_name:
+        p = Path(log_name)
+        result['exit_code'] = read(Path(log_name+'.exit')).strip() or None
+        if p.is_file():
+            result['log_age_seconds'] = round(time.time()-p.stat().st_mtime, 1)
+            with p.open('rb') as f:
+                f.seek(max(0, p.stat().st_size-4096))
+                result['log_tail'] = f.read().decode('utf-8', errors='replace').splitlines()[-18:]
+    return result
 
 
 def read(path, limit=1024*1024):
@@ -181,6 +213,8 @@ def run_info(root):
         return {}
     p = Path(value)
     info = dict(path=str(p), recent=recent_steps(p/'steps.jsonl'))
+    if (p/'steps.jsonl').is_file():
+        info['steps_age_seconds'] = round(time.time()-(p/'steps.jsonl').stat().st_mtime, 1)
     config = p/'config.json'
     if config.is_file() and config.stat().st_size < 16*1024**2:
         cfg = json.loads(config.read_text())
@@ -198,7 +232,7 @@ def main():
     failures = failed_logs(root)
     jobs = processes()
     info = run_info(root)
-    report = dict(time_utc=datetime.now(timezone.utc).isoformat(), active_run=info, failures=failures,
+    report = dict(time_utc=datetime.now(timezone.utc).isoformat(), active_run=info, job_status=job_status(root), failures=failures,
                   memory={k:v for k,v in pairs(read('/proc/meminfo')).items() if k in ('MemTotal','MemAvailable','SwapTotal','SwapFree')},
                   processes=jobs, cgroups=cgroups(jobs), kernel=kernel_evidence(failures),
                   notes=['No model/audio loaded; no worker launched; no training process modified.',
@@ -209,6 +243,8 @@ def main():
     path = root/'exp'/('worker_audit_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.json')
     path.write_text(json.dumps(report, indent=2, ensure_ascii=True)+'\n', encoding='ascii')
     print('WORKER_AUDIT='+str(path))
+    print('JOB_STATUS='+json.dumps(report['job_status'], ensure_ascii=True))
+    print('STEPS_AGE_SECONDS='+str(info.get('steps_age_seconds')))
     print('ACTIVE_CONFIG='+json.dumps(info.get('config', {}), ensure_ascii=True))
     print('RECENT_STEPS='+json.dumps(info.get('recent', {})))
     print('HOST_MEMORY='+json.dumps(report['memory']))
