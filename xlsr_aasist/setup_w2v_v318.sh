@@ -9,10 +9,7 @@ if [[ $# -gt 0 ]]; then
   fi
   CUDA_PROFILE="$2"
 fi
-if [[ ${CONDA_DEFAULT_ENV:-} != sdd-v318 ]]; then
-  printf '%s\n' 'Activate the isolated sdd-v318 environment (Python 3.11); create it first only if it does not exist.' >&2
-  exit 2
-fi
+# bootstrap validates the actual Python/Conda prefix, including full-path activation.
 export PIP_NO_CACHE_DIR=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 python -m w2v_v318.bootstrap guard
 PROFILE="$(python -m w2v_v318.bootstrap profile --cuda "$CUDA_PROFILE")"

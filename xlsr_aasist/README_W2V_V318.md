@@ -66,6 +66,28 @@ AASIST 和较少可训练参数并不保证不发生过拟合。因此仍记录 
 
 已有训练任务运行时先等它结束。新版不会自动杀掉旧训练。以下命令在服务器执行；独立环境避免改变旧 `sdd`。
 
+当前服务器系统盘 `/dev/vda2`（包含默认 Conda 环境和 `/tmp`）只剩 5.8G，而 `/home/ubuntu/LXT` 位于 `/dev/vdc`，尚余 98G。应优先使用数据盘安装入口：
+
+```bash
+cd /home/ubuntu/LXT/RTC-w2v-improved
+git pull --ff-only origin w2vbert2-balanced-robust-fast
+cd xlsr_aasist
+bash repair_w2v_v318.sh --omni-size 3b --cuda 11.8 \
+  --runtime-root /home/ubuntu/LXT/v318-runtime
+```
+
+这会在 `/home/ubuntu/LXT/v318-runtime/envs/sdd-v318` 新建或复用独立 Python 3.11 环境；pip 临时目录、Conda 包缓存分别固定到同一根目录下的 `tmp` 和 `pkgs`。设置保存在这个环境的 Conda 配置中，后续激活仍生效；原 `~/.conda/envs/sdd-v318`、旧 `sdd`、音频、公开权重和 checkpoint 均保留，不克隆旧 cu126 环境。新增环境要求目标分区先有 20 GiB 运行库安装/编译余量，不含尚未下载的 3B 权重；其后的 GPU、ABI、空间检查继续执行。98G 不是显存，而是数据盘的可用磁盘空间。新入口遵循 [Conda 指定环境与缓存位置的方式](https://docs.conda.io/projects/conda/en/latest/user-guide/configuration/custom-env-and-pkg-locations.html)。
+
+脚本内部激活不会改变父终端。修复成功后，在运行训练或评估前务必执行：
+
+```bash
+conda activate /home/ubuntu/LXT/v318-runtime/envs/sdd-v318
+```
+
+以后使用这个完整路径，避免 `conda activate sdd-v318` 又进入系统盘上的旧环境。此修复通过 8 项安装入口回归，覆盖不同分区空间不足、完整路径激活、新建/复用环境、缓存位置、失败中止和旧文件保留；Conda/GPU 安装本身仍由服务器执行。
+
+如果默认环境所在分区本身有足够空间，也可以采用原来的环境命名方式：
+
 ```bash
 cd /home/ubuntu/LXT/RTC-w2v-improved
 git pull --ff-only origin w2vbert2-balanced-robust-fast
