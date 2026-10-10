@@ -57,6 +57,8 @@ class TestAugment(unittest.TestCase):
                  patch('w2v_v318.config.torch.cuda.is_bf16_supported',return_value=True), \
                  patch('w2v_v318.augment.augmentation_runtime',return_value=runtime), \
                  patch('w2v_v318.config.runtime_versions',return_value={}), \
+                 patch('w2v_v318.runtime.execution_profile',return_value='cu118'), \
+                 patch('w2v_v318.runtime.native_abi',return_value={'profile':'cu118'}), \
                  patch('w2v_v318.config.verify_inputs'):
                 cfg,_,_=configuration(args)
             self.assertEqual(cfg['ffmpeg'],Engines().rtc.ffmpeg)

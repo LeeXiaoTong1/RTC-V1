@@ -72,6 +72,8 @@ def configuration(args):
     if not torch.cuda.is_bf16_supported():raise RuntimeError('BF16 support required by the pinned Omni execution')
     from .augment import augmentation_runtime
     processing=augmentation_runtime()
+    from .runtime import execution_profile,native_abi
+    runtime_profile=execution_profile();abi=native_abi(runtime_profile)
     print('V318_FFMPEG='+processing['ffmpeg_path']+'; '+processing['ffmpeg'],flush=True)
     cfg=dict(version='3.18',variant=args.variant,data_run=str(Path(source).resolve()),data_files=files,
         omni_checkpoint=assets['checkpoint'],omni_sha256=assets['sha256'],omni_provenance=assets,
@@ -93,7 +95,7 @@ def configuration(args):
         ffmpeg=processing['ffmpeg_path'],ffmpeg_sha256=processing['ffmpeg_sha256'],augmentation_runtime=processing,
         official_dev_protocol=inherited(old,'dev_protocol'),official_dev_root=inherited(old,'dev_data_path'),
         initialization=dict(mode='public_omni_w2v'+args.omni_size+'_fresh_lora_and_ssl_aasist',old_detector_loaded=False,old_optimizer_loaded=False),
-        runtime_versions=runtime_versions())
+        runtime_versions=runtime_versions(),execution_profile=runtime_profile,native_build=abi)
     # Pin only code actually used by V3.18, not code of historical model producers.
     code=list((ROOT/'w2v_v318').glob('*.py'))
     for folder in ('w2v_v317_monitor','w2v_v316_tfcl','w2v_v39','w2v_v36','w2v_v315','w2v_v313','w2v_aasist','rtc_noisy','utils'):

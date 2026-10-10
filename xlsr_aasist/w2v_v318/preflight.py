@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from .common import read_json,digest,seed_all
 from .assets import DEFAULT_ARCH,MODELS,spec,default_assets,validate_assets
-from .runtime import require_version
+from .runtime import require_version,execution_profile,PROFILES
 
 
 def main():
@@ -14,10 +14,11 @@ def main():
     p.add_argument('--weights',action='store_true',help='Load selected public SSL weights and run one forward/backward')
     args=p.parse_args()
     item=spec(args.omni_size)
-    expected={'fairseq2':'0.6.0','fairseq2n':'0.6.0','omnilingual-asr':'0.2.0',
-        'webrtc-audio-processing':'0.1.3','torchaudio':'2.8.0'}
+    pins=PROFILES[execution_profile(torch.__version__)]
+    expected={'fairseq2':'0.6.0','fairseq2n':pins['fairseq2n'],'omnilingual-asr':'0.2.0',
+        'webrtc-audio-processing':'0.1.3','torchaudio':pins['torchaudio']}
     actual={name:require_version(name,want) for name,want in expected.items()}
-    actual['torch']=require_version('torch','2.8.0',torch.__version__)
+    actual['torch']=require_version('torch',pins['torch'],torch.__version__)
     print('V318_RUNTIME_VERSIONS='+'; '.join(f'{k}={v}' for k,v in actual.items()),flush=True)
     import omnilingual_asr
     from fairseq2.models.wav2vec2 import get_wav2vec2_model_hub

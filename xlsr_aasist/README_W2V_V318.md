@@ -73,12 +73,24 @@ cd xlsr_aasist
 
 conda create -n sdd-v318 python=3.11 -y
 conda activate sdd-v318
-bash repair_w2v_v318.sh --omni-size 3b
+bash repair_w2v_v318.sh --omni-size 3b --cuda 11.8
 ```
 
-`sdd-v318` 若已经存在，跳过创建，直接激活。环境固定 torch/torchaudio 2.8.0 cu126、fairseq2 0.6.0、omnilingual-asr 0.2.0；机器需要兼容 CUDA 驱动、FFmpeg 和 WebRTC 包的构建环境。安装脚本检查实际原生处理库；`--weights` 额外加载所选的真实前端、运行正反向、确认 LoRA 梯度并打印显存。该预检查使用短合成音频，不能代替真实长音频下的显存与速度测试。任何预检查失败应先修复，避免启动长训练。
+`sdd-v318` 若已经存在，跳过创建，直接激活。对于当前 A100 / 驱动 470.82.01，使用上面的 `--cuda 11.8`：安装 torch/torchaudio **2.6.0+cu118**，保留 fairseq2 0.6.0、omnilingual-asr 0.2.0 和官方 3B 权重，在该环境中编译匹配的 fairseq2n。不会安装或更改系统驱动、系统 CUDA，也不需要 sudo。`--weights` 额外加载真实前端、运行正反向、确认 LoRA 梯度并打印显存。该预检查使用短合成音频，不能代替真实长音频下的显存与速度测试。
 
-`repair_w2v_v318.sh` 也是已有环境的统一修复入口：补齐原生库、统一解析固定依赖、汇总无权重检查、运行回归测试、复用或续传公开权重、最后执行实际模型 GPU 正反向。不会自动启动训练，不会强制重装已匹配的 Torch。NumPy 固定 1.26.4；Omni 导入链固定 PyArrow 20.0.0、Pandas 2.2.3、Polars 1.29.0、Numba 0.61.2、llvmlite 0.44.0；Torch、torchaudio 与 fairseq2n 明确固定 CUDA 12.6 构建。不要通过单独升级 NumPy 2 来绕过 Arrow 的错误，fairseq2 0.6 的依赖要求仍限制 NumPy 1.x。
+`repair_w2v_v318.sh` 是已有环境的统一修复入口：补齐原生库、统一解析固定依赖、汇总无权重检查、运行回归测试、复用或续传公开权重、最后执行实际模型 GPU 正反向。不会自动启动训练。NumPy 固定 1.26.4；Omni 导入链固定 PyArrow 20.0.0、Pandas 2.2.3、Polars 1.29.0、Numba 0.61.2、llvmlite 0.44.0。不要通过单独升级 NumPy 2 来绕过 Arrow 的错误，fairseq2 0.6 的依赖要求仍限制 NumPy 1.x。
+
+CUDA 11.8 降级流程：
+
+1. 检查独立环境、活动训练进程和临时空间，记录原包版本；安装官方 Torch/torchaudio 2.6.0 cu118。安装或编译前要求项目、环境和临时目录所在分区至少各有 12 GiB 空闲余量，同一分区不重复计算；这不包含尚未下载的 3B 权重。
+2. 立即运行实际 GPU BF16 矩阵、卷积、注意力及反向。失败时停止，保留驱动的原始错误，不先下载大权重。
+3. 缺少兼容原生库时，从官方 fairseq2 v0.6.0 提交 `6fa0aaf178db437bde0fae125b36105dc123119d` 构建 fairseq2n；安装编译器到当前 Conda 环境，默认两路 CPU 编译。阶段和完整日志路径会打印；编译日志在 `exp/runtime_builds/fairseq2-cu118-6fa0aaf-py311/`。重复执行可复用构建目录；实际 ABI 已匹配则跳过编译。
+4. `FAIRSEQ2N_USE_CUDA=OFF` 仅关闭该原生库的可选文本生成 CUDA kernel；W2V 音频卷积和注意力仍通过 **Torch CUDA 11.8 在 GPU 上执行**。同时关闭不使用的图像解码扩展，保留音频原生处理；因此不需要 nvcc 或单独安装 CUDA Toolkit。上游检查仍严格核对真实 Torch 版本与 CUDA 变体，不伪造版本。
+5. 执行完整依赖检查、真实 fairseq2 小模型的 CPU/GPU LoRA/Adam 测试、回归测试，再进行所选官方 3B 权重的 GPU 正反向。成功结束标记是 `V318_REPAIR_COMPLETE=True`。
+
+只修环境、不准备权重时可运行 `bash setup_w2v_v318.sh --cuda 11.8`。自动模式在 R470 上选择 cu118，已安装 2.6.0+cu118 时保持该配置，避免下一次 repair 又升回 cu126。新驱动机器可显式选择 `--cuda 12.6`，保留原 2.8.0+cu126 预编译路径。两套运行环境分别固定版本；已开始的训练不可中途换版本后直接 resume。
+
+依据：[PyTorch 2.6 官方 CUDA 11.8 安装包](https://pytorch.org/get-started/previous-versions/)、[NVIDIA CUDA 11.8 驱动兼容表](https://docs.nvidia.com/cuda/archive/11.8.0/cuda-toolkit-release-notes/index.html)、[fairseq2 0.6 源码编译说明](https://github.com/facebookresearch/fairseq2/blob/v0.6.0/INSTALL_FROM_SOURCE.md)。470.82.01 满足 CUDA 11.x minor compatibility 的基本驱动下限，但具体算子仍须实际测试。本地 Torch 2.6 CPU 下通过 42 项回归及安装脚本语法检查；本地 Windows 不能验证 Linux 原生编译或 A100 执行，不将这些检查描述为已经验证完整 3B 训练。
 
 可以单独执行 `python -m w2v_v318.environment`。它以独立进程分别检查版本清单、Arrow/Pandas/NumPy 互转与 Parquet、Numba JIT、音频重采样与指标、Conda 原生库、CUDA/BF16、Omni 完整导入与模型注册、六种增强机制及 codec/长度保持、真实 fairseq2 小模型的加载/LoRA/Adam/状态保存接口，以及 pip 依赖完整性。某一项失败仍会继续收集其他问题，终端只打印逐项 PASS/FAIL，完整错误写入 `exp/v318_environment_report.json`。小模型采用实际 fairseq2 组件和随机参数，不下载公开权重，不代表完整 3B 或 A100 已验证。
 

@@ -12,12 +12,9 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 def check_versions():
-    from .runtime import require_version
+    from .runtime import require_version,expected_requirements
     errors=[];actual={}
-    for line in (ROOT/'requirements_w2v_v318.txt').read_text(encoding='utf8').splitlines():
-        line=line.split('#',1)[0].strip()
-        if not line:continue
-        name,wanted=line.split('==',1)
+    for name,wanted in expected_requirements().items():
         try:actual[name]=require_version(name,wanted)
         except Exception as exc:errors.append(str(exc))
     print(json.dumps(actual,sort_keys=True))
@@ -86,14 +83,22 @@ def cuda_diagnostics(torch,runner=subprocess.run):
             data['bf16_supported']=torch.cuda.is_bf16_supported()
             if not data['bf16_supported']:data['failure']='CUDA is available but BF16 is unsupported on the selected device: '+data['device']
     except Exception as exc:data['failure']='CUDA initialization/device query failed: '+str(exc)
-    if torch.version.cuda!='12.6':data['failure']='Expected CUDA 12.6 Torch wheel; installed CUDA runtime='+str(torch.version.cuda)
+    from .runtime import execution_profile,PROFILES
+    try:
+        profile=execution_profile(torch.__version__);data['profile']=profile
+        if torch.version.cuda!=PROFILES[profile]['cuda']:data['failure']='Torch wheel/runtime mismatch for '+profile
+    except Exception as exc:data['failure']=str(exc)
     return data
 
 
-def check_cuda():
+def check_cuda(native=True):
     import torch
     import torchaudio
-    import fairseq2n  # This executes the upstream Torch/CUDA ABI checks.
+    # The Torch-only stage runs immediately after downgrade, before building
+    # fairseq2n. It must not import the old, now ABI-incompatible extension.
+    if native:
+        from .runtime import native_abi
+        print('V318_NATIVE_ABI='+json.dumps(native_abi()),flush=True)
     status=cuda_diagnostics(torch)
     print('V318_CUDA_DIAGNOSTICS='+json.dumps(status,ensure_ascii=False),flush=True)
     if 'failure' in status:raise RuntimeError(status['failure'])
@@ -103,7 +108,16 @@ def check_cuda():
         y=product.float().square().mean()
     y.backward();torch.cuda.synchronize()
     if not torch.isfinite(x.grad).all():raise RuntimeError('CUDA gradient invalid')
-    print('CUDA/BF16 and native ABI passed: '+torch.cuda.get_device_name())
+    # Exercise the actual cuDNN and attention dispatch used by the W2V encoder.
+    conv=torch.nn.Conv1d(1,8,400,stride=320,device='cuda')
+    with torch.autocast('cuda',dtype=torch.bfloat16):
+        signal=torch.randn(2,1,8000,device='cuda');features=conv(signal)
+        q=features[:,None].transpose(-1,-2)
+        attended=torch.nn.functional.scaled_dot_product_attention(q,q,q)
+        loss=attended.float().square().mean()
+    loss.backward();torch.cuda.synchronize()
+    if not torch.isfinite(conv.weight.grad).all():raise RuntimeError('CUDA convolution/attention gradient invalid')
+    print('CUDA/BF16 matmul, convolution and attention backward passed: '+torch.cuda.get_device_name())
 
 
 def check_omni():
@@ -136,7 +150,7 @@ def check_augmentation(family):
 def plans():
     stages=['versions','scientific','native','cuda','omni']
     stages+=['augment:'+name for name in ('ffmpeg','webrtc','light','bypass','g711_mulaw','anlmdn')]
-    stages+=['interface']
+    stages+=['interface','interface-cuda']
     return [(name,[sys.executable,'-m','w2v_v318.environment','--stage',name]) for name in stages]+[
         ('pip-check',[sys.executable,'-m','pip','check'])]
 
@@ -172,9 +186,10 @@ def main():
     args=p.parse_args()
     if args.stage:
         if args.stage.startswith('augment:'):check_augmentation(args.stage.split(':',1)[1])
-        elif args.stage=='interface':
+        elif args.stage in ('interface','interface-cuda'):
             from .interface_smoke import main as smoke
-            smoke()
+            smoke(device='cuda' if args.stage=='interface-cuda' else 'cpu')
+        elif args.stage=='cuda-torch':check_cuda(native=False)
         else:{'versions':check_versions,'scientific':check_scientific,'native':check_native,'cuda':check_cuda,'omni':check_omni}[args.stage]()
     elif not run_checks(plans(),args.report)['ok']:
         raise SystemExit(1)

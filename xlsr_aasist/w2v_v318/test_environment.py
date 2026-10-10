@@ -60,14 +60,25 @@ class TestEnvironment(unittest.TestCase):
         for wrong in ('0.6','0.6+cpu','0.6+cu128'):
             with self.assertRaises(RuntimeError):require_version('fairseq2n','0.6+cu126',wrong)
         names={name for name,_ in plans()}
-        self.assertTrue({'versions','scientific','native','cuda','omni','interface','pip-check','augment:webrtc','augment:ffmpeg'}<=names)
+        self.assertTrue({'versions','scientific','native','cuda','omni','interface','interface-cuda','pip-check','augment:webrtc','augment:ffmpeg'}<=names)
 
     def test_version_inventory_reports_multiple_bad_dependencies(self):
         def check(name,wanted):
             if name in ('pyarrow','pandas'):raise RuntimeError(name+' is incompatible')
             return wanted
-        with patch('w2v_v318.runtime.require_version',side_effect=check),self.assertRaises(RuntimeError) as error:check_versions()
+        with patch('w2v_v318.runtime.execution_profile',return_value='cu118'),patch('w2v_v318.runtime.require_version',side_effect=check),self.assertRaises(RuntimeError) as error:check_versions()
         self.assertIn('pyarrow',str(error.exception));self.assertIn('pandas',str(error.exception))
+
+    def test_cu118_profile_accepts_successful_gpu_initialization_on_r470(self):
+        cuda=Mock();cuda.is_available.return_value=True;cuda.device_count.return_value=1
+        cuda.get_device_name.return_value='A100';cuda.get_device_capability.return_value=(8,0)
+        cuda.is_bf16_supported.return_value=True
+        torch=SimpleNamespace(__version__='2.6.0+cu118',version=SimpleNamespace(cuda='11.8'),cuda=cuda)
+        runner=Mock(return_value=subprocess.CompletedProcess([],0,'A100, 470.82.01, 40960 MiB',''))
+        result=cuda_diagnostics(torch,runner)
+        self.assertEqual(result['profile'],'cu118');self.assertNotIn('failure',result)
+        torch.version.cuda='12.6'
+        self.assertIn('runtime mismatch',cuda_diagnostics(torch,runner)['failure'])
 
 
 if __name__=='__main__':unittest.main()
