@@ -5,6 +5,7 @@ fairseq2==0.6.0
 fairseq2n==0.6+cu126
 omnilingual-asr==0.2.0
 numpy==1.26.4
+imageio-ffmpeg==0.6.0
 # Omni imports its parquet/data modules even when only the SSL encoder is used.
 pyarrow==20.0.0
 pandas==2.2.3

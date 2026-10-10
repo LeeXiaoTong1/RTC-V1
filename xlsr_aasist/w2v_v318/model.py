@@ -113,7 +113,8 @@ class Detector(nn.Module):
                         sequences[i] = y[j, :length]
             lengths = [len(s) for s in sequences]
             padded = nn.utils.rnn.pad_sequence(sequences, batch_first=True)
-            layout = self.layout_factory(padded.shape, seq_lens=lengths, device=device)
+            # BatchLayout describes batch/time only; the feature axis is not a sequence axis.
+            layout = self.layout_factory(padded.shape[:2], seq_lens=lengths, device=device)
             final = self.encoder(padded, layout)
             return [final[i, :n].float() for i, n in enumerate(lengths)]
 

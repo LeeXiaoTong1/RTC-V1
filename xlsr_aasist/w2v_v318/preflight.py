@@ -33,10 +33,12 @@ def main():
         if output.shape!=wave.shape or not np.isfinite(output).all():raise ValueError('Invalid '+family)
     print(f'V318_RUNTIME_OK=True; native processing engines passed; {item["name"]} architecture={ec.num_encoder_layers}x{ec.model_dim}',flush=True)
     if not args.weights:return
+    # Check device initialization before hashing/loading the 11.42 GiB asset.
+    from .environment import check_cuda
+    check_cuda()
     assets=read_json(args.assets or default_assets(item['arch']))
     validate_assets(assets,item['arch'])
     if digest(assets['checkpoint'])!=item['sha256']:raise ValueError('SSL asset hash mismatch')
-    if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():raise RuntimeError('CUDA/BF16 unavailable')
     from .model import load_model
     cfg=dict(omni_checkpoint=assets['checkpoint'],omni_sha256=assets['sha256'],omni_provenance=assets,
         omni_arch=item['arch'],encoder_dim=item['encoder_dim'],encoder_layers=item['encoder_layers'],device='cuda:0',lora_layers=16,lora_rank=16,

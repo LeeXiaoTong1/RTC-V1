@@ -5,12 +5,36 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
-from .environment import run_checks,plans,check_versions
+from types import SimpleNamespace
+from unittest.mock import patch,Mock
+from .environment import run_checks,plans,check_versions,cuda_diagnostics
 from .runtime import require_version
 
 
 class TestEnvironment(unittest.TestCase):
+    def test_cuda_diagnostics_preserve_driver_error(self):
+        cuda=Mock();cuda.is_available.return_value=False;cuda.device_count.return_value=0
+        cuda.init.side_effect=RuntimeError('CUDA driver version is insufficient')
+        torch=SimpleNamespace(__version__='2.8.0+cu126',version=SimpleNamespace(cuda='12.6'),cuda=cuda)
+        runner=Mock(return_value=subprocess.CompletedProcess([],0,'A100, 470.0, 40960 MiB',''))
+        data=cuda_diagnostics(torch,runner)
+        self.assertIn('driver version is insufficient',data['failure'])
+        self.assertEqual(data['visible_device_count'],0)
+        cuda.is_bf16_supported.assert_not_called()
+        self.assertIn('A100',data['nvidia_smi']['stdout'])
+
+    def test_cuda_diagnostics_distinguish_bf16_and_missing_smi(self):
+        cuda=Mock();cuda.is_available.return_value=True;cuda.device_count.return_value=1
+        cuda.get_device_name.return_value='fixture GPU';cuda.get_device_capability.return_value=(7,0)
+        cuda.is_bf16_supported.return_value=False
+        torch=SimpleNamespace(__version__='2.8.0+cu126',version=SimpleNamespace(cuda='12.6'),cuda=cuda)
+        runner=Mock(side_effect=FileNotFoundError('nvidia-smi absent'))
+        data=cuda_diagnostics(torch,runner)
+        self.assertTrue(data['cuda_available']);self.assertIn('BF16 is unsupported',data['failure'])
+        self.assertIn('nvidia-smi absent',data['nvidia_smi']['error'])
+        cuda.is_bf16_supported.return_value=True
+        self.assertNotIn('failure',cuda_diagnostics(torch,runner))
+
     def test_report_collects_failures_without_hiding_later_success(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/'report.json'

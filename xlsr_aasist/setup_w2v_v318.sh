@@ -20,5 +20,5 @@ python -m pip install --index-url https://pypi.org/simple \
   --extra-index-url https://fair.pkg.atmeta.com/fairseq2/whl/pt2.8.0/cu126 \
   -r requirements_w2v_v318.txt
 python -m w2v_v318.environment
-python -m unittest w2v_v318.test_core w2v_v318.test_assets w2v_v318.test_runtime w2v_v318.test_environment -v
+python -m unittest w2v_v318.test_core w2v_v318.test_assets w2v_v318.test_runtime w2v_v318.test_environment w2v_v318.test_augment -v
 printf '%s\n' 'V318_SETUP_COMPLETE=True; old sdd environment unchanged; model download is a separate resumable step'

@@ -3,7 +3,8 @@ import numpy as np
 from scipy.signal import butter,sosfilt
 from w2v_v315.augment import NoiseBank, common_inputs
 from rtc_noisy.simulator import LocalRTC
-from .common import seed_for
+from .common import seed_for,digest
+from .runtime import bundled_ffmpeg
 
 TRAIN_FAMILIES=('ffmpeg','webrtc','light','bypass')
 PANEL_FAMILIES=('g711_mulaw','anlmdn')
@@ -56,10 +57,18 @@ def noise_wave(bank,length,kind,rng):
 
 
 class Engines:
-    def __init__(self,ffmpeg='ffmpeg'):
-        self.rtc=LocalRTC(ffmpeg)
+    def __init__(self,ffmpeg=None):
+        self.rtc=LocalRTC(ffmpeg or bundled_ffmpeg())
+    def checked(self,y,length,stage,r):
+        if y.ndim!=1 or len(y)!=length or not np.isfinite(y).all():
+            nonfinite=int((~np.isfinite(y)).sum())
+            raise RuntimeError(f'Audio processing failed: family={r["family"]} codec={r["codec"]} '
+                f'stage={stage} expected_samples={length} actual_shape={y.shape} '
+                f'nonfinite={nonfinite}; {self.rtc.version}; ffmpeg={self.rtc.ffmpeg}')
+        return y
     def __call__(self,x,r):
         family=r['family'];y=np.asarray(x,np.float32)
+        if y.ndim!=1 or not len(y) or not np.isfinite(y).all():raise ValueError('Audio must be a finite nonempty mono waveform')
         raw_args=['-f','f32le','-ar','16000','-ac','1','-i','pipe:0']
         if family=='ffmpeg':
             filters=f'afftdn=nr={r["nr"]}:nf=-35:tn=1,dynaudnorm=f=150:g=7:p=0.9:m={r["gain"]}'
@@ -83,11 +92,17 @@ class Engines:
             if abs(len(y)-len(x))>2: raise RuntimeError('G.711 duration mismatch')
             y=np.pad(y,(0,max(0,len(x)-len(y))))[:len(x)]
         elif family!='bypass':raise ValueError('Unknown processing family')
+        self.checked(y,len(x),'processing',r)
         if r['codec']=='opus' and family not in PANEL_FAMILIES:
             raw=self.rtc._run([*raw_args,'-c:a','libopus','-b:a',str(r['bitrate']),'-application','voip','-frame_duration','20','-vbr','on','-f','ogg','pipe:1'],y.astype('<f4').tobytes())
             y=np.frombuffer(self.rtc._run(['-f','ogg','-i','pipe:0','-ar','16000','-ac','1','-f','f32le','pipe:1'],raw),dtype='<f4').copy()
-        if len(y)!=len(x) or not np.isfinite(y).all():raise RuntimeError('Processing changed full duration or returned nonfinite samples')
-        return y
+        return self.checked(y,len(x),'codec',r)
+
+
+def augmentation_runtime():
+    rtc=Engines().rtc
+    return dict(ffmpeg=rtc.version,ffmpeg_path=rtc.ffmpeg,ffmpeg_sha256=digest(rtc.ffmpeg),
+        provider='imageio-ffmpeg==0.6.0 bundled binary; no inherited executable')
 
 
 def generate(wave,r,bank,engines):

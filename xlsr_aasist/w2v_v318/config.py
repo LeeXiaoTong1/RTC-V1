@@ -46,7 +46,7 @@ def validate(args):
 
 
 def runtime_versions():
-    return {k:version(k) for k in ('torch','numpy','soundfile','scipy','fairseq2','fairseq2n','omnilingual-asr','webrtc-audio-processing')}
+    return {k:version(k) for k in ('torch','numpy','soundfile','scipy','fairseq2','fairseq2n','omnilingual-asr','webrtc-audio-processing','imageio-ffmpeg')}
 
 
 def configuration(args):
@@ -70,6 +70,9 @@ def configuration(args):
     pair=str(Path(pair).resolve());files[pair]=digest(pair);files[str(assets_path)]=digest(assets_path)
     if not args.device.startswith('cuda') or not torch.cuda.is_available():raise RuntimeError('Production Omni training requires CUDA; unit tests use a small CPU encoder')
     if not torch.cuda.is_bf16_supported():raise RuntimeError('BF16 support required by the pinned Omni execution')
+    from .augment import augmentation_runtime
+    processing=augmentation_runtime()
+    print('V318_FFMPEG='+processing['ffmpeg_path']+'; '+processing['ffmpeg'],flush=True)
     cfg=dict(version='3.18',variant=args.variant,data_run=str(Path(source).resolve()),data_files=files,
         omni_checkpoint=assets['checkpoint'],omni_sha256=assets['sha256'],omni_provenance=assets,
         omni_arch=args.omni_size,encoder_dim=item['encoder_dim'],encoder_layers=item['encoder_layers'],
@@ -87,7 +90,7 @@ def configuration(args):
         checkpointing=True,amp='bf16',raw_audio_cache_mib=128,noise_cache_mib=64,
         free_reserve_bytes=10*1024**3,disk_margin_bytes=128*1024**2,
         noise_records=old['noise_records'],augmentation_files=old['augmentation_files'],
-        ffmpeg=old['augmentation_runtime']['ffmpeg_path'],ffmpeg_sha256=old['augmentation_runtime']['ffmpeg_sha256'],
+        ffmpeg=processing['ffmpeg_path'],ffmpeg_sha256=processing['ffmpeg_sha256'],augmentation_runtime=processing,
         official_dev_protocol=inherited(old,'dev_protocol'),official_dev_root=inherited(old,'dev_data_path'),
         initialization=dict(mode='public_omni_w2v'+args.omni_size+'_fresh_lora_and_ssl_aasist',old_detector_loaded=False,old_optimizer_loaded=False),
         runtime_versions=runtime_versions())

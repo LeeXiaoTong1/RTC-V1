@@ -24,7 +24,12 @@ from .calibration import fit as fit_calibration,apply as calibrate
 
 
 class TinyLayout:
-    def __init__(self,shape,seq_lens,device=None):self.seq_lens=seq_lens
+    def __init__(self,shape,seq_lens,device=None):
+        # Match fairseq2 0.6 BatchLayout's non-packed two-dimensional contract.
+        if len(shape)!=2:raise ValueError('BatchLayout shape must be 2 dimensional')
+        if len(seq_lens)!=shape[0] or any(n<1 or n>shape[1] for n in seq_lens):
+            raise ValueError('Invalid BatchLayout sequence lengths')
+        self.seq_lens=seq_lens
 
 
 class TinyFrontend(nn.Module):
@@ -32,7 +37,7 @@ class TinyFrontend(nn.Module):
         super().__init__();self.conv=nn.Conv1d(1,dim,400,stride=320)
     def forward(self,x,layout):
         y=self.conv(x[:,None]).transpose(1,2)
-        return y,TinyLayout(y.shape,[(int(n)-400)//320+1 for n in layout.seq_lens])
+        return y,TinyLayout(y.shape[:2],[(int(n)-400)//320+1 for n in layout.seq_lens])
 
 
 class TinyLayer(nn.Module):

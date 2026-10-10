@@ -63,14 +63,44 @@ def check_native():
     print('Conda libsndfile and oneTBB loaded')
 
 
+def cuda_diagnostics(torch,runner=subprocess.run):
+    """Separate wheel, driver/visibility and BF16 errors without changing devices."""
+    data=dict(python=sys.executable,torch=str(torch.__version__),torch_cuda=torch.version.cuda,
+        visibility={name:os.environ.get(name) for name in ('CUDA_VISIBLE_DEVICES','NVIDIA_VISIBLE_DEVICES')})
+    try:
+        result=runner(['nvidia-smi','--query-gpu=name,driver_version,memory.total','--format=csv,noheader'],
+            capture_output=True,text=True,timeout=15)
+        data['nvidia_smi']=dict(returncode=result.returncode,stdout=result.stdout.strip(),stderr=result.stderr.strip())
+    except Exception as exc:data['nvidia_smi']=dict(error=str(exc))
+    try:
+        data['cuda_available']=torch.cuda.is_available();data['visible_device_count']=torch.cuda.device_count()
+        if not data['cuda_available']:
+            # is_available() reduces initialization failures to False. Preserve
+            # the driver's actual error here instead of blaming BF16 hardware.
+            try:torch.cuda.init()
+            except Exception as exc:data['initialization_error']=str(exc)
+            data['failure']='CUDA unavailable: '+data.get('initialization_error','no visible CUDA device')
+        else:
+            data['device']=torch.cuda.get_device_name()
+            data['capability']=list(torch.cuda.get_device_capability())
+            data['bf16_supported']=torch.cuda.is_bf16_supported()
+            if not data['bf16_supported']:data['failure']='CUDA is available but BF16 is unsupported on the selected device: '+data['device']
+    except Exception as exc:data['failure']='CUDA initialization/device query failed: '+str(exc)
+    if torch.version.cuda!='12.6':data['failure']='Expected CUDA 12.6 Torch wheel; installed CUDA runtime='+str(torch.version.cuda)
+    return data
+
+
 def check_cuda():
     import torch
     import torchaudio
     import fairseq2n  # This executes the upstream Torch/CUDA ABI checks.
-    if torch.version.cuda!='12.6':raise RuntimeError('Expected CUDA 12.6 Torch wheel')
-    if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():raise RuntimeError('CUDA/BF16 unavailable')
+    status=cuda_diagnostics(torch)
+    print('V318_CUDA_DIAGNOSTICS='+json.dumps(status,ensure_ascii=False),flush=True)
+    if 'failure' in status:raise RuntimeError(status['failure'])
     with torch.autocast('cuda',dtype=torch.bfloat16):
-        x=torch.randn(32,32,device='cuda',requires_grad=True);y=(x@x).square().mean()
+        x=torch.randn(32,32,device='cuda',requires_grad=True);product=x@x
+        if product.dtype!=torch.bfloat16:raise RuntimeError('CUDA autocast did not execute BF16 matrix multiplication')
+        y=product.float().square().mean()
     y.backward();torch.cuda.synchronize()
     if not torch.isfinite(x.grad).all():raise RuntimeError('CUDA gradient invalid')
     print('CUDA/BF16 and native ABI passed: '+torch.cuda.get_device_name())
@@ -92,6 +122,7 @@ def check_augmentation(family):
     import numpy as np
     from .augment import Engines,recipe,PANEL_FAMILIES
     engine=Engines()
+    print('V318_FFMPEG='+engine.rtc.ffmpeg+'; '+engine.rtc.version,flush=True)
     # Include a non-10-ms-aligned length to check WebRTC padding/codec trimming.
     for length in (16000,16123):
         wave=(.08*np.sin(np.arange(length)*2*np.pi*240/16000)).astype(np.float32)
@@ -130,6 +161,7 @@ def run_checks(checks,report,runner=subprocess.run,timeout=600):
         if not r['ok']:
             lines=(r['stderr'] or r['stdout']).strip().splitlines()
             print('[FAIL] '+r['name']+': '+(lines[-1][-400:] if lines else 'no output'),flush=True)
+            if r['name']=='cuda' and r['stdout'].strip():print(r['stdout'].strip(),flush=True)
     return data
 
 

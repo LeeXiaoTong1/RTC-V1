@@ -82,6 +82,22 @@ bash repair_w2v_v318.sh --omni-size 3b
 
 可以单独执行 `python -m w2v_v318.environment`。它以独立进程分别检查版本清单、Arrow/Pandas/NumPy 互转与 Parquet、Numba JIT、音频重采样与指标、Conda 原生库、CUDA/BF16、Omni 完整导入与模型注册、六种增强机制及 codec/长度保持、真实 fairseq2 小模型的加载/LoRA/Adam/状态保存接口，以及 pip 依赖完整性。某一项失败仍会继续收集其他问题，终端只打印逐项 PASS/FAIL，完整错误写入 `exp/v318_environment_report.json`。小模型采用实际 fairseq2 组件和随机参数，不下载公开权重，不代表完整 3B 或 A100 已验证。
 
+2026-10-10 启动修复：
+
+- fairseq2 的非 packed `BatchLayout` 只接受 `(batch, time)`。送入编码器的特征仍为 `(batch, time, channels)`，现在只向布局对象传前两维，变长长度信息保留；CPU 替代布局同步收紧接口检查。
+- 在本地 FFmpeg 4.2.2 复现了 Opus 输出增加 69 个采样点、FFmpeg 降噪链减少尾部采样的问题。V3.18 现在固定使用 `imageio-ffmpeg==0.6.0` wheel 自带的二进制（Linux x86_64 为 7.0.2），不再继承历史 data-run 的 FFmpeg，也不依赖 PATH 或 ImageIO 环境覆盖。预检查与新训练使用同一二进制，run 记录版本、绝对路径和 SHA256；历史 Dev 音频不重新生成。旧版错误不会通过放宽长度检查、额外补零或随意截断规避。
+- 每个增强阶段分别检查完整长度与有限值。失败显示 family、codec、阶段、预期/实际采样数及二进制版本。新增真实编解码回归包含不整除帧长的录音，WebRTC 的真实库检查仍由服务器环境检查执行。
+- CUDA 检查分别记录 Torch 构建、设备可见性、驱动信息、初始化原始错误、设备算力与 BF16，并实际运行 BF16 矩阵乘法/反向。失败详情直接回显到终端；不会修改驱动、解除设备屏蔽或自动降级 CPU/FP16。仅凭旧的 `CUDA/BF16 unavailable` 无法确定服务器根因。
+
+此前其余依赖检查已通过时，拉取代码后可只补充这个小依赖，再运行统一检查，无需重建环境或重装 Torch：
+
+```bash
+python -m pip install --index-url https://pypi.org/simple --no-deps --only-binary=:all: imageio-ffmpeg==0.6.0
+python -m w2v_v318.environment
+```
+
+全部通过后，再执行 `bash repair_w2v_v318.sh --omni-size 3b`，完成回归、权重准备与真实 3B GPU 正反向。GPU 初始化未通过时，先根据 `V318_CUDA_DIAGNOSTICS` 中的驱动/可见性错误处理，不启动训练。
+
 如果公开 3B 已下载，避免重复保存：
 
 ```bash
