@@ -1,0 +1,82 @@
+V3.18 live diagnostics
+=====================
+
+This is an observer of the existing run. It does not change model architecture,
+sampling, losses, learning rates, checkpoint selection, BN buffers or code
+fingerprints. It has no third-party dependency and does not load checkpoints,
+audio, PyTorch or a GPU. The model-training process requires no restart.
+
+The training code already saves every update in steps.jsonl and every completed
+epoch in training_history.json. Its original diagnostics/curves.html, epochs.csv,
+groups.csv and fitting.json are updated after each epoch. Dev logits are retained
+as dev_scores_epoch_N_step_M.npz. best and last model states are both inside last.pt;
+there is no separate per-epoch model checkpoint for every saved score file.
+
+From xlsr_aasist, on the Linux training server:
+
+    python v318_diagnostics.py --background
+
+This pins the latest run at launch, starts an independent monitor, refreshes
+every 60 seconds when input changes, and returns to the same terminal. The new
+files are saved under that run's diagnostics/live directory. Start this observer
+once per run when live plots are wanted. For an explicit or historical run:
+
+    python v318_diagnostics.py --run exp/w2v_v318_RUN_NAME
+
+Omit --background for a one-shot export. --watch runs in the foreground; Ctrl+C
+then stops only diagnostics. The background observer finishes after completed.json
+or the matching training supervisor's exit marker. A stale failure.log from a
+resumed attempt is not considered evidence that the active run has stopped.
+The monitor does not follow later changes to .latest_v318_run.
+
+Outputs (all local; no automatic upload):
+    curves.html          Self-contained interactive SVG charts; click legends.
+    loss_steps.csv       Every update: objective, raw CE, LR, pre-clip gradient,
+                         risk coefficient, compute/wait, checkpoint-commit flag.
+    training_cells.csv   Online/Noisy x EN/ZH x fake/real training-mode statistics.
+    epochs.csv           Full Dev and selection Dev F1; epoch objective and CE.
+    groups.csv           Train probe / full Dev / independent panel metrics,
+                         including separate fake/real CE, recall, AUC and EER.
+    observations.json    Scope, timing, checkpoint cursor, fit message, limitations.
+    summary.txt          Compact status and interpretation limits.
+    monitor.log          Background observer output, including any observer error.
+
+The HTML links to its CSV files; download the whole diagnostics/live directory
+when those links are needed offline. Rendering the HTML alone needs no network.
+The original workflow report includes these files when it exports the run, but
+the observer may write its final refresh after that export. Re-export for the
+latest observer snapshot if needed. Existing raw logs remain authoritative.
+
+Interpretation:
+ - Train results are fixed, large probes, not full-Train evaluation.
+ - Dev includes every row of the fixed Dev manifest; checkpoint selection uses
+   only the source-separated selection partition (80%). These are raw scores.
+ - Raw training CE is averaged by number of views. The optimized objective has
+   different domain weights plus label smoothing and risk; it is a different
+   quantity. Compare Train probe and Dev in eval mode for fitting diagnostics.
+ - Simulated Train Noisy and Dev Seen/Heldout are different distributions.
+ - Training steps after the committed checkpoint cursor have not been saved as
+   a recoverable model state. If an epoch is retried, its stale log suffix is
+   replaced in these derived files. The original log is never changed.
+ - Global pre-clip gradient norm cannot establish whether each LoRA layer is
+   updating. Per-layer update norms, post-RTC SNR, and calibrated selection
+   metrics require separate diagnostics; this observer does not invent them.
+
+Analysis versus experiments:
+ 1. Saved-score analysis and checkpoint inspection do not require training.
+    Fit calibration only on the reserved source partition, then report on the
+    selection partition. Keep AUC/EER alongside fixed-threshold class recalls.
+ 2. BN recalibration changes statistics on a checkpoint COPY. Use representative
+    Train inputs, no optimizer, dropout disabled, BN updates only; then freeze
+    and evaluate Dev. This needs GPU inference, not a full training epoch.
+ 3. Final-layer vs layer-fusion, and C3 vs C2, are controlled design experiments.
+    C3 vs C1 isolates risk; C3 vs C2 isolates local evidence aggregation.
+ 4. Changing sampling, adding raw Offline CE or official pairs changes training.
+
+Those additional diagnostics/ablations are not implemented by this observer.
+BN policy and feature fusion currently have no CLI switches. Existing --resume
+reuses the recorded configuration; supplying a new LR does not retune that run.
+Do not edit a run's config or fingerprinted training files to bypass this rule.
+New LR experiments can use --head-lr and --lora-lr on a NEW run. A changed --epochs
+also changes the cosine schedule; short runs must share the same schedule and
+budget, and are not identical to the first epochs of the existing ten-epoch run.
