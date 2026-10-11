@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 import sys
 import torch
-from w2v_v318.config import runtime_versions, verify_inputs as verify_parent_inputs
+from w2v_v318.config import runtime_versions
 from .common import ROOT, read_json, digest, verify_files
 from .assets import configured_spec
 from .parent import inspect_parent, CONFIRMED_RUN
@@ -28,10 +28,18 @@ def parser():
     p.add_argument('--evidence-lr',type=float,default=1e-5);p.add_argument('--fusion-lr',type=float,default=1e-4)
     p.add_argument('--lr-warmup-updates',type=int,default=200);p.add_argument('--lr-floor',type=float,default=.2)
     p.add_argument('--download-dir',default='/home/ubuntu/LXT/temp');p.add_argument('--upload-temp',action='store_true')
+    p.add_argument('--submit-best',action='store_true',help='After completion, export this run best to submission.zip')
+    p.add_argument('--upload-submission',action='store_true',help='With --submit-best, upload only submission.zip to temp.sh')
+    p.add_argument('--submission-protocol',help='Unlabeled ID list; default EVAL_PROTOCOL or the existing Progress path')
+    p.add_argument('--submission-audio-root',help='Default EVAL_AUDIO_ROOT or the existing Progress audio path')
+    p.add_argument('--submission-out',help='Default: download-dir/RUN_submission_best; saved for resume')
     return p
 
 
 def validate(args):
+    if args.upload_submission and not args.submit_best:raise ValueError('--upload-submission requires --submit-best')
+    if not args.submit_best and any(getattr(args,k) for k in ('submission_protocol','submission_audio_root','submission_out')):
+        raise ValueError('Submission paths require --submit-best')
     if args.epochs<1 or args.workers<0 or min(args.group_quotas)<1 or sum(args.group_quotas)!=16:
         raise ValueError('Positive epochs, four positive quotas summing to 16, nonnegative workers required')
     for name,minimum in (('microbatch',2),('frame_budget',12),('eval_batch',1)):
@@ -45,7 +53,8 @@ def validate(args):
 
 def validate_locked_cli(args,argv):
     if not args.resume:return
-    allowed={'--resume','--baseline-only','--download-dir','--upload-temp','--help'}
+    allowed={'--resume','--baseline-only','--download-dir','--upload-temp','--help','--submit-best',
+             '--upload-submission','--submission-protocol','--submission-audio-root','--submission-out'}
     changed={s.split('=')[0] for s in argv if s.startswith('--')}-allowed
     if changed:raise ValueError('Resume uses the saved configuration; remove overrides: '+', '.join(sorted(changed)))
 
@@ -53,7 +62,6 @@ def validate_locked_cli(args,argv):
 def configuration(args):
     validate(args)
     old,weights,parent=inspect_parent(args.parent_run,args.parent_tag);del weights
-    verify_parent_inputs(old)
     if not args.device.startswith('cuda') or not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
         raise RuntimeError('Production Omni continuation requires BF16 CUDA; CPU fixtures are tests only')
     cfg=copy.deepcopy(old)
@@ -84,10 +92,22 @@ def configuration(args):
 def verify_inputs(cfg):
     if cfg.get('version')!='3.18.3':raise ValueError('Not V3.18.3')
     configured_spec(cfg)
-    for key in ('data_files','code_fingerprints','augmentation_files'):verify_files(cfg[key])
-    verify_files({cfg['omni_checkpoint']:cfg['omni_sha256'],cfg['ffmpeg']:cfg['ffmpeg_sha256']})
+    # The new configuration inherits ALL parent fingerprints. Verify the union
+    # once, including assets, instead of hashing the 3B checkpoint twice at launch.
+    verify_unique(cfg['data_files'],cfg['code_fingerprints'],cfg['augmentation_files'],
+                  {cfg['omni_checkpoint']:cfg['omni_sha256'],cfg['ffmpeg']:cfg['ffmpeg_sha256']},
+                  cfg['initialization']['files'])
     if cfg['runtime_versions']!=runtime_versions():raise ValueError('Pinned runtime changed')
-    verify_files(cfg['initialization']['files'])
+
+
+def verify_unique(*groups):
+    merged={}
+    for values in groups:
+        for path,expected in values.items():
+            name=str(Path(path).resolve())
+            if name in merged and merged[name]!=expected:raise ValueError('Conflicting input fingerprints: '+name)
+            merged[name]=expected
+    verify_files(merged)
 
 
 if __name__=='__main__':

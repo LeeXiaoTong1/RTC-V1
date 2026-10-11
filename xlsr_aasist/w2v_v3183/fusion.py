@@ -19,10 +19,9 @@ class LayerFusion(nn.Module):
     def forward(self, final, captured):
         if not self.layers:
             return final
-        # Inference at initialization is bitwise the parent function. During
-        # training the residual MUST execute, otherwise the zero gate cannot learn.
-        if not self.training and not torch.is_grad_enabled() and self.gate.item() == 0:
-            return final
+        # Keep the residual on-device even at zero. Pulling gate.item() here
+        # forces a CUDA synchronization for every inference microbatch. Finite
+        # zero-gate arithmetic is still exactly the parent's FP32 head input.
         with torch.autocast(final.device.type, enabled=False):
             top = final.float()
             # Read-only reference statistics avoid turning normalization into a

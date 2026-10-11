@@ -95,6 +95,8 @@ def watch(log):
                     phase = 'train'
                 elif line.startswith('[Eval]'):
                     phase = 'eval'
+                elif line.startswith('[Submission]'):
+                    phase = 'submission'
                 elif line.startswith(('[Complete]', '[Exit]', 'Traceback')):
                     phase = 'finished'
                 clear()
@@ -114,6 +116,8 @@ def watch(log):
             text = progress(reader, epoch, epochs, total)
         elif phase == 'eval':
             text = f'Epoch {epoch}/{epochs}: evaluating full Dev / Train probe / robustness panel'
+        elif phase == 'submission':
+            text = 'Training complete: exporting best checkpoint / uploading submission; see final link in the log'
         else:
             text = ''
         now = time.monotonic()

@@ -86,11 +86,21 @@ weight decay=0.01、全局梯度裁剪=1，梯度记录用于发现模块间更�
 ```bash
 cd /home/ubuntu/LXT/RTC-w2v-improved
 git pull --ff-only origin w2vbert2-balanced-robust-fast
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate /home/ubuntu/LXT/v318-runtime/envs/sdd-v318
 cd xlsr_aasist
 bash run_w2v_v3183.sh \
   --parent-run exp/w2v_v318_20261010_135116_c6fa \
-  --epochs 6
+  --epochs 6 \
+  --submit-best --upload-submission \
+  --submission-protocol /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/progress.txt \
+  --submission-audio-root /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/wav/progress
 ```
+
+这条命令训练后自动使用**本次运行的 best** 生成 Progress submission，再上传 `submission.zip` 到 temp.sh。
+若要生成 Eval submission，在启动前把最后两项改为对应的 Eval 无标签清单和音频目录。
+启动时检查清单无标签、ID 不重复、音频存在，并保存清单哈希。评测数据不参与训练、选模或校准。
+省略 `--submit-best --upload-submission` 仍然只训练。`--submit-best` 单独使用则只导出、不上传。
 
 启动器与旧版一样后台运行，`Ctrl+C` 仅关闭进度查看器。
 `bash watch_w2v_v3183.sh` 重新查看进度，`bash show_w2v_v3183.sh` 查看最近日志。
@@ -107,17 +117,55 @@ bash run_w2v_v3183.sh --resume "$(cat exp/.latest_v3183_run)"
 所有新运行都自动执行父模型复现，无需单独先跑上述预检。
 中断后用相同 `--resume` 命令恢复：从最后完整提交的 epoch 回放，恢复优化器、融合参数和随机状态，清理未提交的步骤日志。
 `--resume` 不接受学习率、采样、特征层等覆盖，以免同一运行身份混乱。
+已保存的自动提交请求随 `--resume` 恢复，无需重写提交参数。若训练已经完成，恢复命令只处理尚未完成的导出/上传。
+
+自动导出目录默认是 `/home/ubuntu/LXT/temp/运行目录名_submission_best/`。
+终端最终打印 `SUBMISSION_ZIP=...`、`TEMP_DOWNLOAD_URL=...` 和 `TEMP_LINK_FILE=...`。
+下载地址同时保存到该目录的 `temp_download_url.txt` 和 `upload_receipt.json`；训练目录的 `submission_status.json` 记录 best 标签及最终状态。
+模型权重中的 best 保存在本次 `last.pt` 的 `best_model` 块，`--checkpoint best` 会读取这一块，并验证对应 epoch，而不是误用最后一轮的权重。
+
+训练结束后查看链接：
+
+```bash
+V3183_RUN="$(cat exp/.latest_v3183_run)"
+V3183_OUT="/home/ubuntu/LXT/temp/$(basename "$V3183_RUN")_submission_best"
+cat "$V3183_OUT/temp_download_url.txt"
+```
+
+如果仅上传失败，`submission.zip` 会保留，进程返回非零退出码；无需再训练或推理，直接重试：
+
+```bash
+bash upload_w2v_v3183.sh --out "$V3183_OUT"
+```
+
+已保存链接时默认不重复上传；需要新的链接时使用 `--force`。
+根据 [temp.sh 官方说明](https://temp.sh/)，文件通常保留 3 天，拿到链接后应及时下载。
 
 验证与导出：
 
 ```bash
 bash run_validate_w2v_v3183.sh --checkpoint best --raw
-bash run_eval_w2v_v3183.sh --checkpoint best
+bash run_eval_w2v_v3183.sh \
+  --run "$(cat exp/.latest_v3183_run)" --checkpoint best \
+  --protocol /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/progress.txt \
+  --audio-root /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/wav/progress \
+  --upload-temp
 ```
 
 导出默认应用本次选定的全局校准；`--raw` 导出原始分数。
 沿用已有评测路径参数与 `EVAL_PROTOCOL` / `EVAL_AUDIO_ROOT` 环境变量。
-报告本地保存至 `/home/ubuntu/LXT/temp`；仅显式 `--upload-temp` 上传报告包。
+训练报告本地保存至 `/home/ubuntu/LXT/temp`。训练入口的 `--upload-temp` 上传诊断报告，
+`--upload-submission` 上传 submission；独立评测入口的 `--upload-temp` 只上传 submission。
+推荐上面的自动流程只使用 `--upload-submission`，下载链接就对应比赛提交包。
+
+## 发布后复审修正
+
+- 去掉每个推理微批次读取 GPU gate 标量造成的同步；零门控精确复现与融合梯度仍有回归检查。
+- 合并父配置、新配置与初始化文件的校验，同一文件每次校验只读取一次；仍拒绝不一致的哈希要求。
+- best 与 last 相同时共享一次校准拟合，避免重复 1,000 次校准优化步骤。
+- 上传失败不再被当成正常结束；保存错误、下载链接和 ZIP 哈希，支持不运行 GPU 的单独重试。
+- 自动提交绑定本次 best 和选定的无标签清单。训练失败不提交；导出采用临时目录，失败不会留下半成品最终目录。
+- 同时改变采样、增强、特征融合的归因限制仍然存在；必须用下列消融区分收益。当前没有 GPU 泛化提升结论。
 
 ## 消融开关与验证边界
 
@@ -135,5 +183,6 @@ bash run_w2v_v3183.sh
 
 CPU 验证：`bash test_w2v_v3183.sh`，使用小编码器、真实 AASIST 和合成音频。
 包含旧模型零门控精确复现、融合/LoRA 梯度、采样预算、微批次梯度等价、RTC 长度/确定性、训练/恢复/校准/导出。
-发布前通过 11 项 CPU 检查和 8 个 Bash 脚本语法检查，并核对原始 75,785 条训练清单的采样预算。
+复审后通过 19 项 CPU 测试和 9 个 Bash 脚本语法检查，包含上传失败、重试、best/last 区分、提交清单锁定等回归。
+上传网络在测试中模拟，不会向 temp.sh 发送测试用提交包。原始 75,785 条训练清单的采样预算也已核对。
 本机不能执行真实 Omni-3B CUDA 训练；服务器启动检查和首轮结果仍是必要验收。

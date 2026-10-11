@@ -142,16 +142,16 @@ class CoreTests(unittest.TestCase):
             parent=Path(d);rows=metadata((8,4,12,6),missing=False)
             atomic_json(parent/'train_rows.json',rows);atomic_json(parent/'dev_rows.json',[])
             old=tiny_cfg();old.update(version='3.18',omni_arch='3b',encoder_layers=60,
-                code_fingerprints={},data_files={},initialization={'old':'fixture'})
+                code_fingerprints={'producer.py':'parent-code-hash'},data_files={},initialization={'old':'fixture'})
             identity=dict(run=str(parent),tag='epoch_10_step_2417',checkpoint_sha256='fixture',files={})
             args=parser().parse_args(['--parent-run',str(parent)])
             with patch('w2v_v3183.config.inspect_parent',return_value=(old,{},identity)), \
-                 patch('w2v_v3183.config.verify_parent_inputs') as verify_parent, \
-                 patch('w2v_v3183.config.verify_inputs'), \
+                 patch('w2v_v3183.config.verify_inputs') as verify_combined, \
                  patch('torch.cuda.is_available',return_value=True), \
                  patch('torch.cuda.is_bf16_supported',return_value=True):
                 cfg,actual,_=configuration(args)
-            verify_parent.assert_called_once_with(old)
+            verify_combined.assert_called_once_with(cfg)
+            self.assertEqual(cfg['code_fingerprints']['producer.py'],'parent-code-hash')
             self.assertEqual(actual,rows);self.assertEqual(cfg['warm_epochs'],0)
             self.assertEqual(cfg['fusion_layers'],[15,30,45]);self.assertEqual(cfg['variant'],'C3')
             self.assertEqual(cfg['risk_coefficient'],.25);self.assertFalse(cfg['initialization']['old_optimizer_loaded'])

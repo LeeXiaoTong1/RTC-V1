@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from w2v_aasist.data import read_protocol
 from w2v_aasist.evaluate import package_scores
-from w2v_aasist.launch import run_lock,upload_archive
+from w2v_aasist.launch import run_lock
 from w2v_aasist.full_workflow import ensure_idle
 from .common import ROOT,schema_for,read_json,atomic_json,digest,verify_files,fingerprint,apply_partial,seed_all
 from .config import verify_inputs
@@ -30,32 +30,34 @@ def selected(run,kind):
     return cfg,state['best_model' if kind=='best' else 'model'],dict(done,selected=tag,kind=kind)
 
 
-def export(run,out,kind='best',device='cuda:0',workers=4,protocol=None,audio_root=None,dev=False,raw=False,model_factory=load_model,verify=True):
+def export(run,out,kind='best',device='cuda:0',workers=4,protocol=None,audio_root=None,dev=False,raw=False,model_factory=load_model,verify=True,announce=True):
     if workers<0:raise ValueError('workers must be nonnegative')
     run,out=Path(run).resolve(),Path(out).resolve()
     if run==out or run in out.parents:raise ValueError('Export outside the training run')
     if out.exists() and any(out.iterdir()):raise ValueError('Export directory is not empty')
     original,weights,meta=selected(run,kind)
-    if verify:verify_inputs(original)
     cfg=dict(original,device=device,workers=workers);seed_all(cfg['seed'])
-    model=model_factory(cfg);apply_partial(model,weights);del weights
-    model.set_phase(True);model.requires_grad_(False).eval()
     if dev:
         verify_files({str(run/'dev_rows.json'):original['saved_manifests']['dev_rows.json']})
         rows=read_json(run/'dev_rows.json');protocol_hash=None
     else:protocol_hash=digest(protocol);rows=read_protocol(protocol,audio_root,labeled=False)
-    out.mkdir(parents=True,exist_ok=True)
-    print(f'SUBMISSION_SELECTED=V3.18.3 {meta["selected"]}; kind={kind}; calibrated={not raw}; baseline_fallback=False',flush=True)
-    logits,_=infer(model,rows,cfg)
     calibration=None
     if not raw:
         calibration=read_json(run/f'calibration_{kind}.json')
         if calibration['checkpoint_sha256']!=meta['checkpoint_sha256'] or calibration['selected']!=meta['selected']:
             raise ValueError('Calibration belongs to another checkpoint')
-        scores_logits=calibrate(logits,calibration)
-    else:scores_logits=logits
+    # Validate inexpensive protocol/calibration inputs before loading the 3B model.
+    if verify:verify_inputs(original)
+    model=model_factory(cfg);apply_partial(model,weights);del weights
+    model.set_phase(True);model.requires_grad_(False).eval()
+    out.mkdir(parents=True,exist_ok=True)
+    mode='raw' if raw else calibration.get('selected_candidate','affine')
+    print(f'SUBMISSION_SELECTED=V3.18.3 {meta["selected"]}; kind={kind}; calibration={mode}; baseline_fallback=False',flush=True)
+    logits,_=infer(model,rows,cfg)
+    scores_logits=logits if raw else calibrate(logits,calibration)
     metadata=dict(meta,version='3.18.3',run=str(run),initialization=cfg['initialization'],frontend=cfg['omni_provenance'],
         calibration=calibration,score='P(fake=0)',threshold=.5,count=len(rows),protocol_sha256=protocol_hash,
+        id_order_sha256=fingerprint([r['id'] for r in rows]),
         input=f'full 16kHz waveform; whole-wave layer_norm; {cfg["encoder_dim"]}-dim SSL with bounded intermediate residual',
         fusion=model.fusion.describe(),
         local_evidence=cfg['local_evidence'],window=cfg['window'],hop=cfg['hop'],eval_amp='SSL BF16 / AASIST FP32')
@@ -77,7 +79,7 @@ def export(run,out,kind='best',device='cuda:0',workers=4,protocol=None,audio_roo
         probabilities=torch.from_numpy(scores_logits).softmax(-1)[:,0].tolist()
         result=package_scores([r['id'] for r in rows],probabilities,out)
         atomic_json(out/'submission_meta.json',dict(metadata,zip_sha256=digest(result)))
-        print('SUBMISSION_ZIP='+str(result),flush=True)
+        if announce:print('SUBMISSION_ZIP='+str(result),flush=True)
     verify_files({str(run/'last.pt'):meta['checkpoint_sha256']})
     if protocol_hash:verify_files({str(protocol):protocol_hash})
     return result
@@ -100,8 +102,8 @@ def main():
     with run_lock(ROOT/'exp'/'.aasist-launch.lock'):
         ensure_idle();path=export(run,out,args.checkpoint,args.device,args.workers,args.protocol,args.audio_root,args.dev,args.raw)
         if args.upload_temp and not args.dev:
-            try:print('TEMP_DOWNLOAD_URL='+upload_archive(path),flush=True)
-            except Exception as exc:print('UPLOAD_FAILED='+str(exc)+'; local submission retained',flush=True)
+            from .delivery import upload_submission
+            upload_submission(path.parent)
 
 
 if __name__=='__main__':main()

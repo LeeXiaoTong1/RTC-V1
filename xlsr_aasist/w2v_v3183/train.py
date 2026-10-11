@@ -13,7 +13,7 @@ from .data import Waves,TicketSampler,loader,close
 from .records import dev_partition
 from .step import train_step,schedule
 from .inference import infer
-from .monitor import panel_rows,summarize,measure,fit_state,print_epoch,render
+from .monitor import summarize,measure,fit_state,print_epoch,render
 from .calibration import choose as choose_calibration
 from .parent import initialize,baseline_check
 from .recovery import trim_step_log
@@ -146,9 +146,12 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
     finally:close(batches)
     if state['best_tag'] is None:raise RuntimeError('No completed V3.18.3 epoch')
     checkpoint_hash=digest(run/'last.pt')
+    fitted={}
     for kind in ('best','last'):
         z=state['best_logits' if kind=='best' else 'last_logits'].numpy()
-        cal=choose_calibration(dev,z,partition)
+        tag=state['best_tag' if kind=='best' else 'last_tag']
+        if tag not in fitted:fitted[tag]=choose_calibration(dev,z,partition)
+        cal=fitted[tag]
         atomic_json(run/f'calibration_{kind}.json',dict(cal,checkpoint_sha256=checkpoint_hash,selected=state['best_tag' if kind=='best' else 'last_tag']))
     done=dict(version='3.18.3',status='complete',best_tag=state['best_tag'],last_tag=state['last_tag'],
         completed_epochs=state['epoch'],planned_epochs=cfg['epochs'],stopped_early=state.get('stopped_early',False),

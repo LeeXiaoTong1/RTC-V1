@@ -22,7 +22,7 @@ def inspect_parent(run,tag='epoch_10_step_2417'):
     if run.name==CONFIRMED_RUN and meta['checkpoint_sha256']!=CONFIRMED_SHA:
         raise ValueError('Confirmed epoch 10 checkpoint hash differs from the audited checkpoint')
     verify_files({str(run/n):h for n,h in cfg['saved_manifests'].items()})
-    files={str(run/n):digest(run/n) for n in PARENT_ARTIFACTS}
+    files={str(run/n):(meta['checkpoint_sha256'] if n=='last.pt' else digest(run/n)) for n in PARENT_ARTIFACTS}
     return cfg,weights,dict(run=str(run),tag=tag,checkpoint_sha256=meta['checkpoint_sha256'],files=files)
 
 

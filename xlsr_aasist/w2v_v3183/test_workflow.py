@@ -77,6 +77,25 @@ class WorkflowTests(unittest.TestCase):
             export(resumed,root/'submission',protocol=protocol,audio_root=root/'audio'/'dev',
                    device='cpu',workers=0,model_factory=tiny_model,verify=False)
             self.assertEqual([s.split()[0] for s in (root/'submission'/'scores.txt').read_text().splitlines()],ids)
+            # Real best-checkpoint inference followed by an upload failure and
+            # successful retry. Network is mocked; no synthetic submission is sent.
+            from .delivery import prepare_request,finish_request
+            from .config import parser
+            from functools import partial
+            args=parser().parse_args(['--submit-best','--upload-submission','--submission-protocol',str(protocol),
+                '--submission-audio-root',str(root/'audio'/'dev'),'--submission-out',str(root/'automatic-best')])
+            request=prepare_request(args,resumed,cfg)
+            with patch('w2v_v3183.delivery.ROOT',root),patch('w2v_v3183.delivery.upload_archive',side_effect=RuntimeError('network fixture')):
+                with self.assertRaisesRegex(RuntimeError,'Retry without GPU'):
+                    finish_request(resumed,cfg,request,partial(export,model_factory=tiny_model,verify=False))
+            self.assertTrue((root/'automatic-best'/'submission.zip').is_file())
+            self.assertEqual(read_json(resumed/'completed.json')['status'],'complete')
+            with patch('w2v_v3183.delivery.ROOT',root),patch('w2v_v3183.delivery.upload_archive',return_value='https://temp.sh/test/submission.zip'), \
+                 patch('w2v_v3183.evaluate.export',side_effect=AssertionError('Inference must not repeat')):
+                delivered=finish_request(resumed,cfg,request)
+            self.assertEqual(delivered['selected'],b['best_tag']);self.assertTrue(delivered['uploaded'])
+            self.assertEqual((root/'automatic-best'/'temp_download_url.txt').read_text().strip(),'https://temp.sh/test/submission.zip')
+            self.assertEqual(digest(parent/'last.pt'),original_hash)
             # A changed base encoder cannot pass the startup reproduction gate.
             bad=root/'bad';save_inputs(bad,cfg,train,dev)
             def wrong_base(c):

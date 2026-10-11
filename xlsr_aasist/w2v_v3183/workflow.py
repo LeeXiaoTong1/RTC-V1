@@ -11,6 +11,7 @@ from .common import ROOT,atomic_json,read_json,digest
 from .config import parser,validate,validate_locked_cli,configuration,verify_inputs
 from .train import run_experiment
 from .audit import describe
+from .delivery import prepare_request,finish_request
 
 
 def report(run,destination,upload=False):
@@ -24,7 +25,7 @@ def report(run,destination,upload=False):
     temporary.replace(path)
     print('REPORT_ZIP='+str(path),flush=True)
     if upload:
-        try:print('TEMP_DOWNLOAD_URL='+upload_archive(path),flush=True)
+        try:upload_archive(path)
         except Exception as exc:print('REPORT_UPLOAD_FAILED='+str(exc)+'; local report retained',flush=True)
     return path
 
@@ -48,8 +49,12 @@ def main():
         (ROOT/'exp'/'.latest_v3183_run').write_text(str(run)+'\n',encoding='utf-8')
         print('V3183_RUN='+str(run),flush=True)
         try:
+            request=prepare_request(args,run,cfg)
             if not (run/'completed.json').exists() or read_json(run/'completed.json')['status']!='complete':
                 run_experiment(cfg,run,train,dev,baseline_only=args.baseline_only)
+            if request and not args.baseline_only:
+                print('[Submission] training complete; export this run best and deliver requested scores',flush=True)
+                finish_request(run,cfg,request)
             (run/'failure.log').unlink(missing_ok=True)
         except BaseException:
             (run/'failure.log').write_text(traceback.format_exc(),encoding='utf-8');raise
