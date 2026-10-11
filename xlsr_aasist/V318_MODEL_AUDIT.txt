@@ -1,0 +1,78 @@
+V3.18: two independent model-copy diagnostics
+
+Activate the existing v318-runtime environment, pull the project branch, then:
+
+bash audit_v318_model.sh --run exp/w2v_v318_20261010_135116_c6fa --workers 4 --upload-temp
+
+One terminal is sufficient. The worker owns a detached process group, stdin is
+closed, and FFmpeg/loader workers inherit the worker's group. Ctrl+C closes only
+the read-only viewer. Reopen it with:
+
+bash watch_v318_model_audit.sh
+
+The job takes the same exclusive OS lock as training. It refuses to run over an
+active managed training job. Run only after the source training has completed.
+It does not install dependencies, change environments, or start another epoch.
+
+Defaults and experiments
+1. Read and verify the completed last.pt, config, manifests, original code and
+   runtime. Load the original model and evaluate ALL fixed Dev rows as a baseline.
+2. Restore original weights. Use 128 balanced Train logical batches (6144 views
+   for stream_sources=16), with unchanged joint Online/Noisy sampling and the
+   joint 5-25 dB augmentation recipe. Dropout is off, LoRA remains enabled,
+   gradients are off. Reset tracked BN statistics and accumulate with
+   momentum=None. No affine/LoRA/backend parameters are updated. Check every
+   partial-state tensor for changes outside BN buffers. Re-evaluate ALL Dev rows.
+3. Restore original weights, BN buffers, and checkpoint RNG independently. Load
+   original AdamW moments, run 100 logical training updates using the actual
+   production train_step. Keep terminal checkpoint learning rates constant;
+   do not extrapolate the completed cosine schedule or silently reset to peaks.
+   Record each group's gradients before/after real clipping and parameter
+   values before/after real AdamW. Retain every trainable parameter's statistics.
+   Every 10 steps plus first/last, record effective LoRA B*A matrix update norms.
+
+Sampling uses Plan epoch_index=completed_epochs for both independent branches;
+this only chooses reproducible next-stream tickets and joint noise recipes.
+There is no new full training epoch, LR scheduler change, or Dev-based fitting.
+BN and update counts may be set explicitly with --bn-batches / --update-steps.
+Neither count may exceed one source epoch's logical update count.
+
+Interpretation
+- Compare raw, fixed-threshold full Dev and the existing selection partition.
+  Inspect Clean/Noisy, both class recalls, AUC/EER and class CE together.
+- BN's cumulative estimate averages each BN invocation, not all frames pooled
+  exactly. Variable windows and batch-normalized upstream activations affect it.
+  A negative result does not rule out every BN adaptation method.
+- A small update has no universal failure threshold. AdamW moments matter;
+  do not divide learning rate by the clipping factor to estimate actual updates.
+- LoRA effective matrix norms use FP32 parameters; they do not directly measure
+  BF16 activation changes. Missing gradients are listed; some unused AASIST BN
+  affine parameters are expected to have no gradient in the existing design.
+- The final LR is about one tenth of peak for a normally completed cosine run.
+  This experiment measures the final checkpoint, not the history of early epochs.
+- Dev was already used for model selection. This is development diagnosis, not
+  an independent test-set claim or proof that a particular hyperparameter is best.
+
+Outputs / upload
+A new exp/v318_model_audit_TIMESTAMP_ID directory contains report files.
+analysis.html includes loss, gradient and actual-update curves plus Dev tables.
+groups.csv, updates.csv, parameters.jsonl, adapters.jsonl and raw Dev score arrays
+support further analysis. bn_buffers.pt is a SMALL LOCAL overlay only; the
+original last.pt is never modified. No model checkpoint is duplicated/uploaded.
+All existing model/data/source files are read-only. These new tools live outside
+the fingerprinted w2v_v318 package, preserving existing run identity checks.
+
+--upload-temp uploads an explicit metrics/report allowlist to temp.sh. It never
+includes .pt checkpoints, original audio, noise caches or arbitrary directory
+contents. At completion, the log prints REPORT_ZIP and TEMP_DOWNLOAD_URL.
+If upload fails, the completed report is retained. Retry without GPU computation:
+
+python -m v318_model_audit --upload-only exp/v318_model_audit_TIMESTAMP_ID
+
+Failures are recorded and partial reports are packaged too. A failed BN branch
+does not contaminate the update branch. Inspect AUDIT_EXIT and result.json;
+an uploaded report does not by itself mean every experiment passed.
+
+Local checks (CPU tiny encoder / real AASIST, synthetic audio):
+python -m unittest test_v318_model_audit
+Real Omni 3B CUDA/native processing and detached Linux launch require the server.
