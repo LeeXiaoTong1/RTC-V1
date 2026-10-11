@@ -1,4 +1,4 @@
-"""Ten-epoch budget, two-stage fitting, transactional resume and current-run best."""
+"""Six-epoch default, two-stage fitting, transactional resume and current-run best."""
 from collections import defaultdict,Counter
 from pathlib import Path
 import shutil
@@ -84,8 +84,8 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,stop_after_warmup=
         for epoch in range(state['epoch'],cfg['epochs']):
             if state.get('stopped_early') or (stop_after_warmup and epoch>=cfg['warm_epochs']):break
             joint=epoch>=cfg['warm_epochs'];model.set_phase(joint);model.train()
-            coverage=plan.coverage(epoch);atomic_json(run/f'coverage_epoch_{epoch+1}.json',coverage)
-            sampler.batches=list(plan.batches(epoch))
+            coverage,sampler.batches=plan.prepare_epoch(epoch)
+            atomic_json(run/f'coverage_epoch_{epoch+1}.json',coverage)
             print(f'\n[Train] V3.18.2 epoch {epoch+1}/{cfg["epochs"]} phase={"joint" if joint else "head_warmup"} updates={plan.steps}; source_quotas={plan.quotas}; group CE/pair mass=25% each',flush=True)
             totals=defaultdict(float);cells=defaultdict(lambda:defaultdict(float));processing=Counter();recent=[];start=time.monotonic()
             for step,units in enumerate(batches):

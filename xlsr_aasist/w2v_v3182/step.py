@@ -82,20 +82,25 @@ def backward_objective(model, units, cfg, coefficient, replay=True):
             pair_coefficient=coefficient, weighted_pair_loss=float((coefficient*pair).detach()),
             replay_max_abs_error=max_error, encoder_forward_passes=2*len(micros))
     raw = torch.cat(raw_values); logits = torch.cat(logits_values)
+    # Telemetry needs no graph. Transfer the small vectors once rather than
+    # forcing a device synchronization for every scalar and repeated argmax.
+    raw_cpu = raw.detach().cpu()
+    raw_items = raw_cpu.tolist()
+    predicted_labels = logits.argmax(dim=1).detach().cpu().tolist()
     cells = defaultdict(lambda: defaultdict(float)); processing = Counter()
     predicted = {'fake':[0,0], 'real':[0,0]}
     for i, row in enumerate(rows):
         condition = 'noisy' if row['role'].startswith('noisy') else row['role']
         cell = cells[f'{condition}/{row["language"]}/{row["label"]}']
-        cell['raw_ce_sum'] += float(raw[i]); cell['views'] += 1
-        cell['correct'] += int(logits[i].argmax().item() == row['label'])
+        cell['raw_ce_sum'] += raw_items[i]; cell['views'] += 1
+        cell['correct'] += int(predicted_labels[i] == row['label'])
         cell['ce_mass'] += row['ce_weight']
         p = predicted['fake' if row['label'] == 0 else 'real']
-        p[0] += int(logits[i].argmax().item() == 0); p[1] += 1
+        p[0] += int(predicted_labels[i] == 0); p[1] += 1
         rec = row.get('augmentation', {}).get('recipe')
         if rec:
             processing[f'{row["language"]}/{row["label"]}/{rec["family"]}/{rec["codec"]}/{rec["noise_type"]}'] += 1
-    stats.update(raw_ce_sum=float(raw.sum()), views=len(rows), max_example_ce=float(raw.max()),
+    stats.update(raw_ce_sum=float(raw_cpu.sum()), views=len(rows), max_example_ce=float(raw_cpu.max()),
         cells={k:dict(v) for k,v in cells.items()}, processing_counts=dict(processing),
         predicted_fake_by_true_class=predicted, unique_original_sources=len(units))
     return stats

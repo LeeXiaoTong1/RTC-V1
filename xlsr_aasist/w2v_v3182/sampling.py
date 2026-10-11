@@ -112,6 +112,9 @@ class Plan:
 
     def batches(self, epoch):
         streams = {g: self.stream(g, epoch) for g in GROUPS}
+        yield from self._batches(epoch, streams)
+
+    def _batches(self, epoch, streams):
         for step in range(self.steps):
             tickets = []
             for g in GROUPS:
@@ -124,10 +127,18 @@ class Plan:
             yield [tickets[i] for i in order]
 
     def coverage(self, epoch):
+        return self._coverage(epoch, {g: self.stream(g, epoch) for g in GROUPS})
+
+    def prepare_epoch(self, epoch):
+        # Both outputs consume the same streams; no second shuffle/skip pass.
+        streams = {g: self.stream(g, epoch) for g in GROUPS}
+        return self._coverage(epoch, streams), list(self._batches(epoch, streams))
+
+    def _coverage(self, epoch, streams):
         cells, roles = {}, Counter()
         paired_draws = 0
         for g, pool in self.pools.items():
-            counts = Counter(self.stream(g, epoch))
+            counts = Counter(streams[g])
             paired = sum(n for s, n in counts.items() if self.inventory[s]['online'])
             total = sum(counts.values())
             paired_draws += paired

@@ -29,33 +29,42 @@ def contrastive(features, units, temperature=.1, negative_mass=4.):
     require_finite(features, 'contrastive features')
     h = F.normalize(features.float(), dim=-1)
     sim = h @ h.T
-    total = h.sum()*0
-    positive_cos = h.sum()*0
-    negative_cos = h.sum()*0
-    counts = []
-    for i, unit in enumerate(units):
+    # Source metadata stays on the CPU. One source mask is shared by its four
+    # directed pairs, avoiding four separate GPU gathers/reductions per source.
+    source_weights, counts = [], []
+    for unit in units:
         row = unit[0]
-        for anchor_slot, positive_slot in ((0,1),(1,0),(0,2),(2,0)):
-            anchor, positive = 3*i+anchor_slot, 3*i+positive_slot
-            indices, weights = [], []
-            for language in ('en','zh'):
-                candidates = [3*j+positive_slot for j, other in enumerate(units)
-                    if other[0]['label'] != row['label'] and other[0]['language'] == language
-                    and other[0]['group_id'] != row['group_id']]
-                if not candidates:
-                    raise ValueError('Each anchor needs opposite-label sources in both languages')
-                indices.extend(candidates)
-                weights.extend([negative_mass/(2*len(candidates))]*len(candidates))
-            positive_score = sim[anchor, positive]/temperature
-            negative_score = sim[anchor, indices]/temperature + h.new_tensor(weights).log()
-            loss = torch.logsumexp(torch.cat((positive_score[None], negative_score)), dim=0)-positive_score
-            mass = row['source_mass']/4
-            total = total + mass*loss
-            positive_cos = positive_cos + mass*sim[anchor, positive]
-            negative_cos = negative_cos + mass*(sim[anchor, indices]*h.new_tensor(weights)).sum()/negative_mass
-            counts.append(len(indices))
+        weights = [0.] * len(units)
+        count = 0
+        for language in ('en','zh'):
+            candidates = [j for j, other in enumerate(units)
+                if other[0]['label'] != row['label'] and other[0]['language'] == language
+                and other[0]['group_id'] != row['group_id']]
+            if not candidates:
+                raise ValueError('Each anchor needs opposite-label sources in both languages')
+            for j in candidates:
+                weights[j] = negative_mass/(2*len(candidates))
+            count += len(candidates)
+        source_weights.append(weights); counts.append(count)
+    source = torch.arange(len(units), device=h.device)
+    anchor_slots = source.new_tensor([0,1,0,2])
+    positive_slots = source.new_tensor([1,0,2,0])
+    anchors = (3*source[:,None] + anchor_slots).reshape(-1)
+    positives = (3*source[:,None] + positive_slots).reshape(-1)
+    negatives = (3*source[None,None,:] + positive_slots[None,:,None]).expand(len(units),-1,-1).reshape(-1,len(units))
+    weights = h.new_tensor(source_weights).repeat_interleave(4,dim=0)
+    mass = h.new_tensor([u[0]['source_mass']/4 for u in units]).repeat_interleave(4)
+    positive_cosines = sim[anchors,positives]
+    negative_cosines = sim[anchors[:,None],negatives]
+    positive_score = positive_cosines/temperature
+    # log(0) masks excluded sources with -inf, so they contribute zero gradient.
+    negative_score = negative_cosines/temperature + weights.log()
+    losses = torch.logsumexp(torch.cat((positive_score[:,None],negative_score),dim=1),dim=1)-positive_score
+    total = (mass*losses).sum()
+    diagnostics = torch.stack(((mass*positive_cosines.detach()).sum(),
+        (mass*(negative_cosines.detach()*weights).sum(1)/negative_mass).sum())).cpu().tolist()
     require_finite(total, 'contrastive objective')
-    return total, dict(positive_cosine=float(positive_cos.detach()), negative_cosine=float(negative_cos.detach()),
+    return total, dict(positive_cosine=diagnostics[0], negative_cosine=diagnostics[1],
         negative_sources_min=min(counts), negative_sources_max=max(counts),
         effective_negative_mass=negative_mass, directed_positive_pairs=len(units)*4,
         candidate_sources=len(units), same_label_negatives=0)

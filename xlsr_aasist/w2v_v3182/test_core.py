@@ -38,7 +38,7 @@ class CoreTests(unittest.TestCase):
     def test_default_contract_and_invalid_options(self):
         from .config import parser,validate
         a=parser().parse_args([]);validate(a)
-        self.assertEqual((a.epochs,a.warm_epochs,a.stream_sources,a.variant),(10,2,16,'C1'))
+        self.assertEqual((a.epochs,a.warm_epochs,a.stream_sources,a.variant),(6,1,16,'C1'))
         self.assertEqual((a.contrastive_weight,a.source_sampling_power),(.05,.5))
         for flags in (['--contrastive-temperature','0'],['--source-sampling-power','nan'],
                       ['--contrastive-weight','-1'],['--warm-epochs','0'],

@@ -1,4 +1,4 @@
-"""Independent V3.18.2 contract: two warmup + eight joint epochs by default."""
+"""Independent V3.18.2 contract: one warmup + five joint epochs by default."""
 import argparse
 from importlib.metadata import version
 import math
@@ -16,7 +16,7 @@ def parser():
     p.add_argument('--omni-size',choices=tuple(MODELS),default=DEFAULT_ARCH)
     p.add_argument('--omni-assets',help='Matching prepared assets; default follows --omni-size')
     p.add_argument('--dev-pairs');p.add_argument('--device',default='cuda:0')
-    p.add_argument('--epochs',type=int,default=10);p.add_argument('--warm-epochs',type=int,default=2)
+    p.add_argument('--epochs',type=int,default=6);p.add_argument('--warm-epochs',type=int,default=1)
     p.add_argument('--workers',type=int,default=4);p.add_argument('--microbatch',type=int)
     p.add_argument('--frame-budget',type=int);p.add_argument('--eval-batch',type=int)
     p.add_argument('--stream-sources',type=int,default=16)
@@ -26,7 +26,7 @@ def parser():
     p.add_argument('--lora-lr',type=float,default=1e-5);p.add_argument('--head-lr',type=float,default=3e-5)
     p.add_argument('--warm-lr',type=float,default=1e-4);p.add_argument('--evidence-lr',type=float,default=1e-4)
     p.add_argument('--label-smoothing',type=float,default=.02)
-    p.add_argument('--patience',type=int,default=0,help='Default 0 runs all 10 epochs; positive values enable joint-phase early stopping')
+    p.add_argument('--patience',type=int,default=0,help='Default 0 runs all planned epochs; positive values enable joint-phase early stopping')
     p.add_argument('--variant',choices=('C1',),default='C1',help='Fixed local AASIST; two-noisy risk disabled')
     p.add_argument('--source-sampling-power',type=float,default=.5)
     p.add_argument('--contrastive-weight',type=float,default=.05)
