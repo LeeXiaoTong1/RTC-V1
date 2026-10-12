@@ -1,0 +1,2601 @@
+{
+  "schema": "rtc_v3184_download_catalog_v1",
+  "records": [
+    {
+      "key": "esc50-1-137-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "137",
+      "original_sources": [
+        "freesound:137"
+      ],
+      "source_group": "freesound:137",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-137-A-32.wav",
+      "sha256": "d68e4716f74f073be8f78f5fe8e45daf7c09b0ec0575b21f57989d803536abb3",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/137/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-155858-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "155858",
+      "original_sources": [
+        "freesound:155858"
+      ],
+      "source_group": "freesound:155858",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-155858-A-25.wav",
+      "sha256": "cb90f52c7fe7d0d994941b2e6de555cb36e898fb49b52cc31f08401ac464e7c6",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/155858/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-155858-B-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "155858",
+      "original_sources": [
+        "freesound:155858"
+      ],
+      "source_group": "freesound:155858",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-155858-B-25.wav",
+      "sha256": "234358f787b98c5903fcf56f7fc4c97fda2b4f0ad5311bd35f9c6c6c9a4b2277",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/155858/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-155858-C-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "155858",
+      "original_sources": [
+        "freesound:155858"
+      ],
+      "source_group": "freesound:155858",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-155858-C-25.wav",
+      "sha256": "47c7c305285136b8a3673f0143e42d832eec4ab1c907d2492396c4aa13943426",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/155858/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-155858-D-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "155858",
+      "original_sources": [
+        "freesound:155858"
+      ],
+      "source_group": "freesound:155858",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-155858-D-25.wav",
+      "sha256": "1842d2cc95f18f873b159b41ade87620b9e3232098947528d80af1e60380d25a",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/155858/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-155858-E-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "155858",
+      "original_sources": [
+        "freesound:155858"
+      ],
+      "source_group": "freesound:155858",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-155858-E-25.wav",
+      "sha256": "f20bcbe29484e399bda52e2e2dba9de478ae0147a7b588242b0d6acc1534b9d9",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/155858/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-155858-F-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "155858",
+      "original_sources": [
+        "freesound:155858"
+      ],
+      "source_group": "freesound:155858",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-155858-F-25.wav",
+      "sha256": "ced56c4dbe120cc2d6121232b73ddff8f79a1b1b9da69cb0765ebfc261998ba5",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/155858/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-17367-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "17367",
+      "original_sources": [
+        "freesound:17367"
+      ],
+      "source_group": "freesound:17367",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-17367-A-10.wav",
+      "sha256": "d732acd2e0c7c40405968010f49f250740c86998fc416eff2ed5330fc8c89dea",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/17367/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-21189-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "21189",
+      "original_sources": [
+        "freesound:21189"
+      ],
+      "source_group": "freesound:21189",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-21189-A-10.wav",
+      "sha256": "5f15ab2d8f6ef9932909b1b75c8ac254cbea46c93b4b2f0f3542abdf09b9abc0",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/21189/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-223162-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "223162",
+      "original_sources": [
+        "freesound:223162"
+      ],
+      "source_group": "freesound:223162",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-223162-A-25.wav",
+      "sha256": "4e0e2251d9819f49e8d9ee6c4106f9e4de95995e336be88c517269d57cda39b0",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/223162/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-26222-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "26222",
+      "original_sources": [
+        "freesound:26222"
+      ],
+      "source_group": "freesound:26222",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-26222-A-10.wav",
+      "sha256": "7a03695543a56d61464ea2bd87e0947bb994d38c914492c02be686693b6e1dac",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/26222/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-29561-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "29561",
+      "original_sources": [
+        "freesound:29561"
+      ],
+      "source_group": "freesound:29561",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-29561-A-10.wav",
+      "sha256": "4dc600962b53709664b27073f46ef2ad7d766ddad39c3ff04fcaf98442aae65b",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/29561/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-50060-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "50060",
+      "original_sources": [
+        "freesound:50060"
+      ],
+      "source_group": "freesound:50060",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-50060-A-10.wav",
+      "sha256": "cc8119be878eafdc69f7408dad614493a238174372eebf75e4c8314d1bb9807d",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/50060/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-51147-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "51147",
+      "original_sources": [
+        "freesound:51147"
+      ],
+      "source_group": "freesound:51147",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-51147-A-25.wav",
+      "sha256": "c5c88b84b54d976693bf3c55575d065986a00e46362f6b111536fcfae7fabb1d",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/51147/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-53501-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "53501",
+      "original_sources": [
+        "freesound:53501"
+      ],
+      "source_group": "freesound:53501",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-53501-A-32.wav",
+      "sha256": "7edf3a6b856987de4fc2da27906d70abb00c40fba3352275eec840917daf2e50",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/53501/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-54958-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "54958",
+      "original_sources": [
+        "freesound:54958"
+      ],
+      "source_group": "freesound:54958",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-54958-A-10.wav",
+      "sha256": "d93233d42dc57a3e81cb9ca446145f50cdc806f0174393b1055e5d9a327cef86",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/54958/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-56311-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "56311",
+      "original_sources": [
+        "freesound:56311"
+      ],
+      "source_group": "freesound:56311",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-56311-A-10.wav",
+      "sha256": "cf0dcbd49d979bf73992068b51db46cf3098995e66b3fb8ceb6ec276009aadc7",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/56311/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-61212-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "61212",
+      "original_sources": [
+        "freesound:61212"
+      ],
+      "source_group": "freesound:61212",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-61212-A-32.wav",
+      "sha256": "655cc6c53397673f39fb8f125124e65fafc87480e1d18cc53f78f4404464826d",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/61212/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-62594-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "62594",
+      "original_sources": [
+        "freesound:62594"
+      ],
+      "source_group": "freesound:62594",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-62594-A-32.wav",
+      "sha256": "a8adb317bb75afae3395204f0d0e19fb0230539d0a2cd02d6e2cc424cb3efe05",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/62594/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-63871-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "63871",
+      "original_sources": [
+        "freesound:63871"
+      ],
+      "source_group": "freesound:63871",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-63871-A-10.wav",
+      "sha256": "9ae1461223eaecf2df3818b51e0d7b5987ef497b17038594455bbcee6673d350",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/63871/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-79711-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "79711",
+      "original_sources": [
+        "freesound:79711"
+      ],
+      "source_group": "freesound:79711",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-79711-A-32.wav",
+      "sha256": "f3fd05d3bfed74942257ef036a83c7775c00a4213fd471c5ad6868e9487db525",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/79711/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-84393-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "84393",
+      "original_sources": [
+        "freesound:84393"
+      ],
+      "source_group": "freesound:84393",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-84393-A-32.wav",
+      "sha256": "48f3964c939192128456567e9b8150638194650fb5241d02dda6b970774325fb",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/84393/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-94231-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "94231",
+      "original_sources": [
+        "freesound:94231"
+      ],
+      "source_group": "freesound:94231",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-94231-A-32.wav",
+      "sha256": "ba393d3cdb1cf2186477e289d101a56a80d8d47b7a2a4fbfadfd8b7a1b3f511f",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/94231/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-1-94231-B-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "94231",
+      "original_sources": [
+        "freesound:94231"
+      ],
+      "source_group": "freesound:94231",
+      "fold": 1,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/1-94231-B-32.wav",
+      "sha256": "d24ad98dcd482f142ec917e68df4eced7fa204f6d831d8389cae5f1ead51dcf9",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/94231/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-101676-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "101676",
+      "original_sources": [
+        "freesound:101676"
+      ],
+      "source_group": "freesound:101676",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-101676-A-10.wav",
+      "sha256": "ef456a67e12d2e2c84513e9eb8bea769e343cd5e0bfe65a34dc96c526f260838",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/101676/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-104168-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "104168",
+      "original_sources": [
+        "freesound:104168"
+      ],
+      "source_group": "freesound:104168",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-104168-A-32.wav",
+      "sha256": "62f9d3cd5d576e5dd6f956fe11d5c50fb04f054c38e32597a16e19021536943d",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/104168/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-109316-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "109316",
+      "original_sources": [
+        "freesound:109316"
+      ],
+      "source_group": "freesound:109316",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-109316-A-32.wav",
+      "sha256": "29b85ff0c4551fff8893f1b70faee79f0de8edf383f15877cfdeedb4b9aeabce",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/109316/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-117625-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "117625",
+      "original_sources": [
+        "freesound:117625"
+      ],
+      "source_group": "freesound:117625",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-117625-A-10.wav",
+      "sha256": "26c3b6b455aeb91f6f3d9a2b00f7e06bd1fc79609606ea2ae86272657dc02e88",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/117625/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-118459-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "118459",
+      "original_sources": [
+        "freesound:118459"
+      ],
+      "source_group": "freesound:118459",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-118459-A-32.wav",
+      "sha256": "3e144910a7444c162120ff2067726788fc886aaf4b28be55ca0b6d3347e35a28",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/118459/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-118459-B-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "118459",
+      "original_sources": [
+        "freesound:118459"
+      ],
+      "source_group": "freesound:118459",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-118459-B-32.wav",
+      "sha256": "580103e9df8e83e039c5cc0b600a5c33457051afd66d9efd87063516f68ef320",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/118459/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-118817-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "118817",
+      "original_sources": [
+        "freesound:118817"
+      ],
+      "source_group": "freesound:118817",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-118817-A-32.wav",
+      "sha256": "5f4f048fde966a014079f5a42a0d5658df58b2db9802d577b206a32f0d9a2042",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/118817/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-120333-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "120333",
+      "original_sources": [
+        "freesound:120333"
+      ],
+      "source_group": "freesound:120333",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-120333-A-32.wav",
+      "sha256": "0221aef890f7252c3774518946c6bec589eeaab5a6d56fc593a488b7c51f95fc",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/120333/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-209471-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "209471",
+      "original_sources": [
+        "freesound:209471"
+      ],
+      "source_group": "freesound:209471",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-209471-A-25.wav",
+      "sha256": "cb524320343acf17254aea4035a3b83aaa3a92000720d6a90014816f7096d0bf",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/209471/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-209472-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "209472",
+      "original_sources": [
+        "freesound:209472"
+      ],
+      "source_group": "freesound:209472",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-209472-A-25.wav",
+      "sha256": "1c4aa8effdf21245b610377a7a94060c0661ceb002d2c37b35ae345de1f4cca0",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/209472/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-209473-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "209473",
+      "original_sources": [
+        "freesound:209473"
+      ],
+      "source_group": "freesound:209473",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-209473-A-25.wav",
+      "sha256": "d2b278e315fb09b9aa8c0184272e29a8aed8c7898531d816c128068c718a5c7e",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/209473/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-209474-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "209474",
+      "original_sources": [
+        "freesound:209474"
+      ],
+      "source_group": "freesound:209474",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-209474-A-25.wav",
+      "sha256": "36766921dd5baab292bd4238353f94e23304af6b3c0069b3d965f50a4fc7a754",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/209474/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-209475-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "209475",
+      "original_sources": [
+        "freesound:209475"
+      ],
+      "source_group": "freesound:209475",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-209475-A-25.wav",
+      "sha256": "9e831ab88a17a5d44d47890a9859e6bd4388d3be309b8d58f3d656c930547754",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/209475/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-209476-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "209476",
+      "original_sources": [
+        "freesound:209476"
+      ],
+      "source_group": "freesound:209476",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-209476-A-25.wav",
+      "sha256": "5ca208aa08d66d304077f2a54a518f33e58c2d06c9dd34e5a7f51dc11429af96",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/209476/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-209477-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "209477",
+      "original_sources": [
+        "freesound:209477"
+      ],
+      "source_group": "freesound:209477",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-209477-A-25.wav",
+      "sha256": "5939a63a47e717e02de2c262190f3754e5ec43ccc4d7948f5aa46c19fe3f5237",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/209477/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-209478-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "209478",
+      "original_sources": [
+        "freesound:209478"
+      ],
+      "source_group": "freesound:209478",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-209478-A-25.wav",
+      "sha256": "7ba54c692fb8af61a12bbdc480822a27bf3500de75daad7160da78e96301151a",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/209478/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-72970-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "72970",
+      "original_sources": [
+        "freesound:72970"
+      ],
+      "source_group": "freesound:72970",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-72970-A-10.wav",
+      "sha256": "f6d91324daa8863100c7f922b20727c86d46c27249cce9e15d66305e623e56b8",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/72970/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-73027-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "73027",
+      "original_sources": [
+        "freesound:73027"
+      ],
+      "source_group": "freesound:73027",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-73027-A-10.wav",
+      "sha256": "42eba8ebc797e9fa843e8dbfb907c58ea8c8976277997d5f6e726b1bd3fe4111",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/73027/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-73260-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "73260",
+      "original_sources": [
+        "freesound:73260"
+      ],
+      "source_group": "freesound:73260",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-73260-A-10.wav",
+      "sha256": "206b445eaf57f739c09185695e82bc0c3e7b9f68215ad9f7cb4374f7648e9acc",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/73260/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-81731-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "81731",
+      "original_sources": [
+        "freesound:81731"
+      ],
+      "source_group": "freesound:81731",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-81731-A-10.wav",
+      "sha256": "25d3a915368db5e4175b1d51dea34bfad02d909039a051cbf72c0f39a0f34667",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/81731/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-82367-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "82367",
+      "original_sources": [
+        "freesound:82367"
+      ],
+      "source_group": "freesound:82367",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-82367-A-10.wav",
+      "sha256": "2cce637e5f60368db490c8ec980eb0cc7dbdd623c077bcd456a2fb60afdd4820",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/82367/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-87781-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "87781",
+      "original_sources": [
+        "freesound:87781"
+      ],
+      "source_group": "freesound:87781",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-87781-A-10.wav",
+      "sha256": "81fe7ce5da401a69a542439a5c8277864468a0bf09bf1378b0accac15c033638",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/87781/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-99795-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "99795",
+      "original_sources": [
+        "freesound:99795"
+      ],
+      "source_group": "freesound:99795",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-99795-A-32.wav",
+      "sha256": "d73b231a5965c385dab9ff28652ea38f4d49e8f018e0623e9dfb499c82cfed0f",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/99795/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-2-99796-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "99796",
+      "original_sources": [
+        "freesound:99796"
+      ],
+      "source_group": "freesound:99796",
+      "fold": 2,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/2-99796-A-32.wav",
+      "sha256": "31bdd426e490ee983bb2643cf5b02cb36aaa194eb0acced143671ea16c30934e",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/99796/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-103597-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "103597",
+      "original_sources": [
+        "freesound:103597"
+      ],
+      "source_group": "freesound:103597",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-103597-A-25.wav",
+      "sha256": "4d1fca3296291bcb12ca41ebf0a1f7edb2e2c8213cc04d61e8ebb62b98bf5638",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/103597/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-103598-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "103598",
+      "original_sources": [
+        "freesound:103598"
+      ],
+      "source_group": "freesound:103598",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-103598-A-25.wav",
+      "sha256": "7d07efd243f85872330deb7ed4d78dd3f03cd415228259e9dce712140a1d7cec",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/103598/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-103599-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "103599",
+      "original_sources": [
+        "freesound:103599"
+      ],
+      "source_group": "freesound:103599",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-103599-A-25.wav",
+      "sha256": "279e4b3eb5fff0ff31b458132ba0a46a50a88fd01963f3cc175fd56c3b14997b",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/103599/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-103599-B-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "103599",
+      "original_sources": [
+        "freesound:103599"
+      ],
+      "source_group": "freesound:103599",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-103599-B-25.wav",
+      "sha256": "fc6a08cb96eb842eb46fe277743538f6fd41d2a21822ebeddf394522cd7c3450",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/103599/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-125548-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "125548",
+      "original_sources": [
+        "freesound:125548"
+      ],
+      "source_group": "freesound:125548",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-125548-A-32.wav",
+      "sha256": "786c0ab915c44c716dd70971fc8f80f0cc501164423095e3e5c97929b3796f7d",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/125548/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-132830-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "132830",
+      "original_sources": [
+        "freesound:132830"
+      ],
+      "source_group": "freesound:132830",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-132830-A-32.wav",
+      "sha256": "d75fa250788f499ec7faa1c5ba8ee38eff4e66460f9b2a0b7f8aa26dc2f73e3a",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/132830/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-132852-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "132852",
+      "original_sources": [
+        "freesound:132852"
+      ],
+      "source_group": "freesound:132852",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-132852-A-10.wav",
+      "sha256": "5d4960883ceabe28c008721ea3b5f5206a6f0234cacd4c1af81dd7594b4d3503",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/132852/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-140774-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "140774",
+      "original_sources": [
+        "freesound:140774"
+      ],
+      "source_group": "freesound:140774",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-140774-A-10.wav",
+      "sha256": "1dd994fb071b52e4232b0cbd06558dd8d179008be2e4cf1f41d4abdca4f390fe",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/140774/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-142005-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "142005",
+      "original_sources": [
+        "freesound:142005"
+      ],
+      "source_group": "freesound:142005",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-142005-A-10.wav",
+      "sha256": "784441f1c74be9dc64ec77aa9628df5b4557711b5f1435286dff9ea9317f02e0",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/142005/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-142006-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "142006",
+      "original_sources": [
+        "freesound:142006"
+      ],
+      "source_group": "freesound:142006",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-142006-A-10.wav",
+      "sha256": "bd24c750af1d7ed49a3d19ecc4401cd10368a18e02a07c3a5524fdb7a576d5af",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/142006/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-143929-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "143929",
+      "original_sources": [
+        "freesound:143929"
+      ],
+      "source_group": "freesound:143929",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-143929-A-10.wav",
+      "sha256": "5510934acbb493aee8e975d5b1c1b34b1a39ef0b870e6091778909995fef9004",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/143929/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-144106-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "144106",
+      "original_sources": [
+        "freesound:144106"
+      ],
+      "source_group": "freesound:144106",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-144106-A-32.wav",
+      "sha256": "e47881c1bcc652c7e07492c7c1325dba436ddf99cef422f2972b35fa87ad680d",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/144106/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-144120-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "144120",
+      "original_sources": [
+        "freesound:144120"
+      ],
+      "source_group": "freesound:144120",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-144120-A-32.wav",
+      "sha256": "bbc3a875b5add54169100adeaf253ed6120715bcd6ac3b55442b3e2d2863ed5c",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/144120/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-153444-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "153444",
+      "original_sources": [
+        "freesound:153444"
+      ],
+      "source_group": "freesound:153444",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-153444-A-32.wav",
+      "sha256": "ca3cd2deab66200c838c5395cf6221c95d309bec310456cf194bc316af410393",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/153444/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-154781-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "154781",
+      "original_sources": [
+        "freesound:154781"
+      ],
+      "source_group": "freesound:154781",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-154781-A-32.wav",
+      "sha256": "b65a1cd87e450898f9d40e96ee329d9b06887151cdd782cc21bdfa49cfb17cb9",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/154781/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-155568-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "155568",
+      "original_sources": [
+        "freesound:155568"
+      ],
+      "source_group": "freesound:155568",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-155568-A-32.wav",
+      "sha256": "e7204b94b2ba3beebf31d92c3e9a27fde8129644669644746df9b76fda63d01f",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/155568/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-155570-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "155570",
+      "original_sources": [
+        "freesound:155570"
+      ],
+      "source_group": "freesound:155570",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-155570-A-32.wav",
+      "sha256": "d9a50c67926f09ea4f9b1530182634ebf958f4cb17508ab1c2d3e89d93a73b37",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/155570/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-157149-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "157149",
+      "original_sources": [
+        "freesound:157149"
+      ],
+      "source_group": "freesound:157149",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-157149-A-10.wav",
+      "sha256": "83d1a7c62ffbf4f2241775502ec2fe3cf5c32fd69b4c107d8ca66b21d08bcda9",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/157149/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-157487-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "157487",
+      "original_sources": [
+        "freesound:157487"
+      ],
+      "source_group": "freesound:157487",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-157487-A-10.wav",
+      "sha256": "2acadf44d110c13b39bf17d6db9afa13bb4db19c8b3147b1a61b4f492caf1e97",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/157487/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-157615-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "157615",
+      "original_sources": [
+        "freesound:157615"
+      ],
+      "source_group": "freesound:157615",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-157615-A-10.wav",
+      "sha256": "5d3ac19904b4f7f0545f20b5a4d31d0cc9d97c5f555efc42b0484b41418052fa",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/157615/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-249913-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "249913",
+      "original_sources": [
+        "freesound:249913"
+      ],
+      "source_group": "freesound:249913",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-249913-A-25.wav",
+      "sha256": "a8eb9f3e0c59dea33b9152c7da3f758087c30f9b9d6a969efd7393816e32976d",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/249913/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-94342-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "94342",
+      "original_sources": [
+        "freesound:94342"
+      ],
+      "source_group": "freesound:94342",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-94342-A-25.wav",
+      "sha256": "aa5f165461dce46867d6be56a5362ea28e93574379041ba2395563b629aee3ea",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/94342/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-94343-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "94343",
+      "original_sources": [
+        "freesound:94343"
+      ],
+      "source_group": "freesound:94343",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-94343-A-25.wav",
+      "sha256": "975e559e9ac1a97093a4b9bc61344bf15b1ce4b4f76a88a6cf8184c197e9e634",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/94343/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-3-94344-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "94344",
+      "original_sources": [
+        "freesound:94344"
+      ],
+      "source_group": "freesound:94344",
+      "fold": 3,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/3-94344-A-25.wav",
+      "sha256": "3cc287735d092ad54971f68131d02130b80e9a728fdd4b1aede9f7623c6bf7b7",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/94344/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-117627-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "117627",
+      "original_sources": [
+        "freesound:117627"
+      ],
+      "source_group": "freesound:117627",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-117627-A-25.wav",
+      "sha256": "bee53dc6ab282257b4a70a852d6235104ec74bdb380f0a83b706f1ab88b356ca",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/117627/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-117630-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "117630",
+      "original_sources": [
+        "freesound:117630"
+      ],
+      "source_group": "freesound:117630",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-117630-A-25.wav",
+      "sha256": "70beb5f16c161f46b7c672b8bc85724ced5d69db1e29d7f137ad94f4c1215d08",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/117630/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-158653-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "158653",
+      "original_sources": [
+        "freesound:158653"
+      ],
+      "source_group": "freesound:158653",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-158653-A-32.wav",
+      "sha256": "125691734898f9db80100600cb63a65203ac0948b4a234e136f0e369bffe3b6b",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/158653/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-160999-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "160999",
+      "original_sources": [
+        "freesound:160999"
+      ],
+      "source_group": "freesound:160999",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-160999-A-10.wav",
+      "sha256": "c85ef3d5cbd86ba80a7f089277d66f165e36b8dcf8070643ddc7ec73eb4f5dcb",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/160999/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-161127-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "161127",
+      "original_sources": [
+        "freesound:161127"
+      ],
+      "source_group": "freesound:161127",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-161127-A-10.wav",
+      "sha256": "3ea9076dd2ee68b67bd0707652a0c0ca77811b0664426e10e6860c187401af89",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/161127/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-163264-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "163264",
+      "original_sources": [
+        "freesound:163264"
+      ],
+      "source_group": "freesound:163264",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-163264-A-10.wav",
+      "sha256": "c2f5737bfafb1a3cb2f06a3d97d291e33901051ae4ef5b25c6f19093453c0ead",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/163264/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-164206-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "164206",
+      "original_sources": [
+        "freesound:164206"
+      ],
+      "source_group": "freesound:164206",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-164206-A-10.wav",
+      "sha256": "75f81596617c19cb01f4e0a0422798f100d1bedd796cd13aa59687b2bac13d16",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/164206/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-166661-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "166661",
+      "original_sources": [
+        "freesound:166661"
+      ],
+      "source_group": "freesound:166661",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-166661-A-10.wav",
+      "sha256": "a958fd56bfff6c34c896c8ca4e5f69705b47a446edcb57060c492f65007d277d",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/166661/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-167155-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "167155",
+      "original_sources": [
+        "freesound:167155"
+      ],
+      "source_group": "freesound:167155",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-167155-A-32.wav",
+      "sha256": "c95a4bcca8a2113cb7a20bd59d404919eb88f10dc23401815369a449a7f59344",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/167155/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-172180-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "172180",
+      "original_sources": [
+        "freesound:172180"
+      ],
+      "source_group": "freesound:172180",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-172180-A-32.wav",
+      "sha256": "38cb4fdd3c362dddfec350f850a246b3289ae59f9d41ad7ddcd23a069232353c",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/172180/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-172742-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "172742",
+      "original_sources": [
+        "freesound:172742"
+      ],
+      "source_group": "freesound:172742",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-172742-A-32.wav",
+      "sha256": "6107e92023ebe6a8cc7514ed3a4721a10a319f8162a8a6be255cf46c4851ac8e",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/172742/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-177243-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "177243",
+      "original_sources": [
+        "freesound:177243"
+      ],
+      "source_group": "freesound:177243",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-177243-A-32.wav",
+      "sha256": "e2163c61a24be93d31a3e6b1c87191f87eb0d7cebda85b110b7f2a115f0b86fa",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/177243/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-177250-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "177250",
+      "original_sources": [
+        "freesound:177250"
+      ],
+      "source_group": "freesound:177250",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-177250-A-10.wav",
+      "sha256": "daae54d9bcfb4f31adfac8adbca4ab54c3543b8ed68c555b5a98c3fc20283358",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/177250/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-180380-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "180380",
+      "original_sources": [
+        "freesound:180380"
+      ],
+      "source_group": "freesound:180380",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-180380-A-10.wav",
+      "sha256": "d73fdc45016ab102ed49683509d93eccb40b985ed9492fe17c3aecf50963a35b",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/180380/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-181286-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "train",
+      "source_id": "181286",
+      "original_sources": [
+        "freesound:181286"
+      ],
+      "source_group": "freesound:181286",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-181286-A-10.wav",
+      "sha256": "f4adde0e7a70a466a161325824b020a28ae3aaf76568436116c82b6b25d76fdf",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/181286/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-181707-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "181707",
+      "original_sources": [
+        "freesound:181707"
+      ],
+      "source_group": "freesound:181707",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-181707-A-32.wav",
+      "sha256": "62448717b3d141a1151db037583848723200c14b253297b8205d01d6c04fb23a",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/181707/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-181708-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "181708",
+      "original_sources": [
+        "freesound:181708"
+      ],
+      "source_group": "freesound:181708",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-181708-A-32.wav",
+      "sha256": "d136197cac1ecfea55c9d3faaad31f6b740132ba9f0e05b435ee33daa2eef3ff",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/181708/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-185613-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "train",
+      "source_id": "185613",
+      "original_sources": [
+        "freesound:185613"
+      ],
+      "source_group": "freesound:185613",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-185613-A-32.wav",
+      "sha256": "e7c612cbd5ed3fa812dc1dcfc30af74670a6f9d4265a0d3e512396624a6eb7d6",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/185613/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-194979-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "194979",
+      "original_sources": [
+        "freesound:194979"
+      ],
+      "source_group": "freesound:194979",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-194979-A-25.wav",
+      "sha256": "ef46de922532c82310795bd5bd705a1837eb051b73997cddd0d39c1d8283d8e9",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/194979/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-194981-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "194981",
+      "original_sources": [
+        "freesound:194981"
+      ],
+      "source_group": "freesound:194981",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-194981-A-25.wav",
+      "sha256": "69512e2e391473e9ae3d8cf69b9b3b0fed8310c81265fefb8b8262f88a6a21a6",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/194981/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-198962-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "198962",
+      "original_sources": [
+        "freesound:198962"
+      ],
+      "source_group": "freesound:198962",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-198962-A-25.wav",
+      "sha256": "622d193035a6635af9c3b552bc3b0414de0c79b3408f7d3f21397d2929f1ed69",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/198962/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-198962-B-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "198962",
+      "original_sources": [
+        "freesound:198962"
+      ],
+      "source_group": "freesound:198962",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-198962-B-25.wav",
+      "sha256": "4a9fd033241d235416314dcc577acb6f62c7de290ea706fed597aaf15d323971",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/198962/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-218304-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "218304",
+      "original_sources": [
+        "freesound:218304"
+      ],
+      "source_group": "freesound:218304",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-218304-A-25.wav",
+      "sha256": "a2fa1671642d712458d6913a72a55f357ef5ee7f49d82e1ab4d17d355a5efd9c",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/218304/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-4-218304-B-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "train",
+      "source_id": "218304",
+      "original_sources": [
+        "freesound:218304"
+      ],
+      "source_group": "freesound:218304",
+      "fold": 4,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/4-218304-B-25.wav",
+      "sha256": "3d54fb53e375367b67d8552e4e626b38696af91badea46eb09aa923051f3d71c",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/218304/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-181766-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "dev",
+      "source_id": "181766",
+      "original_sources": [
+        "freesound:181766"
+      ],
+      "source_group": "freesound:181766",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-181766-A-10.wav",
+      "sha256": "608fcc0bef32512e2a984c7d3d2cac8ea161f6337ec0056850a6d34f07f8db35",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/181766/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-188655-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "dev",
+      "source_id": "188655",
+      "original_sources": [
+        "freesound:188655"
+      ],
+      "source_group": "freesound:188655",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-188655-A-10.wav",
+      "sha256": "9ed876436c72f36c230c275744818829912a2299bcbd8ccca6eccce9df6f8a57",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/188655/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-193339-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "dev",
+      "source_id": "193339",
+      "original_sources": [
+        "freesound:193339"
+      ],
+      "source_group": "freesound:193339",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-193339-A-10.wav",
+      "sha256": "aec7a17013e61faedb111983e0699a8b63c0e1af9569bb4a819ffba86a28f778",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/193339/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-194892-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "dev",
+      "source_id": "194892",
+      "original_sources": [
+        "freesound:194892"
+      ],
+      "source_group": "freesound:194892",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-194892-A-10.wav",
+      "sha256": "12df0d996db614fff7148063232490f76413448b6b193034b5f9655ec5172a37",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/194892/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-195710-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "dev",
+      "source_id": "195710",
+      "original_sources": [
+        "freesound:195710"
+      ],
+      "source_group": "freesound:195710",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-195710-A-10.wav",
+      "sha256": "939959e3cb6df01e3a67d47cf1b1d0429785a1906562dd143805e8fb8db909c0",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/195710/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-198321-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "dev",
+      "source_id": "198321",
+      "original_sources": [
+        "freesound:198321"
+      ],
+      "source_group": "freesound:198321",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-198321-A-10.wav",
+      "sha256": "a16dbc1f4320ade2754c13c9540e4cfdbdfdc44008c3ba699f00476d9a70fe63",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/198321/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-202898-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "dev",
+      "source_id": "202898",
+      "original_sources": [
+        "freesound:202898"
+      ],
+      "source_group": "freesound:202898",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-202898-A-10.wav",
+      "sha256": "06ba576df5efc793523c7adebfca21094e1d3cbdd924c0655a16ac5aa5785b78",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/202898/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-203739-A-10",
+      "dataset": "ESC-50",
+      "category": "rain",
+      "split": "dev",
+      "source_id": "203739",
+      "original_sources": [
+        "freesound:203739"
+      ],
+      "source_group": "freesound:203739",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-203739-A-10.wav",
+      "sha256": "226ca7d5b50f0b45fed093765ac1eb3d243812c7940cec7c7d696aa65e67f447",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/203739/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-205090-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "dev",
+      "source_id": "205090",
+      "original_sources": [
+        "freesound:205090"
+      ],
+      "source_group": "freesound:205090",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-205090-A-32.wav",
+      "sha256": "5a8f193f14fa649248b1d645ce6dae97f5c105015b3351ffaf86406e998c36d3",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/205090/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-215005-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "dev",
+      "source_id": "215005",
+      "original_sources": [
+        "freesound:215005"
+      ],
+      "source_group": "freesound:215005",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-215005-A-32.wav",
+      "sha256": "b8c6b7a28f1523c4aa0a0261ed45dee934c5a8f2558893312d9d981bf1f92067",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/215005/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-216131-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "dev",
+      "source_id": "216131",
+      "original_sources": [
+        "freesound:216131"
+      ],
+      "source_group": "freesound:216131",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-216131-A-32.wav",
+      "sha256": "096ac1b0324a6c59c96f974f006f8ec35ffa362790c58327438c7f5c67744b9a",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/216131/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-222894-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "dev",
+      "source_id": "222894",
+      "original_sources": [
+        "freesound:222894"
+      ],
+      "source_group": "freesound:222894",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-222894-A-32.wav",
+      "sha256": "10352ae357018a1123532e2875b0358dc3954e15b5845a312c7ff846623e56a7",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/222894/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-223099-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "dev",
+      "source_id": "223099",
+      "original_sources": [
+        "freesound:223099"
+      ],
+      "source_group": "freesound:223099",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-223099-A-32.wav",
+      "sha256": "d4189f4b4acc489e7bb8314685ebff687ccf8cdf7925d73a3aab1f30c40f44c4",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/223099/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-223099-B-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "dev",
+      "source_id": "223099",
+      "original_sources": [
+        "freesound:223099"
+      ],
+      "source_group": "freesound:223099",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-223099-B-32.wav",
+      "sha256": "d247b713e188eb4185782cd0722b46db5fb0d6c5d315553a2ec96e924866f30d",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/223099/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-234263-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "dev",
+      "source_id": "234263",
+      "original_sources": [
+        "freesound:234263"
+      ],
+      "source_group": "freesound:234263",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-234263-A-25.wav",
+      "sha256": "b83813a8a07ac187c280204b4ac4a015c0cff5a84bf5a7b7e3aa03b6e726910d",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/234263/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-234855-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "dev",
+      "source_id": "234855",
+      "original_sources": [
+        "freesound:234855"
+      ],
+      "source_group": "freesound:234855",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-234855-A-25.wav",
+      "sha256": "d1b33538a11d787c1f9ff9e33a9160a66570e0830b2e9b349df3d10d16179f8a",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/234855/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-234923-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "dev",
+      "source_id": "234923",
+      "original_sources": [
+        "freesound:234923"
+      ],
+      "source_group": "freesound:234923",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-234923-A-32.wav",
+      "sha256": "074d29a97388008bb7ca266b786f1b22552fc7bcac5d901625640b925aa8a101",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/234923/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-243025-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "dev",
+      "source_id": "243025",
+      "original_sources": [
+        "freesound:243025"
+      ],
+      "source_group": "freesound:243025",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-243025-A-25.wav",
+      "sha256": "4479d47415b811e5459c8420a1b8a721eca414147b017fed5b5a80636762028e",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/243025/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-244178-A-32",
+      "dataset": "ESC-50",
+      "category": "keyboard",
+      "split": "dev",
+      "source_id": "244178",
+      "original_sources": [
+        "freesound:244178"
+      ],
+      "source_group": "freesound:244178",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-244178-A-32.wav",
+      "sha256": "c0e6aa625241929b173a1003bbf175e1c0910b1f10c68be91aab8fdcc3e78cb2",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/244178/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-244310-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "dev",
+      "source_id": "244310",
+      "original_sources": [
+        "freesound:244310"
+      ],
+      "source_group": "freesound:244310",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-244310-A-25.wav",
+      "sha256": "6f5c1eea1ef6068ead03b6f5a12a2698da258cb0bc49b56fa01976a9371a7c02",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/244310/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-263490-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "dev",
+      "source_id": "263490",
+      "original_sources": [
+        "freesound:263490"
+      ],
+      "source_group": "freesound:263490",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-263490-A-25.wav",
+      "sha256": "6ee260dd4ef0d0329c7a2e06c4c331db4f61049733f19e6535f041732384566e",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/263490/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-263491-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "dev",
+      "source_id": "263491",
+      "original_sources": [
+        "freesound:263491"
+      ],
+      "source_group": "freesound:263491",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-263491-A-25.wav",
+      "sha256": "17ba4c24a5065450732d07633e1ccfddda384b253150d659d0bd87735426a183",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/263491/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-263501-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "dev",
+      "source_id": "263501",
+      "original_sources": [
+        "freesound:263501"
+      ],
+      "source_group": "freesound:263501",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-263501-A-25.wav",
+      "sha256": "40ae1001eb9f0bb32368a6f5b76b9ddcffef05ae1519581151ab7f229c7feeef",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/263501/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "key": "esc50-5-51149-A-25",
+      "dataset": "ESC-50",
+      "category": "footsteps",
+      "split": "dev",
+      "source_id": "51149",
+      "original_sources": [
+        "freesound:51149"
+      ],
+      "source_group": "freesound:51149",
+      "fold": 5,
+      "url": "https://raw.githubusercontent.com/karolpiczak/ESC-50/33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6/audio/5-51149-A-25.wav",
+      "sha256": "778725b447e5f8ae4528d62ec978c915116d8e2a9043494c0e5e1708772fee76",
+      "bytes": 441044,
+      "license": "ESC-50 CC-BY-NC-3.0 dataset; underlying Freesound licenses retained by dataset",
+      "attribution": "ESC-50, Karol J. Piczak; original recording https://freesound.org/s/51149/",
+      "page": "https://github.com/karolpiczak/ESC-50",
+      "encoding": "original WAV",
+      "scene_approximation": false
+    },
+    {
+      "dataset": "Freesound",
+      "category": "office",
+      "author": "mzui",
+      "source_id": "135097",
+      "split": "dev",
+      "license": "CC0-1.0",
+      "page": "https://freesound.org/people/mzui/sounds/135097/",
+      "url": "https://cdn.freesound.org/previews/135/135097_658546-hq.mp3",
+      "sha256": "7e8060be99b6afb0049e1a5aab9cb41054c3bfc6d835ea16f37a2f2de4425d97",
+      "bytes": 1507872,
+      "encoding": "public HQ MP3 preview",
+      "original_recording": "freesound:135097",
+      "key": "freesound-135097",
+      "original_sources": [
+        "freesound:135097",
+        "freesound:135097"
+      ],
+      "source_group": "freesound:135097",
+      "attribution": "mzui | https://freesound.org/people/mzui/sounds/135097/ | CC0-1.0",
+      "scene_approximation": true
+    },
+    {
+      "dataset": "Freesound",
+      "category": "coffee",
+      "author": "portwain",
+      "source_id": "261121",
+      "split": "train",
+      "license": "CC0-1.0",
+      "page": "https://freesound.org/people/portwain/sounds/261121/",
+      "url": "https://cdn.freesound.org/previews/261/261121_1092443-hq.mp3",
+      "sha256": "140718e25b9dcda6d4da8db0b9dc02a1bb21e4d6418f715cef12e9808329294e",
+      "bytes": 474520,
+      "encoding": "public HQ MP3 preview",
+      "original_recording": "freesound:261121",
+      "key": "freesound-261121",
+      "original_sources": [
+        "freesound:261121",
+        "freesound:261121"
+      ],
+      "source_group": "freesound:261121",
+      "attribution": "portwain | https://freesound.org/people/portwain/sounds/261121/ | CC0-1.0",
+      "scene_approximation": true
+    },
+    {
+      "dataset": "Freesound",
+      "category": "coffee",
+      "author": "MattRuthSound",
+      "source_id": "524013",
+      "split": "train",
+      "license": "CC-BY-4.0",
+      "page": "https://freesound.org/people/MattRuthSound/sounds/524013/",
+      "url": "https://cdn.freesound.org/previews/524/524013_7107243-hq.mp3",
+      "sha256": "481ab83b140576cf5329745689d5c0e810afc25f90033af0e9f601866cea765f",
+      "bytes": 370800,
+      "encoding": "public HQ MP3 preview",
+      "original_recording": "freesound:524013",
+      "key": "freesound-524013",
+      "original_sources": [
+        "freesound:524013",
+        "freesound-pack:29527"
+      ],
+      "source_group": "freesound:524016",
+      "attribution": "MattRuthSound | https://freesound.org/people/MattRuthSound/sounds/524013/ | CC-BY-4.0",
+      "scene_approximation": true
+    },
+    {
+      "dataset": "Freesound",
+      "category": "coffee",
+      "author": "MattRuthSound",
+      "source_id": "524014",
+      "split": "train",
+      "license": "CC-BY-4.0",
+      "page": "https://freesound.org/people/MattRuthSound/sounds/524014/",
+      "url": "https://cdn.freesound.org/previews/524/524014_7107243-hq.mp3",
+      "sha256": "6210d5f118f31b16dad7424fa26478dea281ff7d84f5e3075ba79ebb37c18a86",
+      "bytes": 201120,
+      "encoding": "public HQ MP3 preview",
+      "original_recording": "freesound:524014",
+      "key": "freesound-524014",
+      "original_sources": [
+        "freesound:524014",
+        "freesound-pack:29527"
+      ],
+      "source_group": "freesound:524016",
+      "attribution": "MattRuthSound | https://freesound.org/people/MattRuthSound/sounds/524014/ | CC-BY-4.0",
+      "scene_approximation": true
+    },
+    {
+      "dataset": "Freesound",
+      "category": "coffee",
+      "author": "MattRuthSound",
+      "source_id": "524016",
+      "split": "train",
+      "license": "CC-BY-4.0",
+      "page": "https://freesound.org/people/MattRuthSound/sounds/524016/",
+      "url": "https://cdn.freesound.org/previews/524/524016_7107243-hq.mp3",
+      "sha256": "419382abdc9422ed95e367d52df5d4d728a96ade518f5c8cff9b1650668c07a9",
+      "bytes": 347904,
+      "encoding": "public HQ MP3 preview",
+      "original_recording": "freesound:524016",
+      "key": "freesound-524016",
+      "original_sources": [
+        "freesound:524016",
+        "freesound-pack:29527"
+      ],
+      "source_group": "freesound:524016",
+      "attribution": "MattRuthSound | https://freesound.org/people/MattRuthSound/sounds/524016/ | CC-BY-4.0",
+      "scene_approximation": true
+    },
+    {
+      "dataset": "Freesound",
+      "category": "office",
+      "author": "Fupicat",
+      "source_id": "534123",
+      "split": "train",
+      "license": "CC0-1.0",
+      "page": "https://freesound.org/people/Fupicat/sounds/534123/",
+      "url": "https://cdn.freesound.org/previews/534/534123_7724198-hq.mp3",
+      "sha256": "4cae1bf9eaeacb775b101d0cb202d86ead3c1eca950e2802bb66c4c2692db9a1",
+      "bytes": 625072,
+      "encoding": "public HQ MP3 preview",
+      "original_recording": "freesound:534123",
+      "key": "freesound-534123",
+      "original_sources": [
+        "freesound:534123",
+        "freesound:521398",
+        "freesound:450281",
+        "freesound:323432",
+        "freesound:470937",
+        "freesound:178137",
+        "freesound:457161",
+        "freesound:504622",
+        "freesound:119556",
+        "freesound:534123"
+      ],
+      "source_group": "freesound:534123",
+      "attribution": "Fupicat | https://freesound.org/people/Fupicat/sounds/534123/ | CC0-1.0",
+      "scene_approximation": true
+    },
+    {
+      "dataset": "Freesound",
+      "category": "coffee",
+      "author": "Thimblerig",
+      "source_id": "702710",
+      "split": "dev",
+      "license": "CC-BY-4.0",
+      "page": "https://freesound.org/people/Thimblerig/sounds/702710/",
+      "url": "https://cdn.freesound.org/previews/702/702710_9573665-hq.mp3",
+      "sha256": "c225d0f40b3310202c637b1719e6cc531f909fad32f218495739532726df1770",
+      "bytes": 654648,
+      "encoding": "public HQ MP3 preview",
+      "original_recording": "freesound:702710",
+      "key": "freesound-702710",
+      "original_sources": [
+        "freesound:702710",
+        "freesound:196679",
+        "freesound:425046",
+        "freesound:214848",
+        "freesound:702710"
+      ],
+      "source_group": "freesound:702710",
+      "attribution": "Thimblerig | https://freesound.org/people/Thimblerig/sounds/702710/ | CC-BY-4.0; components: soundmary (196679, CC-BY-4.0), BEDEEN (425046, CC0), kikuchiyo (214848, CC0)",
+      "scene_approximation": true
+    },
+    {
+      "dataset": "Freesound",
+      "category": "office",
+      "author": "BeaconStudio",
+      "source_id": "862604",
+      "split": "train",
+      "license": "CC0-1.0",
+      "page": "https://freesound.org/people/BeaconStudio/sounds/862604/",
+      "url": "https://cdn.freesound.org/previews/862/862604_18689440-hq.mp3",
+      "sha256": "204669d890d5e072832c8bca80dadafacc1c12435992d7b29a3b4f424b9882a3",
+      "bytes": 1559400,
+      "encoding": "public HQ MP3 preview",
+      "original_recording": "freesound:862604",
+      "key": "freesound-862604",
+      "original_sources": [
+        "freesound:862604",
+        "freesound:862604"
+      ],
+      "source_group": "freesound:862604",
+      "attribution": "BeaconStudio | https://freesound.org/people/BeaconStudio/sounds/862604/ | CC0-1.0",
+      "scene_approximation": true
+    }
+  ],
+  "provenance": {
+    "esc50_commit": "33c8ce9eb2cf0b1c2f8bcf322eb349b6be34dbb6",
+    "esc50_metadata_sha256": "ca660da60191a97de289983a05821c9382d852a38a2ba8428980816b68cf6246",
+    "paper": "https://arxiv.org/html/2604.23742v1",
+    "rnnoise_not_used": "Current public collection lacks scene labels; user approved a small explicit public non-speech catalog instead.",
+    "scene_scope": "Office and coffee are curated non-speech scene approximations, not asserted organizer files. Coffee includes machinery/cup sounds, not crowd babble.",
+    "semantic_screen": "Public author descriptions and scene labels; no human-speech dataset or speech subset included.",
+    "split": "ESC folds 1-4 train, 5 dev; curated scene recordings held out by original source; shared components grouped transitively."
+  }
+}
