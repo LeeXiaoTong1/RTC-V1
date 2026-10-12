@@ -31,6 +31,12 @@ def main(device='cuda:0'):
         ssl = hub.create_new_model(arch,device=target_device,dtype=dtype)
         model = Detector(ssl.encoder_frontend,ssl.encoder,cfg,BatchLayout).to(target_device)
         del ssl
+        from w2v_v318.regions import windows,coverage_mass
+        for length in (12,128,129,211,1024):
+            ranges,mass=model.head.window_plan(length,target_device)
+            if list(ranges)!=windows(length,cfg['window'],cfg['hop']):
+                raise RuntimeError('Cached window bounds changed')
+            torch.testing.assert_close(mass,coverage_mass(length,ranges,target_device),atol=1e-7,rtol=1e-6)
         with torch.no_grad():
             for name,p in model.named_parameters():
                 if name.endswith('.lora_b'):p.normal_(0,.01)

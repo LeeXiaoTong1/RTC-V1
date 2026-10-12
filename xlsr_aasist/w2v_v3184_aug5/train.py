@@ -30,8 +30,11 @@ def promote(state,tag,current,metrics,logits):
     return improved
 
 
-def save(run,cfg,state,model,optimizer):
-    state.update(model=partial_state(model),optimizer=to_cpu(optimizer.state_dict()),rng=capture_rng())
+def save(run,cfg,state,model,optimizer,current=None):
+    # The end-of-epoch snapshot is also used for best selection. Reuse it;
+    # no optimizer update occurs between selection and this atomic commit.
+    state.update(model=partial_state(model) if current is None else current,
+                 optimizer=to_cpu(optimizer.state_dict()),rng=capture_rng())
     if state['best_tag']==state['last_tag']:state['best_model']=state['model']
     atomic_save(Path(run)/'last.pt',state,cfg['free_reserve_bytes']+cfg['disk_margin_bytes'])
     atomic_json(Path(run)/'training_history.json',state['history'])
@@ -106,10 +109,12 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
             phase='joint' if joint else 'head_fusion_warmup'
             print(f'\n[Train] V3.18.4 epoch {epoch+1}/{cfg["epochs"]} phase={phase} updates={plan.steps}; quotas={cfg["group_quotas"]}; Online/Noisy loss=50/50%; group loss=25% each',flush=True)
             totals=defaultdict(float);cells=defaultdict(lambda:defaultdict(float));processing=Counter();base_views=Counter();recent=[];start=time.monotonic()
+            epoch_start=start
             for step,units in enumerate(batches):
                 wait=time.monotonic()-start;risk=schedule(optimizer,cfg,epoch,step,plan.steps);compute=time.monotonic()
                 stats=train_step(model,optimizer,units,cfg,risk,audit=(step==0 or (step+1)%100==0))
-                if cfg['device'].startswith('cuda'):torch.cuda.synchronize()
+                # C3 already does a blocking telemetry .cpu() AFTER optimizer.step.
+                # Its default-stream work has finished; no device-wide wait needed.
                 seconds=time.monotonic()-compute
                 totals['loss']+=stats['loss'];totals['raw_ce_sum']+=stats['raw_ce_sum'];totals['views']+=stats['views']
                 totals['compute_seconds']+=seconds;totals['wait_seconds']+=wait;totals['updates']+=1
@@ -131,13 +136,21 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
             if int(totals['updates'])!=plan.steps:raise RuntimeError('Incomplete logical epoch')
             tag=f'epoch_{epoch+1}_step_{plan.steps}'
             print('[Eval] full fixed Dev, fixed Train probe, independent mechanisms and six scenes',flush=True)
-            logits,_=infer(model,dev,cfg)
-            train_logits,probe_rows=infer(model,train,cfg,probes)
-            panel_logits,panel_meta=infer(model,panels,cfg,panel_tickets,'dev')
-            scene_logits,scene_meta=infer(model,scenes,cfg,scene_tickets,'dev')
+            evaluation_seconds={}
+            def timed_infer(name,*args):
+                began=time.monotonic();result=infer(*args)
+                evaluation_seconds[name]=time.monotonic()-began
+                return result
+            logits,_=timed_infer('dev',model,dev,cfg)
+            train_logits,probe_rows=timed_infer('train_probe',model,train,cfg,probes)
+            panel_logits,panel_meta=timed_infer('mechanisms',model,panels,cfg,panel_tickets,'dev')
+            scene_logits,scene_meta=timed_infer('six_scenes',model,scenes,cfg,scene_tickets,'dev')
             metrics=measure(dev,logits);selected_metrics=measure(selection_rows,logits[selection])
+            snapshot_start=time.monotonic()
             current=partial_state(model)
-            updated=promote(state,tag,current,selected_metrics,torch.from_numpy(logits.copy()))
+            snapshot_seconds=time.monotonic()-snapshot_start
+            epoch_logits=torch.from_numpy(logits.copy())
+            updated=promote(state,tag,current,selected_metrics,epoch_logits)
             training=dict(loss=totals['loss']/plan.steps,raw_ce=totals['raw_ce_sum']/totals['views'],
                 compute_seconds=totals['compute_seconds']/plan.steps,wait_seconds=totals['wait_seconds']/plan.steps,
                 cells={k:dict(v) for k,v in cells.items()},views=int(totals['views']),processing_counts=dict(processing),
@@ -162,13 +175,25 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
                     state['patience_anchor']=score;state['no_progress']=0
                 else:state['no_progress']+=1
             state['history'].append(entry);state['epoch']=epoch+1;state['last_tag']=tag
-            state['last_logits']=torch.from_numpy(logits.copy())
+            state['last_logits']=epoch_logits
             state['stopped_early']=bool(joint and cfg['patience'] and epoch+1-cfg['warm_epochs']>=cfg['min_joint_epochs'] and state['no_progress']>=cfg['patience'])
             np.savez_compressed(run/f'dev_scores_{tag}.npz',logits=logits)
             np.savez_compressed(run/f'scene_scores_{tag}.npz',logits=scene_logits)
             atomic_json(run/f'sampling_and_loss_{tag}.json',dict(coverage=coverage,actual=training))
-            save(run,cfg,state,model,optimizer)
+            checkpoint_start=time.monotonic()
+            save(run,cfg,state,model,optimizer,current)
+            checkpoint_seconds=time.monotonic()-checkpoint_start
+            report_start=time.monotonic()
             print_epoch(entry,state);render(run,state['history'],state['steps'])
+            timing=dict(epoch=epoch+1,train_compute_seconds=totals['compute_seconds'],
+                train_wait_seconds=totals['wait_seconds'],evaluation_seconds=evaluation_seconds,
+                state_snapshot_seconds=snapshot_seconds,checkpoint_write_seconds=checkpoint_seconds,
+                report_seconds=time.monotonic()-report_start,epoch_wall_seconds=time.monotonic()-epoch_start,
+                note='Wall-clock timings include CPU work and blocking result transfers; not a CUDA kernel profiler')
+            atomic_json(run/f'performance_{tag}.json',timing)
+            print(f'[Timing] train compute/wait={totals["compute_seconds"]:.1f}/{totals["wait_seconds"]:.1f}s; '
+                  f'eval={sum(evaluation_seconds.values()):.1f}s; checkpoint={snapshot_seconds+checkpoint_seconds:.1f}s; '
+                  f'epoch wall={timing["epoch_wall_seconds"]:.1f}s; details=performance_{tag}.json',flush=True)
             memory=training['cuda_peak_memory']
             if memory:
                 print(f'[CUDA memory] epoch={epoch+1}; peak allocated={memory["allocated_gib"]:.3f} GiB; peak reserved={memory["reserved_gib"]:.3f} GiB; includes training and evaluation',flush=True)
