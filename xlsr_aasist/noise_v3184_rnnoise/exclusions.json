@@ -1,0 +1,50 @@
+{
+  "schema": "rtc_rnnoise_exclusions_v1",
+  "clear_speech": {
+    "source": "https://github.com/xiph/rnnoise/issues/251",
+    "files": [
+      "1506585900089-office.raw",
+      "1506613198283-street.raw",
+      "1506685521238-office.raw",
+      "1506696624320-other.raw",
+      "1506890775110-office.raw",
+      "1506895815096-other.raw",
+      "1506913173112-other.raw",
+      "1506943243649-office.raw",
+      "1506950688321-street.raw",
+      "1506960333480-other.raw",
+      "1506961583802-other.raw",
+      "1506969723079-other.raw",
+      "1507044042452-other.raw",
+      "1507063974483-office.raw",
+      "1507065430027-other.raw",
+      "1507119001551-office.raw",
+      "1507203104584-office.raw",
+      "1507248253471-other.raw",
+      "1507278137650-train.raw",
+      "1507300541584-street.raw",
+      "1507350198843-train.raw",
+      "1507757947291-office.raw",
+      "1507762324044-office.raw",
+      "1507764317054-office.raw",
+      "1507764388966-office.raw",
+      "1507820740116-office.raw",
+      "1507821383566-office.raw",
+      "1507821453362-office.raw",
+      "1509685510922-none.raw",
+      "1509697005790-office.raw",
+      "1509724471357-office.raw",
+      "1526243930052-none.raw",
+      "1526906303516-other.raw",
+      "1530283938518-other.raw"
+    ]
+  },
+  "reported_distortion": {
+    "source": "https://github.com/xiph/rnnoise/issues/252",
+    "files": [
+      "1506937851368-office.raw",
+      "1507372594108-office.raw",
+      "1508917528488-office.raw"
+    ]
+  }
+}
