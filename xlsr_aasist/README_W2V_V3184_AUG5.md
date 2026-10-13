@@ -133,7 +133,7 @@ python v3184_storage.py
 python v3184_storage.py --apply
 ```
 
-开启真正的 V3.18.4 AUG5，结束后自动生成 best submission 并上传分数 ZIP：
+开启真正的 V3.18.4 AUG5，结束后自动生成 best submission 和报告，并分别上传两个 ZIP 到 temp.sh。噪声已经准备完成时直接执行本段，不需要再次下载或准备。`--upload-submission` 对应分数 ZIP，`--upload-temp` 对应报告 ZIP：
 
 ```bash
 PARENT_RUN=$(cat exp/.latest_v3184_parent_run)
@@ -143,29 +143,42 @@ bash run_w2v_v3184_aug5.sh \
   --warm-epochs 1 \
   --submit-best \
   --upload-submission \
+  --upload-temp \
   --submission-protocol /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/progress.txt \
   --submission-audio-root /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/wav/progress
 ```
 
-初始化会运行安装环境中的小型 fairseq2 原生接口检查，包括多窗口标准差梯度，再加载 3B 参数。日志出现 `[Train] V3.18.4 epoch 1/6` 后才进入训练；查看器读取每步日志，Ctrl+C 只关闭查看器。
+终端默认固定一屏刷新：当前阶段、训练进度、速度与 ETA；已完成六轮的 Clean、Noisy、完整 Dev Weighted、Select80 和 best 标记；最新一轮的六组 Dev 指标（Fake/Real recall、F1、AUC、EER、Real@95F）。Select80 是来源隔离的 80% Dev 选模分数。指标仍使用原来的口径，显示精度为百分数小数点后两位；完整精度、Train probe、RTC／六场景诊断均保留在日志和报告中。普通模型、参数、初始化审计和调试信息不再刷进终端。错误时保留简短错误提示；不把上传失败误报为训练尚未完成。
+
+初始化期间显示 Startup 阶段和耗时，完成接口检查与 3B 加载后才显示 Training 及步数；每轮评估显示当前评估阶段和耗时。查看器不加载模型、不执行推理，增量读取已有步骤记录，指标文件只在变动时重新读取。Ctrl+C 只关闭查看器，后台训练继续；以下命令重新打开：
 
 ```bash
 bash watch_w2v_v3184_aug5.sh
 ```
 
-完成后读取实际 temp.sh 链接：
+屏幕较小时自动分页；需要查看其他评估面板或之前某轮，执行只读快照。例如查看第二轮固定 Train probe，或六场景的第二页：
+
+```bash
+bash watch_w2v_v3184_aug5.sh --once --panel train --epoch 2
+bash watch_w2v_v3184_aug5.sh --once --panel scenes --page 2
+```
+
+完成后屏幕分别显示 SUBMISSION 与 REPORT 的 temp.sh 链接。极小的终端无法容纳长链接时显示链接文件位置，避免刷出屏幕；也可随时读取已保存的两个链接：
 
 ```bash
 RUN=$(cat exp/.latest_v3184_aug5_run)
-OUT="/home/ubuntu/LXT/temp/$(basename "$RUN")_submission_best"
-cat "$OUT/temp_download_url.txt"
+cat "$RUN/download_links.txt"
 ```
 
-上传失败时，以下命令仅重试已有分数上传，不重新执行 GPU 推理：
+报告默认保存在数据盘 `/home/ubuntu/LXT/temp/RUN_report.zip`，包含配置、训练记录、评估分数与诊断图表；不含模型权重或录音。分数链接还保存在提交目录的 `temp_download_url.txt`，报告链接保存在运行目录的 `report_temp_download_url.txt`。两个上传独立记录状态；任一个失败仍保留另一个成功链接和两个本地 ZIP。
+
+上传失败时，以下命令分别检查并重试已有 submission 和报告，不重新训练、不加载 checkpoint 或执行 GPU 推理。内容未变且已有上传回执时复用链接；临时链接过期时加 `--force` 重新上传：
 
 ```bash
-bash upload_w2v_v3184_aug5.sh --out "$OUT"
+bash upload_w2v_v3184_aug5.sh --run "$RUN"
 ```
+
+该重试入口要求已经生成 best 的分数 ZIP；若失败发生在分数推理之前，通过下面的 `--resume` 入口完成导出。原 `--out SUBMISSION_DIRECTORY` 仍只重试分数上传。详细原始日志的位置保存在 `exp/.latest_v3184_aug5_log`。
 
 重启后挂载数据盘、激活同一环境，在该目录恢复：
 
@@ -173,7 +186,7 @@ bash upload_w2v_v3184_aug5.sh --out "$OUT"
 bash run_w2v_v3184_aug5.sh --resume "$(cat exp/.latest_v3184_aug5_run)"
 ```
 
-恢复使用已保存参数、视图轮转、随机状态、优化器和提交请求，从最后完整 epoch 接续，不允许夹带新的学习率或增强参数。独立导出入口是 `export_w2v_v3184_aug5.sh --run RUN --checkpoint best --upload-temp`，默认使用同一 Progress 路径；训练自动导出流程更适合常规使用。
+恢复使用已保存参数、视图轮转、随机状态、优化器、提交请求和报告上传请求，从最后完整 epoch 接续，不允许夹带新的学习率或增强参数。独立导出入口是 `export_w2v_v3184_aug5.sh --run RUN --checkpoint best --upload-temp`，默认使用同一 Progress 路径；训练自动导出流程更适合常规使用。
 
 ## 对照与验收
 

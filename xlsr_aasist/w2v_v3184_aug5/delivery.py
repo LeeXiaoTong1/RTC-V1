@@ -1,4 +1,4 @@
-"""Best-only post-training export and retryable submission-only temp.sh delivery."""
+"""Best-only export and retryable artifact delivery without repeating inference."""
 import argparse
 from datetime import datetime,timezone
 import math
@@ -148,6 +148,9 @@ def finish_request(run,cfg,request,exporter=None):
         result=dict(status='complete',out=str(out),archive=str(archive),selected=meta['selected'],url=url,
                     zip_sha256=meta['zip_sha256'],uploaded=bool(url))
         atomic_json(status,result)
+        from .reports import update_links
+        update_links(run)
+        if url:print('SUBMISSION_TEMP_URL='+url,flush=True)
         (ROOT/'exp').mkdir(parents=True,exist_ok=True)
         (ROOT/'exp'/'.latest_v3184_aug5_submission').write_text(str(out)+'\n',encoding='utf-8')
         return result
@@ -157,10 +160,16 @@ def finish_request(run,cfg,request,exporter=None):
 
 
 def main():
-    p=argparse.ArgumentParser(description='Upload an existing verified submission without rerunning inference')
-    p.add_argument('--out',required=True);p.add_argument('--force',action='store_true',help='Re-upload even if a link is saved, e.g. after expiry')
-    args=p.parse_args();out=Path(args.out).expanduser().resolve()
-    upload_submission(out,args.force)
+    p=argparse.ArgumentParser(description='Retry existing submission/report uploads without rerunning training or inference')
+    target=p.add_mutually_exclusive_group(required=True)
+    target.add_argument('--out',help='Existing submission directory; upload scores only')
+    target.add_argument('--run',help='AUG5 training directory; independently retry submission and report')
+    p.add_argument('--force',action='store_true',help='Re-upload even if a link is saved, e.g. after expiry')
+    args=p.parse_args()
+    if args.out:upload_submission(Path(args.out).expanduser().resolve(),args.force)
+    else:
+        from .reports import retry_outputs
+        retry_outputs(args.run,args.force)
 
 
 if __name__=='__main__':main()

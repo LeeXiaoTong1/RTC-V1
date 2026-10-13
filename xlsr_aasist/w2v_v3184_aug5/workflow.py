@@ -3,31 +3,15 @@ from datetime import datetime
 from pathlib import Path
 import secrets
 import traceback
-import zipfile
 import sys
-from w2v_aasist.launch import run_lock,upload_archive
+from w2v_aasist.launch import run_lock
 from w2v_aasist.full_workflow import ensure_idle
 from .common import ROOT,RECIPE,atomic_json,read_json,digest
 from .config import parser,validate,validate_locked_cli,configuration,verify_inputs
 from .train import run_experiment
 from .sampling import describe
 from .delivery import prepare_request,finish_request
-
-
-def report(run,destination,upload=False):
-    run=Path(run);destination=Path(destination);destination.mkdir(parents=True,exist_ok=True)
-    path=destination/(run.name+'_report.zip')
-    temporary=path.with_suffix('.zip.tmp')
-    with zipfile.ZipFile(temporary,'w',zipfile.ZIP_DEFLATED) as z:
-        for p in sorted(run.rglob('*')):
-            if p.is_file() and p.suffix in ('.json','.jsonl','.txt','.log','.md','.csv','.html','.npz'):
-                z.write(p,p.relative_to(run))
-    temporary.replace(path)
-    print('REPORT_ZIP='+str(path),flush=True)
-    if upload:
-        try:upload_archive(path)
-        except Exception as exc:print('REPORT_UPLOAD_FAILED='+str(exc)+'; local report retained',flush=True)
-    return path
+from .reports import report,prepare_request as prepare_report_request
 
 
 def main():
@@ -51,6 +35,7 @@ def main():
             atomic_json(run/'config.json',cfg);atomic_json(run/'input_audit.json',describe(train,cfg['seed'],cfg['stream_sources'],cfg['group_quotas'],cfg['view_factor']))
         (ROOT/'exp'/'.latest_v3184_aug5_run').write_text(str(run)+'\n',encoding='utf-8')
         print('V3184_RUN='+str(run),flush=True)
+        report_request=prepare_report_request(args,run,sys.argv[1:])
         try:
             request=prepare_request(args,run,cfg)
             if not (run/'completed.json').exists() or read_json(run/'completed.json')['status']!='complete':
@@ -62,8 +47,11 @@ def main():
         except BaseException:
             (run/'failure.log').write_text(traceback.format_exc(),encoding='utf-8');raise
         finally:
-            try:report(run,args.download_dir,args.upload_temp)
-            except Exception as exc:print('REPORT_EXPORT_FAILED='+str(exc),flush=True)
+            already_failed=sys.exc_info()[0] is not None
+            try:report(run,report_request['destination'],report_request['upload'])
+            except Exception as exc:
+                print('REPORT_EXPORT_FAILED='+str(exc),flush=True)
+                if not already_failed:raise
 
 
 if __name__=='__main__':main()

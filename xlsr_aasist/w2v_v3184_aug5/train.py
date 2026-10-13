@@ -138,6 +138,7 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
             print('[Eval] full fixed Dev, fixed Train probe, independent mechanisms and six scenes',flush=True)
             evaluation_seconds={}
             def timed_infer(name,*args):
+                print('[Eval phase] '+name,flush=True)
                 began=time.monotonic();result=infer(*args)
                 evaluation_seconds[name]=time.monotonic()-began
                 return result
