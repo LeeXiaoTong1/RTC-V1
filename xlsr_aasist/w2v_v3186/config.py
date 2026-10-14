@@ -14,7 +14,7 @@ from .parent import inspect_parent
 
 def parser():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--parent-run',help='Completed V3.18.5 best; default exp/.latest_v3185_run')
+    p.add_argument('--parent-run',help='Completed V3.18.5 best; auto-discover if the latest-run pointer is missing')
     p.add_argument('--parent-tag',help='Optional assertion for the exact parent best tag')
     p.add_argument('--noise-manifest',default=str(ROOT/'assets/noise_v3184_rnnoise/manifest.json'))
     p.add_argument('--phoneme-manifest',default=str(ROOT/'assets/phonemes_v3186/manifest.json'))
@@ -94,11 +94,8 @@ def validate_locked_cli(args,argv):
 
 def configuration(args):
     validate(args)
-    source=args.parent_run
-    if not source:
-        pointer=ROOT/'exp/.latest_v3185_run'
-        if not pointer.is_file():raise FileNotFoundError('Specify a completed V3.18.5 --parent-run')
-        source=pointer.read_text(encoding='utf-8').strip()
+    from .parent_discovery import resolve_parent
+    source=resolve_parent(args.parent_run,root=ROOT)
     print('[Startup] inspecting completed V3.18.5 BEST',flush=True)
     old,weights,parent=inspect_parent(source,args.parent_tag);del weights
     if not args.device.startswith('cuda') or not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():

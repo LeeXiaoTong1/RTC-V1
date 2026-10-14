@@ -74,9 +74,10 @@ git pull --ff-only origin w2vbert2-balanced-robust-fast
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate /home/ubuntu/LXT/v318-runtime/envs/sdd-v318
 cd xlsr_aasist
-PARENT_RUN=$(cat exp/.latest_v3185_run)
-printf '%s\n' "$PARENT_RUN"
+PARENT_RUN=$(python -m w2v_v3186.parent_discovery) && printf '%s\n' "$PARENT_RUN"
 ```
+
+不要求 `exp/.latest_v3185_run` 存在。若有有效记录则复用；否则在当前项目以及同级 `RTC` / `RTC-w2v-improved` 的 `xlsr_aasist/exp` 下读取实际版本与完成状态，只有一个兼容的 V3.18.5 时自动选用。多个候选会列出并要求明确 `--parent-run`，不会自动挑日期最新或改用 V3.18.4。找不到时可运行 `python -m w2v_v3186.parent_discovery --list` 查看记录；运行目录移动过可加 `--search-root EXP_DIR`。
 
 只需准备新音素元数据，已准备好的 V3.18.4 噪声库不必重新下载：
 

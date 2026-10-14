@@ -49,7 +49,7 @@ print(json.dumps({'packages': result, 'python': sys.version,
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--parent-run', help='Default: exp/.latest_v3185_run')
+    p.add_argument('--parent-run', help='Completed V3.18.5 parent; auto-discover when the latest-run pointer is missing')
     p.add_argument('--output-dir', default=str(ROOT / 'assets/phonemes_v3186'))
     p.add_argument('--model-cache', default='/home/ubuntu/LXT/v318-runtime/hf-phonemes')
     p.add_argument('--environment-root', default='/home/ubuntu/LXT/v318-runtime/phoneme-env-v3186')
@@ -61,16 +61,8 @@ def parser():
 
 
 def resolve_parent(value):
-    if value is None:
-        pointer = ROOT / 'exp/.latest_v3185_run'
-        if not pointer.is_file(): raise FileNotFoundError('Specify --parent-run or create exp/.latest_v3185_run')
-        value = pointer.read_text(encoding='utf-8').strip()
-    if not value: raise ValueError('Empty V3.18.5 parent path')
-    parent = Path(value).expanduser().resolve()
-    with (parent / 'config.json').open(encoding='utf-8') as f: cfg = json.load(f)
-    if cfg.get('version') != '3.18.5': raise ValueError('Phoneme preparation requires V3.18.5 Train inventory')
-    if not (parent / 'train_rows.json').is_file(): raise FileNotFoundError(parent / 'train_rows.json')
-    return parent
+    from .parent_discovery import resolve_parent as discover
+    return discover(value,root=ROOT)
 
 
 def private_environment(cache_root, model_cache):

@@ -52,9 +52,8 @@ class BootstrapTests(unittest.TestCase):
 
     def test_completed_cache_fastpath_has_no_probe_install_or_venv(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp); parent = root / 'parent'; parent.mkdir()
-            (parent / 'config.json').write_text(json.dumps({'version': '3.18.5'}))
-            (parent / 'train_rows.json').write_text('[]')
+            from .test_parent_discovery import candidate
+            root = Path(tmp); parent = candidate(root / 'parent')
             output = root / 'phones'; output.mkdir(); (output / 'manifest.json').write_text('{}')
             args = env.parser().parse_args(['--parent-run', str(parent), '--output-dir', str(output),
                 '--environment-root', str(root / 'private'), '--cache-root', str(root / 'cache'),
