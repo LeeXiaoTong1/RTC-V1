@@ -1,6 +1,6 @@
-# V3.18.6：接收端双分支音素一致性与整句分类
+# V3.18.6：恢复重叠窗口与注意力统计汇聚，保留双分支音素一致性
 
-此版本从**已完成的 V3.18.5 best 或 V3.18.4 AUG5 ASP best**迁移，保留全层 Omni 融合、AASIST，采用 V3.18.5 数据扩充规则及 C3 分类。新增两个训练期音素约束，移除外部局部窗口汇聚和 ASP。旧版本源码与 checkpoint 不改写。
+此修复从**已完成的 V3.18.5 best 或 V3.18.4 AUG5 ASP best**完整继承模型，恢复父模型的重叠窗口、贡献权重、注意力统计汇聚和完整 320 维分类器；保留全层 Omni 融合、AASIST、V3.18.5 数据扩充规则、C3 分类及双分支音素约束。公开版本仍是 **V3.18.6**，内部 recipe 改为 `v3186_window_asp_dual_pcl_v2`，防止误接旧整句模型的 checkpoint。旧版本源码与 checkpoint 不改写。
 
 父版本兼容修复：服务器上实际存在的是 `v3184_aug5_asp_v1`，此前只接受版本号 3.18.5，导致已封存的 AUG5 训练也被拒绝。两者的模型和 ASP 模块代码相同，现在分别通过各自原版本的加载器验证 checkpoint 哈希、配置身份、schema 与 best 记录，再执行严格的张量迁移；不修改版本号绕过校验。普通 V3.18.4、R2、未完成运行仍不可替代。即使继承 AUG5 权重，新训练也使用 **5/5/1/3**，不继承旧版四组统一 ×5。
 
@@ -39,9 +39,11 @@ Offline 的增强始终在环境噪声与 RTC 之前；分类端只收到最终 
 
 ## 模型迁移与参数
 
-完整录音的融合帧直接进入 AASIST 的原生 160 维读出，再真假分类。不存在外部分窗、窗口贡献模块、窗口注意力统计池化。AASIST 内部图注意力/读出保留。
+完整录音只经过一次 Omni 编码与多层融合，再对融合帧进行重叠分窗。窗口长度、步长、窗口物理批次完整继承父配置（当前目标父模型为 128 帧窗口、64 帧步长）。每窗经 AASIST 得到 160 维表示，结合窗口覆盖与贡献权重、可学习注意力计算整句的加权均值和加权标准差，拼成 320 维后分类。PCL 仍作用于窗口分类前的融合帧特征；干净 RTC 和官方配对参照不进入窗口分类头。
 
-迁移父版本 LoRA、全层融合、AASIST 主体和 BN 缓冲。旧 320 维分类器保留均值部分的前 160 列和 bias；标准差部分与外部汇聚模块丢弃。**结构改变不保持父模型输出恒等**，因此父分数仅作参考，不是本次 best 候选。优化器新建；best 只从 V3.18.6 已完成 epoch 选择。
+父版本全部可训练张量及 BN 缓冲严格加载，包含 LoRA、全层融合、AASIST、窗口贡献模块、注意力模块和完整 320 维分类器。**不截列、不重置后端、不丢弃标准差特征。**优化器新建；best 仍只从 V3.18.6 已完成 epoch 选择，不暗中回退到父模型。
+
+开始优化之前必须对新模型执行一次完整固定 Dev 推理，按父模型的物理推理批次复现已保存的 best 原始 logits，核对行身份、顺序和固定验证划分；同时核对全 Dev、选择集、校准划分的 raw Weighted。logits 容差为 `atol=0.003, rtol=0.001`，Weighted 绝对差不超过 `0.001`（指标内部比例口径）。失败时保存审计并停止，不能继续更新。实际新推理与父缓存分别保存为 `parent_baseline_scores.npz`、`parent_reference_scores.npz`，均进入 report；不是只读父缓存就宣称复现。
 
 | 模块 | 最高学习率 |
 |---|---:|
@@ -49,9 +51,11 @@ Offline 的增强始终在环境噪声与 RTC 之前；分类端只收到最终 
 | AASIST 主体 | 3e-5 |
 | 全层投影与门控 | 1e-4 |
 | 层混合权重 | 3e-4 |
-| 160 维分类器 | 1e-4 |
+| 完整 320 维分类器 | 1e-4 |
+| 窗口贡献模块 | 3e-5 |
+| 注意力统计汇聚模块 | 3e-5 |
 
-LoRA 学习率前 200 更新渐入，各模块沿用余弦衰减、末端比例 0.1。BN 只在分类音频上更新；AASIST 按实际相同长度分组，避免填充帧污染 BN/图结构。
+LoRA 学习率前 200 更新渐入，各模块沿用余弦衰减、末端比例 0.1。BN 只在分类窗口上更新；AASIST 窗口按实际相同长度分组，避免填充帧污染 BN/图结构。
 
 ## 速度与存储
 
@@ -59,24 +63,35 @@ LoRA 学习率前 200 更新渐入，各模块沿用余弦衰减、末端比例 
 - 最多 48 条分类 + 16 条干净参照 + 8 条官方参照。辅助监督仍有真实计算成本，不能宣称与旧版一样快。
 - 不缓存 60 层全量特征，不保存增强 WAV；音素准备只存 JSON 元数据。模型下载、准备环境、pip/HF/TMP 均在数据盘。
 - 音素片段用前缀和汇聚；有效性检查每对录音只各降采样一次，局部只计算所需相关延迟；完整训练预算审计和 checkpoint 快照不重复生成。
-- 默认 `microbatch=8, frame-budget=12000`，包含辅助输入；AASIST 最多同长度 8 条，时间图总预算 1,000,000。超过默认 3000 帧（约一分钟）的录音明确报错，不偷偷裁剪；应根据显存显式调整 `--whole-max-frames` 与 `--whole-graph-budget`。
+- 默认 `microbatch=8, frame-budget=12000`，包含辅助输入；AASIST 使用父模型的 `window_batch`，图规模按窗口限制，不再套用旧整句图的平方预算。超过默认 3000 帧（约一分钟）的录音明确报错，不偷偷裁剪；应根据编码器显存显式调整 `--whole-max-frames`。窗口不会重复调用 Omni，也不落盘缓存完整特征。
 - 启动前扫描 Train/Dev 的长度信息，并在指定自动提交时读取目标音频文件头；考虑变速后的最长输入与整组辅助输入预算。超限会在训练前指出样本和需调整的资源参数，避免训完后才发现不能导出。预检不读取评测标签或用于调参。
 - 每 100 更新抽样审计一次：辅助/分类梯度只测首个有效辅助微批次的共享投影；参数变化最多取每个 optimizer 参数组前 1024 个元素。不是完整模型梯度冲突估计，也没有每步额外三次大模型反传。
 - `performance_epoch_*.json` 记录训练计算、数据等待、各评估阶段及保存耗时；峰值显存包括训练与评估。没有本地 A100 吞吐实测，不预设“显存用满就是更快”。
 
 ## 服务器部署
 
-先确保数据盘已挂到 `/home/ubuntu/LXT`，父版本已训练完成，并停掉其它 GPU 训练任务。以下命令全部 ASCII。
+先确保数据盘已挂到 `/home/ubuntu/LXT`，父版本已训练完成。若旧 V3.18.6 正在运行，先按下 `Ctrl+C` 退出查看器（不会停止训练），然后在更新源码前停止它。以下脚本先 fetch，不改变工作区；从已发布分支取出独立停止工具，校验本项目的 supervisor、进程会话、日志和 run 身份后发送 TERM。它不使用宽泛的 pkill，不自动 KILL；正在计算的未完成轮不保存，已有完整 checkpoint 保留。
 
 ```bash
-cd /home/ubuntu/LXT/RTC-w2v-improved
-git switch w2vbert2-balanced-robust-fast
-git pull --ff-only origin w2vbert2-balanced-robust-fast
+cd /home/ubuntu/LXT/RTC-w2v-improved &&
+git fetch origin w2vbert2-balanced-robust-fast &&
+mkdir -p /home/ubuntu/LXT/temp &&
+git show origin/w2vbert2-balanced-robust-fast:xlsr_aasist/w2v_v3186/stop.py > /home/ubuntu/LXT/temp/stop_v3186.py &&
+python /home/ubuntu/LXT/temp/stop_v3186.py \
+  --root /home/ubuntu/LXT/RTC-w2v-improved/xlsr_aasist \
+  --run /home/ubuntu/LXT/RTC-w2v-improved/xlsr_aasist/exp/w2v_v3186_20261014_144952_c2b6
+```
 
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate /home/ubuntu/LXT/v318-runtime/envs/sdd-v318
-cd xlsr_aasist
-PARENT_RUN=exp/w2v_v3184_aug5_20261013_105027_64d9_sealed_e4_6bf9956295
+确认工具成功返回停止状态，再更新源码并启动新运行；不要恢复失败的旧整句运行。
+
+```bash
+cd /home/ubuntu/LXT/RTC-w2v-improved &&
+git switch w2vbert2-balanced-robust-fast &&
+git pull --ff-only origin w2vbert2-balanced-robust-fast &&
+source "$(conda info --base)/etc/profile.d/conda.sh" &&
+conda activate /home/ubuntu/LXT/v318-runtime/envs/sdd-v318 &&
+cd xlsr_aasist &&
+PARENT_RUN=exp/w2v_v3184_aug5_20261013_105027_64d9_sealed_e4_6bf9956295 &&
 python -m w2v_v3186.parent_discovery --parent-run "$PARENT_RUN"
 ```
 
@@ -84,7 +99,7 @@ python -m w2v_v3186.parent_discovery --parent-run "$PARENT_RUN"
 
 其它部署可使用 `PARENT_RUN=$(python -m w2v_v3186.parent_discovery)`：若有有效的 latest 记录则复用；否则在当前项目以及同级 `RTC` / `RTC-w2v-improved` 的 `xlsr_aasist/exp` 下读取实际 recipe 与完成状态。只有一个兼容候选时自动选用；多个候选会要求明确 `--parent-run`，不会按日期或分数挑选。找不到时可运行 `python -m w2v_v3186.parent_discovery --list` 查看记录；目录移动过可加 `--search-root EXP_DIR`。
 
-只需准备新音素元数据，已准备好的 V3.18.4 噪声库不必重新下载：
+已完成的 V3.18.6 音素元数据与 V3.18.4 噪声库直接复用，无需重跑准备。以下命令仅适用于尚未准备音素的新环境：
 
 ```bash
 bash prepare_phonemes_v3186.sh \
@@ -112,7 +127,7 @@ bash run_w2v_v3186.sh \
   --submission-audio-root /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/wav/progress
 ```
 
-训练启动前自动执行小型原生 fairseq2/CUDA 接口验收，检查全层融合、PCL 反传及整句 AASIST。它不是 3B 全数据吞吐测试。终端只显示固定屏幕进度和每轮评估，详细日志留在 `exp/v3186_*.log`。关闭查看器不会停止后台训练：
+训练启动前自动执行小型原生 fairseq2/CUDA 接口验收，检查全层融合、PCL 反传及重叠窗口 ASP；随后实际加载父 best 并进行上述完整 Dev 复现。完整 Dev 需要一次验证耗时，此时还没开始 epoch 1。终端保留固定屏幕进度和每轮评估，详细日志留在 `exp/v3186_*.log`。关闭查看器不会停止后台训练：
 
 ```bash
 bash watch_w2v_v3186.sh
@@ -130,6 +145,18 @@ bash upload_w2v_v3186.sh --run "$RUN"
 
 report ZIP 包含指标、对齐覆盖、采样、性能与配置；不包含录音、模型权重或大特征。只有在训练、导出、上传实际成功后才有 temp.sh 链接。
 
+如果启动时没有指定自动提交，可在新运行训练完成后手动导出 **best** 并上传 submission 与 report：
+
+```bash
+RUN=$(cat exp/.latest_v3186_run)
+bash export_w2v_v3186.sh \
+  --run "$RUN" \
+  --checkpoint best \
+  --protocol /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/progress.txt \
+  --audio-root /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/wav/progress \
+  --upload-temp
+```
+
 若训练因关机/中断停止，从最后完整保存的 epoch 恢复，未完成轮会重放：
 
 ```bash
@@ -137,13 +164,15 @@ RUN=$(cat exp/.latest_v3186_run)
 bash run_w2v_v3186.sh --resume "$RUN"
 ```
 
-恢复沿用已保存的训练与交付配置，不接受改学习率/轮数/损失。要验证 PCL 增益，另建相同起点的 CE-only 运行，在新启动命令加入 `--consistency none`；它完全省去参照准备和计算。两者分类抽样/波形一致，但因辅助输入影响微批次分组，BN 物理批次未保证逐步相同，因此不称为逐位严格控制实验。
+恢复仅适用于本次窗口修复之后的新 recipe，沿用已保存训练与交付配置，不接受改学习率/轮数/损失。旧 `v3186_whole_dual_pcl_v1` checkpoint 不能 `--resume` 到新结构。要验证 PCL 增益，另建相同起点的 CE-only 运行，在新启动命令加入 `--consistency none`；它完全省去参照准备和计算。两者分类抽样/波形一致，但因辅助输入影响微批次分组，BN 物理批次未保证逐步相同，因此不称为逐位严格控制实验。
 
 ## 验收边界
 
 CPU 测试覆盖实际 AASIST、双 PCL 梯度、分类监督质量守恒、无参照 CE、每输入一次编码、版本覆盖、时间映射、缓存完整性、父模型迁移、epoch 断点恢复、best 导出及上传失败重试。没有运行完整 Omni-3B GPU 训练，也没有新的 Progress 结果。
 
-父版本兼容修复后，V3.18.6 测试目录的 **76 项 CPU 测试全部通过**，包括 AUG5 音素准备、原 schema/hash 校验、定向扩充配置，以及两种父版本的双 PCL、断点恢复、best 导出与上传重试。Python 3.10 语法检查通过；6 个 Bash 入口沿用首次发布已验证的版本。端到端测试使用小型替代编码器和真实 AASIST，不将它称为完整 Omni GPU 验证。
+窗口恢复测试验证：完整父状态继承后的多窗口输出一致、320 维分类器保留、恢复模块获得梯度、零更新 Dev 真实推理及不一致拒绝、两个兼容父版本的双 PCL/断点恢复/best 导出、进程停止身份校验、上传失败重试。端到端测试使用小型替代编码器和真实 AASIST，不将它称为完整 Omni GPU 验证。
+
+本次在与远端 `e97672b` 的 1085 个文件逐一核对过的干净发布副本中验证：V3.18.6 模块的 106 项 CPU 测试、终端查看器的 6 项测试全部通过；停止、训练、导出 Bash 入口语法检查通过。未修改本次清单外的源码，未在目标 GPU 上训练。
 
 下载兼容修复的验收覆盖地址切换、部分下载保留、缓存损坏检测与单文件修复、严格离线加载、CLI 参数转发及简短错误退出。网络测试使用受控替身，未在目标服务器完成真实模型下载或 GPU 验证。
 

@@ -18,10 +18,10 @@ from .sampling import Plan, probe_tickets
 
 def tiny_cfg():
     cfg = prior_cfg()
-    cfg.update(version='3.18.6', recipe=RECIPE, pooling='whole', local_evidence=False,
+    cfg.update(version='3.18.6', recipe=RECIPE, pooling='asp', local_evidence=True,
         warm_epochs=0, epochs=2, consistency='dual', pcl_platform_weight=.15, pcl_noise_weight=.15,
         pcl_ramp_updates=2, platform_sources_per_group=1, gradient_audit_interval=2,
-        whole_max_frames=3000, whole_graph_budget=1_000_000, whole_batch=8,
+        whole_max_frames=3000,
         microbatch=8, frame_budget=1000, inference_requires_phonemes=False)
     return cfg
 

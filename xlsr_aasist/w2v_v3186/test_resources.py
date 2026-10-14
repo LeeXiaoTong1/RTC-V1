@@ -9,11 +9,12 @@ def row(identity,samples,condition='offline',source='off'):
 
 
 class ResourceTests(unittest.TestCase):
-    def test_exact_frame_and_graph_boundaries(self):
+    def test_full_encoder_limit_with_bounded_window_graphs(self):
         n=400+320*(3000-1)
         out=audit_inference([row('limit',n)],{})
         self.assertEqual(out['maxima']['classification_frames'],3000)
-        self.assertEqual(out['minimum_required']['whole_graph_budget'],1_000_000)
+        self.assertNotIn('whole_graph_budget',out['minimum_required'])
+        self.assertEqual(out['aasist_windows']['max_temporal_graph_cells_per_window'],42**2)
         # The 319 extra samples do not create another encoder frame.
         audit_inference([row('tail',n+319)],{})
         with self.assertRaisesRegex(ValueError,'whole-max-frames 3001'):

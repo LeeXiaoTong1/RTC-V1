@@ -19,6 +19,14 @@ def history(count=6):
 
 
 class ProgressTests(unittest.TestCase):
+    def test_parent_replay_is_shown_as_initialization_not_training(self):
+        state=Dashboard('unused')
+        state.line('[Parent verification] full fixed Dev inference before the first update')
+        self.assertIn('verifying parent on full Dev',state.progress())
+        self.assertEqual(state.epoch,0)
+        state.line('[Parent verified] epoch_4 full Weighted=95.6')
+        self.assertIn('parent Dev verified',state.progress())
+
     def test_six_epochs_groups_and_both_links_fit_without_scrolling(self):
         state=Dashboard('unused');state.epoch=6;state.history=history();state.exit_code=0;state.stage('Complete')
         state.links=dict(submission_url='https://temp.sh/Ab123/submission.zip',

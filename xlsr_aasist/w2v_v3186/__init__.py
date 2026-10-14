@@ -1,1 +1,1 @@
-"""V3.18.6: whole-utterance detection and received-audio phoneme consistency."""
+"""V3.18.6: overlapping-window ASP detection and received-audio phoneme consistency."""

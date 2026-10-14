@@ -39,12 +39,10 @@ def parser():
     p.add_argument('--microbatch',type=int,default=8)
     p.add_argument('--frame-budget',type=int,default=12000)
     p.add_argument('--eval-batch',type=int,default=16)
-    p.add_argument('--whole-max-frames',type=int,default=3000,help='Explicit full-utterance resource guard; never truncates audio')
-    p.add_argument('--whole-graph-budget',type=int,default=1000000)
-    p.add_argument('--whole-batch',type=int,default=8)
+    p.add_argument('--whole-max-frames',type=int,default=3000,help='Full-waveform encoder frame guard; AASIST uses inherited feature windows')
     p.add_argument('--rtc-stress-probability',type=float,default=.35)
     p.add_argument('--rtc-stress-ramp-epochs',type=float,default=2.)
-    for name,value in (('lora',1e-5),('head',3e-5),('fusion',1e-4),('layer-mix',3e-4),('classifier',1e-4)):
+    for name,value in (('lora',1e-5),('head',3e-5),('fusion',1e-4),('layer-mix',3e-4),('classifier',1e-4),('evidence',3e-5),('pool',3e-5)):
         p.add_argument('--'+name+'-lr',type=float,default=value)
     p.add_argument('--lr-warmup-updates',type=int,default=200)
     p.add_argument('--lr-floor',type=float,default=.1)
@@ -66,12 +64,12 @@ def validate(args):
     if args.epochs<1 or args.warm_epochs!=0 or args.workers<0:
         raise ValueError('Require positive epochs, zero warm epochs, and nonnegative workers')
     for key,minimum in (('microbatch',4),('frame_budget',48),('eval_batch',1),('whole_max_frames',12),
-                        ('whole_graph_budget',16),('whole_batch',1),('pcl_ramp_updates',1),
+                        ('pcl_ramp_updates',1),
                         ('gradient_audit_interval',1),('lr_warmup_updates',1),('scene_panel_per_group',1)):
         if getattr(args,key)<minimum:raise ValueError('Invalid '+key)
     if not 1<=args.platform_sources_per_group<=min(args.group_quotas):
         raise ValueError('Platform source quota must fit every classification group')
-    for key in ('lora_lr','head_lr','fusion_lr','layer_mix_lr','classifier_lr','rtc_stress_ramp_epochs'):
+    for key in ('lora_lr','head_lr','fusion_lr','layer_mix_lr','classifier_lr','evidence_lr','pool_lr','rtc_stress_ramp_epochs'):
         if not math.isfinite(getattr(args,key)) or getattr(args,key)<=0:raise ValueError('Invalid '+key)
     for key in ('pcl_platform_weight','pcl_noise_weight'):
         if not math.isfinite(getattr(args,key)) or getattr(args,key)<0:raise ValueError('Invalid '+key)
@@ -96,25 +94,26 @@ def training_configuration(old,args,parent):
     """Keep compatible weights/data identities; explicitly replace the recipe."""
     validate(args)
     cfg=copy.deepcopy(old)
-    for key in ('pool_lr','evidence_lr','warm_lr','warm_fusion_lr','warm_layer_mix_lr','warm_evidence_lr','view_factor'):
+    for key in ('warm_lr','warm_fusion_lr','warm_layer_mix_lr','warm_evidence_lr','view_factor','whole_graph_budget','whole_batch','whole_utterance_resource_audit'):
         cfg.pop(key,None)
-    keys=('epochs','workers','device','microbatch','frame_budget','eval_batch','whole_max_frames','whole_graph_budget',
-          'whole_batch','consistency','pcl_platform_weight','pcl_noise_weight','pcl_ramp_updates','platform_sources_per_group',
+    keys=('epochs','workers','device','microbatch','frame_budget','eval_batch','whole_max_frames',
+          'consistency','pcl_platform_weight','pcl_noise_weight','pcl_ramp_updates','platform_sources_per_group',
           'gradient_audit_interval','scene_probability','rtc_policy','view_factors','refresh_base_variants','group_quotas',
           'scene_panel_per_group','rtc_stress_probability','rtc_stress_ramp_epochs','lora_lr','head_lr','fusion_lr',
-          'layer_mix_lr','classifier_lr','lr_warmup_updates','lr_floor')
+          'layer_mix_lr','classifier_lr','evidence_lr','pool_lr','lr_warmup_updates','lr_floor')
     cfg.update({key:getattr(args,key) for key in keys})
-    cfg.update(version='3.18.6',recipe=RECIPE,pooling='whole',local_evidence=False,warm_epochs=0,
+    cfg.update(version='3.18.6',recipe=RECIPE,pooling='asp',local_evidence=True,warm_epochs=0,
         base_original_fraction=.2,stream_sources=16,patience=0,fusion_dim=128,
         fusion_layers=list(range(1,old['encoder_layers']+1)),
         initialization=dict(parent,mode='parent-transfer',old_optimizer_loaded=False,
-            transfer='LoRA, all-layer fusion, AASIST; initialize 160d classifier from parent mean columns',
-            discarded='external window pooling, std classifier columns, optimizer',initial_function_preserved=False,
+            transfer='Complete parent model: LoRA, all-layer fusion, AASIST, window evidence, attention statistics pooling, 320d classifier and BN buffers',
+            discarded='optimizer only',initial_function_preserved=True,
             exact_continuation=False),
         bn_momentum=old.get('bn_momentum',.01),
-        bn_policy='inherit parent buffers; update on unpadded classification utterances only, never auxiliary references',
+        bn_policy='inherit parent buffers; update on classification windows only, never auxiliary references',
         inference_requires_phonemes=False,phoneme_manifest=None,phoneme_files={})
     if args.consistency=='none':cfg.update(pcl_platform_weight=0.,pcl_noise_weight=0.)
+    schema_for(cfg)
     return cfg
 
 
@@ -132,7 +131,7 @@ def configuration(args):
     cfg.update(bind_noise(args.noise_manifest))
     run=Path(parent['run']);train=read_json(run/'train_rows.json');dev=read_json(run/'dev_rows.json')
     from .resources import audit_training
-    cfg['whole_utterance_resource_audit']=audit_training(train,dev,cfg)
+    cfg['window_resource_audit']=audit_training(train,dev,cfg)
     if args.consistency=='dual':
         from .phonemes import bind_manifest
         phonemes=bind_manifest(args.phoneme_manifest,train)

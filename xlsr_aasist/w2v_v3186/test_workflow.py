@@ -1,4 +1,4 @@
-"""Completed ASP parent -> whole-utterance PCL training -> exact resume/export."""
+"""Completed ASP parent -> identity-preserving PCL training -> exact resume/export."""
 import io
 import json
 from contextlib import redirect_stdout
@@ -50,16 +50,17 @@ class WorkflowTests(unittest.TestCase):
             initial = torch.load(full / 'last.pt', weights_only=True)
             for key, current in initial['model'].items():
                 expected = parent_best[key]
-                if key == 'head.aasist.out_layer.weight':
-                    expected = expected[:, :160]
                 torch.testing.assert_close(current, expected, rtol=0, atol=0)
             audit = read_json(full / 'initialization_audit.json')
-            self.assertFalse(audit['initial_function_preserved'])
-            self.assertFalse(audit['external_window_pooling'])
+            self.assertTrue(audit['initial_function_preserved'])
+            self.assertTrue(audit['external_window_pooling'])
             self.assertEqual(audit['bn_statistics_reset'], [])
             self.assertEqual(audit['parent_version'],parent_version)
             self.assertEqual(audit['training_view_factors'],[5,5,1,3])
-            self.assertFalse(any('attention_delta' in key or 'contribution' in key for key in initial['model']))
+            self.assertTrue(any('attention_delta' in key for key in initial['model']))
+            self.assertTrue(any('contribution' in key for key in initial['model']))
+            self.assertFalse(initial['baseline']['reference_only'])
+            self.assertTrue(initial['baseline']['new_model_reproduces_parent'])
             self.assertFalse((full / 'completed.json').exists())
             with self.assertRaises(FileNotFoundError):
                 selected(full, 'best')
@@ -106,8 +107,9 @@ class WorkflowTests(unittest.TestCase):
             out = root / 'dev-export'
             export(resumed, out, dev=True, device='cpu', workers=0, model_factory=tiny_model, verify=False)
             metadata = read_json(out / 'validation_meta.json')
-            self.assertTrue(metadata['whole_utterance'])
-            self.assertFalse(metadata['local_evidence'])
+            self.assertFalse(metadata['whole_utterance'])
+            self.assertTrue(metadata['local_evidence'])
+            self.assertEqual(metadata['pooling'],'asp')
             self.assertFalse(metadata['inference_requires_phonemes'])
             protocol = root / 'eval.txt'
             ids = [row['id'] for row in dev if row['condition'] == 'online']

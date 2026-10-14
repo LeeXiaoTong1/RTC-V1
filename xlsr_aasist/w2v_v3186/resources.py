@@ -1,4 +1,4 @@
-"""Header-only full-utterance resource preflight; never decode or truncate audio."""
+"""Header-only full-waveform encoder / bounded AASIST window resource preflight."""
 from pathlib import Path
 
 SR=16000
@@ -26,18 +26,18 @@ def _frames(samples):
 
 def _limits(cfg):
     return dict(whole_max_frames=int(cfg.get('whole_max_frames',3000)),
-        whole_graph_budget=int(cfg.get('whole_graph_budget',1_000_000)),
         frame_budget=int(cfg.get('frame_budget',12000)),
         microbatch=int(cfg.get('microbatch',8)))
 
 
 def _check_units(units,cfg,scope):
-    limits=_limits(cfg);violations=[];requirements=dict(whole_max_frames=0,whole_graph_budget=0,frame_budget=0,microbatch=0)
+    limits=_limits(cfg);violations=[];requirements=dict(whole_max_frames=0,frame_budget=0,microbatch=0)
+    window=int(cfg.get('window',128));hop=int(cfg.get('hop',64));window_batch=int(cfg.get('window_batch',8))
+    if window<12 or not 1<=hop<=window or window_batch<1:raise ValueError('Invalid AASIST window geometry')
     maxima=dict(classification_frames=0,auxiliary_frames=0,atomic_views=0,atomic_padded_frames=0)
     for unit in units:
         rows=unit['rows'];longest=max(r['frames'] for r in rows);view_count=len(rows)
         needs=dict(whole_max_frames=longest,
-            whole_graph_budget=max(((r['frames']//3)**2 for r in rows if r['classification']),default=0),
             frame_budget=longest*view_count,microbatch=view_count)
         for name,value in needs.items():requirements[name]=max(requirements[name],value)
         for row in rows:
@@ -50,7 +50,9 @@ def _check_units(units,cfg,scope):
             violations.append(dict(source_id=unit['source_id'],rows=[{k:r[k] for k in ('id','role','frames')} for r in rows],required=failed))
     report=dict(scope=scope,units=len(units),limits=limits,minimum_required= requirements,maxima=maxima,
         valid=not violations,over_limit_units=len(violations),violations=violations[:20],
-        waveform_policy='Full utterances; no truncation, no window fallback, no automatic memory-budget increase.',
+        waveform_policy='Encode full waveforms once; cover all fused feature frames with overlapping AASIST windows; no audio truncation.',
+        aasist_windows=dict(window=window,hop=hop,window_batch=window_batch,
+            max_temporal_graph_cells_per_window=(window//3)**2),
         estimate='Resource guards are bounds, not measured GPU-memory guarantees.')
     if violations:
         flags=' '.join('--'+key.replace('_','-')+' '+str(value) for key,value in requirements.items() if value>limits[key])

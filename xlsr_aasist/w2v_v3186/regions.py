@@ -1,4 +1,4 @@
-"""Whole-utterance native AASIST readout, without external window aggregation."""
+"""Legacy whole-utterance head; unused by the restored-window V3.18.6 recipe."""
 from collections import defaultdict
 import torch
 from torch import nn

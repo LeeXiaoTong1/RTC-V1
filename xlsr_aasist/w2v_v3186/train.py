@@ -1,4 +1,4 @@
-"""Explicit parent transfer, whole-utterance adaptation, joint PCL and atomic resume."""
+"""Verified full ASP parent transfer, joint PCL and atomic resume."""
 from collections import defaultdict,Counter
 from pathlib import Path
 import shutil
@@ -53,7 +53,7 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
     fusion_count=sum(p.numel() for p in model.fusion.parameters())
     trainable=lora_count+head+fusion_count
     inventory=dict(total=trainable,head=head,lora=lora_count,fusion=fusion_count,lora_projections=model.lora_inventory,
-        joint_only=True,external_window_pooling=False,pcl_parameters=0,
+        joint_only=True,external_window_pooling=True,pooling='asp',pcl_parameters=0,
         encoder_base_frozen=True,tfcl_parameters=0,head_buffers_saved=True,
         omni_arch=cfg.get('omni_arch','1b'),encoder_dim=cfg['encoder_dim'],encoder_layers=cfg.get('encoder_layers'))
     atomic_json(run/'parameter_inventory.json',inventory)
@@ -80,15 +80,16 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
         state=torch.load(run/'last.pt',map_location='cpu',weights_only=True)
         if state.get('schema')!=schema_for(cfg) or state.get('identity')!=fingerprint(cfg):raise ValueError('Resume configuration changed')
         apply_partial(model,state['model']);optimizer.load_state_dict(state['optimizer']);restore_rng(state['rng'])
-        if not state.get('baseline',{}).get('verified') or not state['baseline'].get('reference_only'):
-            raise ValueError('Resume lacks verified cached parent reference')
+        baseline=state.get('baseline',{})
+        if not baseline.get('verified') or baseline.get('reference_only',True) or not baseline.get('new_model_reproduces_parent'):
+            raise ValueError('Resume lacks an actual verified zero-update parent Dev inference')
         print(f'[Resume] committed epochs={state["epoch"]}; optimizer and BN restored',flush=True)
     else:
         state['initialization_audit']=initialize(model,cfg)
         atomic_json(run/'initialization_audit.json',state['initialization_audit'])
-        print('[Parent] reading completed parent best reference; initialization audit records full continuation or explicit migration',flush=True)
+        print('[Parent] verifying restored model on full fixed Dev before any update',flush=True)
         state['baseline']=baseline_check(model,cfg,run,dev,partition,infer,measure)
-        print('[Initial scenes] fixed six-condition diagnostic before adaptation; no full Dev replay',flush=True)
+        print('[Initial scenes] additional six-condition diagnostic after verified full Dev',flush=True)
         initial_logits,initial_rows=infer(model,scenes,cfg,scene_tickets,'dev')
         state['scene_baseline']=summarize(initial_rows,initial_logits)
         atomic_json(run/'scene_baseline.json',state['scene_baseline'])

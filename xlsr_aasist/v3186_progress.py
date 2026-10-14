@@ -44,6 +44,10 @@ class Dashboard:
             self.epoch,self.epochs,self.total=map(int,match.groups());self.stage('Training')
         elif line.startswith('[Startup]'):
             self.stage('Startup: loading encoder' if 'loading' in line.lower() else 'Startup: verifying inputs')
+        elif line.startswith(('[Parent]', '[Parent verification]')):
+            self.stage('Initialization: verifying parent on full Dev')
+        elif line.startswith('[Parent verified]'):
+            self.stage('Initialization: parent Dev verified')
         elif line.startswith('[Initial scenes]'):self.stage('Initialization: evaluating six scenes')
         elif line.startswith('[Eval]'):self.stage('Evaluation: full Dev')
         elif line.startswith('[Eval phase]'):

@@ -25,9 +25,10 @@ def main(device='cuda:0'):
         ec.pos_conv_kernel_size = 16; ec.num_pos_conv_groups = 4
         arch.quantized_dim = 32; arch.final_dim = 32; arch.num_codebook_entries = 8
         cfg = dict(encoder_dim=64,lora_layers=2,lora_rank=4,lora_alpha=8.,lora_dropout=.05,
-            local_evidence=False,window=128,hop=64,window_batch=8,checkpointing=True,
+            local_evidence=True,window=128,hop=64,window_batch=8,checkpointing=True,
             lora_lr=2e-5,head_lr=1e-4,evidence_lr=1e-4,fusion_lr=3e-4,layer_mix_lr=1e-3,
-            weight_decay=.01,classifier_lr=1e-4,pooling='whole',whole_max_frames=3000,whole_graph_budget=1000000,whole_batch=8,fusion_layers=[1,2,3,4],fusion_dim=128,bn_momentum=.01)
+            weight_decay=.01,classifier_lr=1e-4,pool_lr=1e-4,pooling='asp',whole_max_frames=3000,
+            fusion_layers=[1,2,3,4],fusion_dim=128,bn_momentum=.01)
         dtype = torch.bfloat16 if target_device.type=='cuda' else torch.float32
         ssl = hub.create_new_model(arch,device=target_device,dtype=dtype)
         model = Detector(ssl.encoder_frontend,ssl.encoder,cfg,BatchLayout).to(target_device)
@@ -35,15 +36,23 @@ def main(device='cuda:0'):
         with torch.no_grad():
             for name,p in model.named_parameters():
                 if name.endswith('.lora_b'):p.normal_(0,.01)
+            model.head.attention_delta[-1].weight.normal_(0,.01)
+            model.head.aasist.out_layer.weight[:,160:].normal_(0,.01)
         waves = [np.random.default_rng(i).normal(0,.05,n).astype(np.float32)
-                 for i,n in enumerate((12000,16000))]
+                 for i,n in enumerate((48000,64000,48000))]
         labels = torch.tensor([0,1],device=target_device)
         optimizer = optimizer_for(model,cfg)
         model.set_phase(True); model.train()
         optimizer.zero_grad(set_to_none=True)
         sequences=model.encode(waves)
-        logits=model.classify_sequences(sequences)
-        pcl,count=phoneme_loss(sequences[0],sequences[1],[[0,4000,0,4000],[4000,10000,4000,10000]])
+        # The third received-audio view is an auxiliary clean RTC reference;
+        # it shares this single encode but never reaches AASIST/BN/classification.
+        logits=model.classify_sequences(sequences[:2])
+        if logits.shape!=(2,2) or model.head.aasist.out_layer.in_features!=320:
+            raise RuntimeError('Restored ASP classifier geometry failed')
+        if any(len(model.head.window_plan(len(seq),seq.device)[0])<2 for seq in sequences[:2]):
+            raise RuntimeError('Native window acceptance did not exercise overlapping windows')
+        pcl,count=phoneme_loss(sequences[0],sequences[2],[[0,4000,0,4000],[4000,10000,4000,10000]])
         if count!=2:raise RuntimeError('Native PCL feature geometry failed')
         gradient=torch.autograd.grad(pcl,model.fusion.projection.weight,retain_graph=True)[0]
         if not torch.isfinite(gradient).all() or not gradient.abs().sum()>0:
@@ -55,13 +64,18 @@ def main(device='cuda:0'):
         if not any(p.grad is not None and p.grad.abs().sum()>0
                    for n,p in model.named_parameters() if n.endswith('.lora_b')):
             raise RuntimeError('No joint LoRA gradient through native encoder')
+        for group_name in ('evidence','pooling','classifier','aasist'):
+            gradients=[p.grad for group in optimizer.param_groups if group['name']==group_name
+                       for p in group['params'] if p.grad is not None]
+            if not gradients or not all(torch.isfinite(g).all() for g in gradients) or not sum(g.abs().sum() for g in gradients)>0:
+                raise RuntimeError('Missing/nonfinite window head gradient: '+group_name)
         if any(p.grad is not None for p in model.parameters() if not p.requires_grad):
             raise RuntimeError('Frozen encoder received gradients')
         if any(layer._forward_hooks for layer in model.encoder.layers):
             raise RuntimeError('Layer reader hook leak')
         optimizer.step()
         state = partial_state(model); apply_partial(model,state)
-        print('V3186_NATIVE_INTERFACE_OK=True; all-layer gradients / native PCL backward / whole-utterance readout / joint updates / hook cleanup / state; small random model',flush=True)
+        print('V3186_NATIVE_INTERFACE_OK=True; all-layer gradients / native PCL backward / overlapping-window ASP / 320-d classifier / auxiliary reference excluded from CE / joint updates / hook cleanup / state; small random model',flush=True)
     finally:
         restore_rng(rng)
     if target_device.type=='cuda':

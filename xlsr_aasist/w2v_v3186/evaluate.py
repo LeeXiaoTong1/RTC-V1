@@ -66,7 +66,9 @@ def export(run,out,kind='best',device='cuda:0',workers=4,protocol=None,audio_roo
         fusion=model.fusion.describe(),scene_noise_provenance=cfg.get('scene_noise_provenance'),
         resource_audit=resource_audit,
         scene_noise_summary=cfg.get('scene_noise_summary'),scene_probability=cfg['scene_probability'],rtc_policy=cfg['rtc_policy'],
-        local_evidence=False,whole_utterance=True,inference_requires_phonemes=False,consistency=cfg['consistency'],eval_amp='SSL BF16 / AASIST FP32')
+        local_evidence=bool(cfg['local_evidence']),whole_utterance=cfg['pooling']=='whole',full_waveform_input=True,
+        classification_readout='overlapping window AASIST; attention weighted mean and standard deviation' if cfg['pooling']=='asp' else 'whole-utterance AASIST',
+        inference_requires_phonemes=False,consistency=cfg['consistency'],eval_amp='SSL BF16 / AASIST FP32')
     if dev:
         raw_metrics=measure(rows,logits);metrics=measure(rows,scores_logits)
         for line in table_lines('[Dev] V3.18.6 '+meta['selected']+(' raw' if raw else ' calibrated'),summarize(rows,scores_logits)):print(line,flush=True)
@@ -97,6 +99,7 @@ def main():
     p.add_argument('--dev',action='store_true');p.add_argument('--raw',action='store_true')
     p.add_argument('--out');p.add_argument('--device',default='cuda:0');p.add_argument('--workers',type=int,default=4)
     p.add_argument('--upload-temp',action='store_true')
+    p.add_argument('--report-dir',help='Report ZIP destination; defaults to the saved report destination or the export parent')
     root='/home/ubuntu/LXT/RTC/xlsr_aasist/dataset'
     p.add_argument('--protocol',default=os.environ.get('EVAL_PROTOCOL',root+'/progress.txt'))
     p.add_argument('--audio-root',default=os.environ.get('EVAL_AUDIO_ROOT',root+'/wav/progress'))
@@ -108,8 +111,8 @@ def main():
     with run_lock(ROOT/'exp'/'.aasist-launch.lock'):
         ensure_idle();path=export(run,out,args.checkpoint,args.device,args.workers,args.protocol,args.audio_root,args.dev,args.raw)
         if args.upload_temp and not args.dev:
-            from .delivery import upload_submission
-            upload_submission(path.parent)
+            from .delivery import deliver_export
+            deliver_export(run,path.parent,args.report_dir)
 
 
 if __name__=='__main__':main()

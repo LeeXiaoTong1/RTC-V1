@@ -20,6 +20,8 @@ def fixture(root):
     (run/'audio.wav').write_bytes(b'excluded recording')
     (run/'weights.npz').write_bytes(b'excluded unrecognized tensor file')
     (run/'dev_scores_epoch_1_step_2.npz').write_bytes(b'prediction fixture')
+    (run/'parent_baseline_scores.npz').write_bytes(b'actual zero-update predictions')
+    (run/'parent_reference_scores.npz').write_bytes(b'cached parent predictions')
     (run/'diagnostics').mkdir();(run/'diagnostics'/'curves.html').write_text('<p>metrics</p>')
     atomic_json(run/'report_request.json',dict(destination=str(destination),upload=True))
     return run,destination
@@ -51,7 +53,8 @@ class ReportsTests(unittest.TestCase):
                 report(run,destination,True,force=True);self.assertEqual(upload.call_count,2)
             with zipfile.ZipFile(archive) as z:
                 names=set(z.namelist());manifest=json.loads(z.read('REPORT_MANIFEST.json'))
-                self.assertTrue({'config.json','diagnostics/curves.html','dev_scores_epoch_1_step_2.npz'}<=names)
+                self.assertTrue({'config.json','diagnostics/curves.html','dev_scores_epoch_1_step_2.npz',
+                    'parent_baseline_scores.npz','parent_reference_scores.npz'}<=names)
                 self.assertFalse({'last.pt','audio.wav','weights.npz','report_status.json','download_links.txt'}&names)
                 self.assertEqual({row['file'] for row in manifest['files']},names-{'REPORT_MANIFEST.json'})
             links=(run/'download_links.txt').read_text()

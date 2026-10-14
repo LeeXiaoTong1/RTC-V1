@@ -161,6 +161,43 @@ def finish_request(run,cfg,request,exporter=None):
         raise
 
 
+def deliver_export(run,out,report_destination=None,force=False):
+    """Deliver BOTH artifacts after a standalone export, with CPU-only retries."""
+    from .reports import report,update_links
+    run=Path(run).expanduser().resolve();out=Path(out).expanduser().resolve()
+    archive,meta=check_archive(out);done=read_json(run/'completed.json')
+    if (done.get('status')!='complete' or Path(meta['run']).resolve()!=run or
+        meta['selected']!=done[meta['kind']+'_tag'] or meta['checkpoint_sha256']!=done['checkpoint_sha256']):
+        raise ValueError('Standalone export does not match this completed run checkpoint')
+    saved=read_json(run/'report_request.json') if (run/'report_request.json').is_file() else {}
+    destination=Path(report_destination or saved.get('destination') or out.parent).expanduser().resolve()
+    if destination==run or run in destination.parents:
+        raise ValueError('Report destination must be outside the run')
+    request=dict(out=str(out),destination=str(destination),selected=meta['selected'],
+                 checkpoint_sha256=meta['checkpoint_sha256'],zip_sha256=meta['zip_sha256'])
+    request_path=run/'manual_export_request.json'
+    if not request_path.is_file() or read_json(request_path)!=request:atomic_json(request_path,request)
+    errors=[]
+    with run_lock(run/'.delivery-retry.lock'):
+        try:
+            url=upload_submission(out,force)
+            value=dict(status='complete',out=str(out),archive=str(archive),selected=meta['selected'],url=url,
+                       zip_sha256=meta['zip_sha256'],uploaded=True)
+            status=run/'submission_status.json'
+            if not status.is_file() or read_json(status)!=value:atomic_json(status,value)
+            print('SUBMISSION_TEMP_URL='+url,flush=True)
+        except Exception as exc:
+            errors.append('submission: '+str(exc))
+            atomic_json(run/'submission_status.json',dict(status='failed',out=str(out),archive=str(archive),error=str(exc)))
+        try:report(run,destination,upload=True,force=force)
+        except Exception as exc:errors.append('report: '+str(exc))
+        links=update_links(run)
+    if errors:
+        raise RuntimeError('Artifact delivery incomplete. Retry without inference: bash upload_w2v_v3186.sh --run '
+                           +shlex.quote(str(run))+'; '+'; '.join(errors))
+    return links
+
+
 def main():
     p=argparse.ArgumentParser(description='Retry existing submission/report uploads without rerunning training or inference')
     target=p.add_mutually_exclusive_group(required=True)
@@ -170,8 +207,16 @@ def main():
     args=p.parse_args()
     if args.out:upload_submission(Path(args.out).expanduser().resolve(),args.force)
     else:
-        from .reports import retry_outputs
-        retry_outputs(args.run,args.force)
+        run=Path(args.run).expanduser().resolve();manual=run/'manual_export_request.json'
+        if manual.is_file():
+            request=read_json(manual)
+            archive,meta=check_archive(request['out'])
+            if any(meta[k]!=request[k] for k in ('selected','checkpoint_sha256','zip_sha256')):
+                raise ValueError('Standalone export changed since the delivery request')
+            deliver_export(run,request['out'],request['destination'],args.force)
+        else:
+            from .reports import retry_outputs
+            retry_outputs(run,args.force)
 
 
 if __name__=='__main__':main()

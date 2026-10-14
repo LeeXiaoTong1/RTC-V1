@@ -22,7 +22,7 @@ class ConfigTests(unittest.TestCase):
                      ['--upload-submission'],['--platform-sources-per-group','5']):
             with self.subTest(argv=argv),self.assertRaises(ValueError):validate(parser().parse_args(argv))
 
-    def test_aug5_weights_do_not_inherit_uniform_expansion_or_pooling(self):
+    def test_aug5_restores_complete_pooling_but_uses_targeted_expansion(self):
         from w2v_v3184_aug5.test_support import tiny_cfg
         from .parent_discovery import validate_parent_config
         old=tiny_cfg();old['encoder_layers']=60
@@ -33,11 +33,21 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg['view_factors'],[5,5,1,3])
         self.assertEqual(cfg['group_quotas'],[4,3,5,4])
         self.assertEqual((cfg['version'],cfg['epochs'],cfg['warm_epochs']),('3.18.6',6,0))
-        self.assertEqual(cfg['pooling'],'whole');self.assertFalse(cfg['local_evidence'])
+        self.assertEqual(cfg['pooling'],'asp');self.assertTrue(cfg['local_evidence'])
+        self.assertTrue(cfg['initialization']['initial_function_preserved'])
+        for name in ('window','hop','window_batch'):self.assertEqual(cfg[name],old[name])
+        self.assertEqual((cfg['evidence_lr'],cfg['pool_lr']),(3e-5,3e-5))
         self.assertEqual(cfg['initialization']['parent_version'],'3.18.4')
         self.assertEqual(cfg['initialization']['parent_view_factors'],[5,5,5,5])
         self.assertEqual(cfg['fusion_layers'],list(range(1,61)))
         self.assertEqual(old['pooling'],'asp')
+
+    def test_old_whole_recipe_cannot_resume_as_windows(self):
+        from .common import schema_for
+        from .test_support import tiny_cfg
+        cfg=tiny_cfg();schema_for(cfg)
+        cfg.update(recipe='v3186_whole_dual_pcl_v1',pooling='whole',local_evidence=False)
+        with self.assertRaisesRegex(ValueError,'start a new run'):schema_for(cfg)
 
 
 if __name__=='__main__':unittest.main()
