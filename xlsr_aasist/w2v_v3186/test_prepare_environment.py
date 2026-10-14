@@ -1,5 +1,7 @@
 """Bootstrap contract tests; no real environment install or network activity."""
 import copy
+from contextlib import redirect_stderr
+import io
 import json
 import os
 from pathlib import Path
@@ -15,6 +17,25 @@ class BootstrapTests(unittest.TestCase):
         args = env.parser().parse_args([])
         self.assertEqual(Path(args.output_dir) / 'manifest.json', env.ROOT / 'assets/phonemes_v3186/manifest.json')
         self.assertEqual(args.model_cache, '/home/ubuntu/LXT/v318-runtime/hf-phonemes')
+        self.assertEqual((args.hf_endpoint,args.download_retries),('auto',2))
+
+    def test_download_options_reach_the_isolated_process(self):
+        args=env.parser().parse_args(['--hf-endpoint','https://hf-mirror.com','--download-retries','3'])
+        command=env.preparation_command('/data/private/bin/python',args,Path('/data/parent'))
+        self.assertEqual(command[command.index('--hf-endpoint')+1],'https://hf-mirror.com')
+        self.assertEqual(command[command.index('--download-retries')+1],'3')
+        values=env.private_environment(Path('/data/prep'),Path('/data/models'))
+        self.assertEqual(values['HF_HUB_DISABLE_IMPLICIT_TOKEN'],'1')
+        self.assertEqual(values['HF_HUB_ENABLE_HF_TRANSFER'],'0')
+
+    def test_child_download_failure_keeps_exit_code_without_a_second_traceback(self):
+        failure=env.subprocess.CalledProcessError(2,['python','prepare_phonemes'])
+        with patch.object(env,'execute',side_effect=failure),patch('sys.argv',['prepare']), \
+                redirect_stderr(io.StringIO()) as out,self.assertRaises(SystemExit) as caught:
+            env.main()
+        self.assertEqual(caught.exception.code,2)
+        self.assertIn('cache retained',out.getvalue())
+        self.assertNotIn('Traceback',out.getvalue())
 
     def test_installer_never_resolves_protected_dependencies(self):
         command = env.pip_command('/data/private/bin/python', '/data/prep')

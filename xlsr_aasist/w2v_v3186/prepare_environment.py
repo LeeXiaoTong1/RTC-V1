@@ -57,6 +57,8 @@ def parser():
     p.add_argument('--device', default='cuda:0')
     p.add_argument('--local-files-only', action='store_true',
                    help='No network: require prepared dependency wheels and pinned model already cached')
+    from .phoneme_download import add_download_arguments
+    add_download_arguments(p)
     return p
 
 
@@ -76,14 +78,17 @@ def private_environment(cache_root, model_cache):
                   PIP_DISABLE_PIP_VERSION_CHECK='1', TOKENIZERS_PARALLELISM='false',
                   TMPDIR=str(cache_root / 'tmp'), TMP=str(cache_root / 'tmp'), TEMP=str(cache_root / 'tmp'),
                   PIP_CACHE_DIR=str(cache_root / 'pip'), HF_HOME=str(model_cache),
-                  HF_HUB_CACHE=str(model_cache), TRANSFORMERS_CACHE=str(model_cache))
+                  HF_HUB_CACHE=str(model_cache), TRANSFORMERS_CACHE=str(model_cache),
+                  HF_HUB_DISABLE_IMPLICIT_TOKEN='1', HF_HUB_DISABLE_TELEMETRY='1',
+                  HF_HUB_ENABLE_HF_TRANSFER='0', HF_HUB_ETAG_TIMEOUT='10', HF_HUB_DOWNLOAD_TIMEOUT='30')
     return result
 
 
 def preparation_command(python, args, parent):
     command = [str(python), '-u', '-m', 'w2v_v3186.prepare_phonemes',
                '--parent-run', str(parent), '--output-dir', str(Path(args.output_dir).expanduser().resolve()),
-               '--model-cache', str(Path(args.model_cache).expanduser().resolve()), '--device', args.device]
+               '--model-cache', str(Path(args.model_cache).expanduser().resolve()), '--device', args.device,
+               '--hf-endpoint',args.hf_endpoint,'--download-retries',str(args.download_retries)]
     if args.local_files_only: command.append('--local-files-only')
     return command
 
@@ -212,7 +217,13 @@ def execute(args):
         subprocess.run(preparation_command(python, args, parent), cwd=ROOT, env=env, check=True)
 
 
-def main(): execute(parser().parse_args())
+def main():
+    try:execute(parser().parse_args())
+    except subprocess.CalledProcessError as exc:
+        print('PHONEME_PREPARATION_FAILED=Child preparation exited '+str(exc.returncode)+
+              '; completed environment/model/phoneme cache retained. Rerun the same command after fixing the error above.',
+              file=sys.stderr,flush=True)
+        raise SystemExit(exc.returncode if exc.returncode>0 else 1) from None
 
 
 if __name__ == '__main__': main()

@@ -8,6 +8,7 @@ import argparse
 from collections import Counter
 import os
 from pathlib import Path
+import sys
 import time
 
 import numpy as np
@@ -16,22 +17,23 @@ from .phonemes import (SCHEMA, MODEL_ID, MODEL_REVISION, SAMPLE_RATE, ALGORITHM,
     digest_file, digest_json, read_json, atomic_json, lineage, inventory,
     record_name, validate_record, bind_manifest, greedy_tokens, ctc_align, segment_support)
 from .parent_discovery import validate_parent_config
+from .phoneme_download import ensure_model,add_download_arguments,ModelDownloadError
 
 
 class Recognizer:
-    def __init__(self, model_cache, device, local_files_only=False):
+    def __init__(self, model_cache, device, local_files_only=False, *, hf_endpoint='auto', download_retries=2):
         import torch
         from transformers import AutoFeatureExtractor, AutoTokenizer, AutoModelForCTC
         self.torch = torch; self.device = torch.device(device)
         if self.device.type == 'cuda' and not torch.cuda.is_available():
             raise RuntimeError('Requested CUDA phoneme preparation but CUDA is unavailable')
-        options = dict(revision=MODEL_REVISION, cache_dir=str(model_cache),
-                       local_files_only=local_files_only, trust_remote_code=False)
-        self.extractor = AutoFeatureExtractor.from_pretrained(MODEL_ID, **options)
+        local_model=ensure_model(model_cache,local_files_only,hf_endpoint,download_retries)
+        options = dict(local_files_only=True, trust_remote_code=False)
+        self.extractor = AutoFeatureExtractor.from_pretrained(str(local_model), **options)
         # Only ID->phone decoding is needed. No text phonemization and no
         # espeak/phonemizer system dependency is required for this task.
-        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, do_phonemize=False, **options)
-        self.model = AutoModelForCTC.from_pretrained(MODEL_ID, **options).to(self.device).eval()
+        self.tokenizer = AutoTokenizer.from_pretrained(str(local_model), do_phonemize=False, **options)
+        self.model = AutoModelForCTC.from_pretrained(str(local_model), use_safetensors=False, **options).to(self.device).eval()
         self.model.requires_grad_(False)
         self.blank = int(self.model.config.pad_token_id)
         self.ignore = set(self.tokenizer.all_special_ids)
@@ -89,7 +91,10 @@ def _read_verified_wave(row):
 
 
 def prepare(parent_run, output_dir, model_cache, device='cuda:0', local_files_only=False,
-            recognizer_factory=Recognizer):
+            recognizer_factory=None, *, hf_endpoint='auto', download_retries=2):
+    if recognizer_factory is None:
+        from functools import partial
+        recognizer_factory=partial(Recognizer,hf_endpoint=hf_endpoint,download_retries=download_retries)
     parent = Path(parent_run).expanduser().resolve(); root = Path(output_dir).expanduser().resolve()
     cfg = read_json(parent / 'config.json')
     validate_parent_config(cfg)
@@ -165,12 +170,18 @@ def parser():
     p.add_argument('--model-cache', required=True, help='Pinned Hugging Face model download cache on the data disk')
     p.add_argument('--device', default='cuda:0')
     p.add_argument('--local-files-only', action='store_true', help='Never download; require the pinned model in --model-cache')
+    add_download_arguments(p)
     return p
 
 
 def main():
     args = parser().parse_args()
-    prepare(args.parent_run, args.output_dir, args.model_cache, args.device, args.local_files_only)
+    try:
+        prepare(args.parent_run,args.output_dir,args.model_cache,args.device,args.local_files_only,
+                hf_endpoint=args.hf_endpoint,download_retries=args.download_retries)
+    except ModelDownloadError as exc:
+        print('PHONEME_MODEL_DOWNLOAD_FAILED='+str(exc),file=sys.stderr,flush=True)
+        raise SystemExit(2) from None
 
 
 if __name__ == '__main__': main()

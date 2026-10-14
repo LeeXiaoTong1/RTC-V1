@@ -87,10 +87,18 @@ python -m w2v_v3186.parent_discovery --parent-run "$PARENT_RUN"
 只需准备新音素元数据，已准备好的 V3.18.4 噪声库不必重新下载：
 
 ```bash
-bash prepare_phonemes_v3186.sh --parent-run "$PARENT_RUN"
+bash prepare_phonemes_v3186.sh \
+  --parent-run "$PARENT_RUN" \
+  --hf-endpoint https://hf-mirror.com
 ```
 
 脚本在数据盘建立独立音素环境，复用原环境 Torch/NumPy，仅在独立环境安装固定 HF 依赖，校验不改变训练环境。首次在线下载固定音素模型；中断后重跑会复用已完成记录。输出 `PHONEME_MANIFEST=...` 才代表缓存可用于训练。准备不读取 Progress/Eval。
+
+若此前报 `We couldn't connect to https://huggingface.co`，失败发生在音素模型下载，六轮检测器训练尚未启动。上述命令优先使用 HF Mirror，失败后尝试官方地址；`--hf-endpoint auto` 则优先采用 `HF_ENDPOINT`（未设置时为官方地址）。镜像能否访问取决于服务器网络，不保证能绕过所有网络故障。每个文件每个地址默认最多尝试两次，可用 `--download-retries 3` 调整。
+
+下载固定提交 `2c733782da5604684829819a5eb744c193fe9398` 的六个必要文件，不调用完整仓库列表 API，不发送登录 token；HF 缓存负责断点续传。权重约 1.26 GB，SHA256 固定为 `04366b6c8d24099ef313cf02f0e58d26f5dddfda16edbfc8eb2c713d94a9f551`，依据[官方权重页面](https://huggingface.co/facebook/wav2vec2-xlsr-53-espeak-cv-ft/blob/2c733782da5604684829819a5eb744c193fe9398/pytorch_model.bin)。JSON 文件验证格式和关键模型配置，并在数据盘 `hf-phonemes/v3186_model_download.json` 记录下载来源、字节数和哈希；JSON 哈希是本地来源记录，不声称是独立固定的上游校验值。
+
+权重仍保存在 `/home/ubuntu/LXT/v318-runtime/hf-phonemes`，不额外复制一套模型，不重装已完成的独立音素环境，不清空下载/音素缓存。打印 `PHONEME_MODEL_READY=...` 后，特征提取器、分词器与模型只从已验证的本地快照加载，禁止再联网寻找可选文件。完整缓存可使用 `--local-files-only`。若两个地址都无法访问，程序保留部分下载并明确退出；修好 HTTPS/代理连接后重跑同一命令。
 
 开始六轮，并自动导出本次 best、上传两个压缩包：
 
@@ -136,5 +144,7 @@ bash run_w2v_v3186.sh --resume "$RUN"
 CPU 测试覆盖实际 AASIST、双 PCL 梯度、分类监督质量守恒、无参照 CE、每输入一次编码、版本覆盖、时间映射、缓存完整性、父模型迁移、epoch 断点恢复、best 导出及上传失败重试。没有运行完整 Omni-3B GPU 训练，也没有新的 Progress 结果。
 
 父版本兼容修复后，V3.18.6 测试目录的 **76 项 CPU 测试全部通过**，包括 AUG5 音素准备、原 schema/hash 校验、定向扩充配置，以及两种父版本的双 PCL、断点恢复、best 导出与上传重试。Python 3.10 语法检查通过；6 个 Bash 入口沿用首次发布已验证的版本。端到端测试使用小型替代编码器和真实 AASIST，不将它称为完整 Omni GPU 验证。
+
+下载兼容修复的验收覆盖地址切换、部分下载保留、缓存损坏检测与单文件修复、严格离线加载、CLI 参数转发及简短错误退出。网络测试使用受控替身，未在目标服务器完成真实模型下载或 GPU 验证。
 
 下一步判断依据应是未见来源/噪声/RTC 下的 AUC/EER、EN/ZH 的 real/fake recall、固定 fake recall 的 real recall，以及两分支有效覆盖和梯度方向。不能仅凭辅助 loss 变小或本地 Weighted 上升认定泛化改善；这一配对拓扑与旧 V3.19 TFCL 有相似处，音素级目标是否更有效仍需实验回答。
