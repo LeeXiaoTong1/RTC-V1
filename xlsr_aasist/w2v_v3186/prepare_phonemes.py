@@ -15,6 +15,7 @@ import numpy as np
 from .phonemes import (SCHEMA, MODEL_ID, MODEL_REVISION, SAMPLE_RATE, ALGORITHM,
     digest_file, digest_json, read_json, atomic_json, lineage, inventory,
     record_name, validate_record, bind_manifest, greedy_tokens, ctc_align, segment_support)
+from .parent_discovery import validate_parent_config
 
 
 class Recognizer:
@@ -91,8 +92,7 @@ def prepare(parent_run, output_dir, model_cache, device='cuda:0', local_files_on
             recognizer_factory=Recognizer):
     parent = Path(parent_run).expanduser().resolve(); root = Path(output_dir).expanduser().resolve()
     cfg = read_json(parent / 'config.json')
-    if cfg.get('version') != '3.18.5':
-        raise ValueError('--parent-run must be a V3.18.5 run with the intended Train inventory')
+    validate_parent_config(cfg)
     rows_path = parent / 'train_rows.json'; rows = read_json(rows_path); items = inventory(rows)
     model_cache = Path(model_cache).expanduser().resolve(); model_cache.mkdir(parents=True, exist_ok=True)
     root.mkdir(parents=True, exist_ok=True)

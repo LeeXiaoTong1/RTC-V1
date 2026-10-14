@@ -1,6 +1,8 @@
 # V3.18.6：接收端双分支音素一致性与整句分类
 
-此版本从**已完成的 V3.18.5 best**迁移，保留全层 Omni 融合、AASIST、V3.18.5 数据分布及 C3 分类。新增两个训练期音素约束，移除外部局部窗口汇聚和 ASP。旧版本源码与 checkpoint 不改写。
+此版本从**已完成的 V3.18.5 best 或 V3.18.4 AUG5 ASP best**迁移，保留全层 Omni 融合、AASIST，采用 V3.18.5 数据扩充规则及 C3 分类。新增两个训练期音素约束，移除外部局部窗口汇聚和 ASP。旧版本源码与 checkpoint 不改写。
+
+父版本兼容修复：服务器上实际存在的是 `v3184_aug5_asp_v1`，此前只接受版本号 3.18.5，导致已封存的 AUG5 训练也被拒绝。两者的模型和 ASP 模块代码相同，现在分别通过各自原版本的加载器验证 checkpoint 哈希、配置身份、schema 与 best 记录，再执行严格的张量迁移；不修改版本号绕过校验。普通 V3.18.4、R2、未完成运行仍不可替代。即使继承 AUG5 权重，新训练也使用 **5/5/1/3**，不继承旧版四组统一 ×5。
 
 ## 训练实际做什么
 
@@ -74,10 +76,13 @@ git pull --ff-only origin w2vbert2-balanced-robust-fast
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate /home/ubuntu/LXT/v318-runtime/envs/sdd-v318
 cd xlsr_aasist
-PARENT_RUN=$(python -m w2v_v3186.parent_discovery) && printf '%s\n' "$PARENT_RUN"
+PARENT_RUN=exp/w2v_v3184_aug5_20261013_105027_64d9_sealed_e4_6bf9956295
+python -m w2v_v3186.parent_discovery --parent-run "$PARENT_RUN"
 ```
 
-不要求 `exp/.latest_v3185_run` 存在。若有有效记录则复用；否则在当前项目以及同级 `RTC` / `RTC-w2v-improved` 的 `xlsr_aasist/exp` 下读取实际版本与完成状态，只有一个兼容的 V3.18.5 时自动选用。多个候选会列出并要求明确 `--parent-run`，不会自动挑日期最新或改用 V3.18.4。找不到时可运行 `python -m w2v_v3186.parent_discovery --list` 查看记录；运行目录移动过可加 `--search-root EXP_DIR`。
+上述路径为服务器截图中已有的第 4 轮封存快照，使用其中记录的 best（不一定是第 4 轮），不需要再次封存或复制 checkpoint。不要求 `exp/.latest_v3185_run` 存在；也不要修改旧 config/completed 文件中的版本号。
+
+其它部署可使用 `PARENT_RUN=$(python -m w2v_v3186.parent_discovery)`：若有有效的 latest 记录则复用；否则在当前项目以及同级 `RTC` / `RTC-w2v-improved` 的 `xlsr_aasist/exp` 下读取实际 recipe 与完成状态。只有一个兼容候选时自动选用；多个候选会要求明确 `--parent-run`，不会按日期或分数挑选。找不到时可运行 `python -m w2v_v3186.parent_discovery --list` 查看记录；目录移动过可加 `--search-root EXP_DIR`。
 
 只需准备新音素元数据，已准备好的 V3.18.4 噪声库不必重新下载：
 
@@ -130,6 +135,6 @@ bash run_w2v_v3186.sh --resume "$RUN"
 
 CPU 测试覆盖实际 AASIST、双 PCL 梯度、分类监督质量守恒、无参照 CE、每输入一次编码、版本覆盖、时间映射、缓存完整性、父模型迁移、epoch 断点恢复、best 导出及上传失败重试。没有运行完整 Omni-3B GPU 训练，也没有新的 Progress 结果。
 
-本次发布验证：67 项 CPU 测试通过；Python 3.10 语法检查通过；6 个 Bash 入口语法检查通过。端到端测试使用小型替代编码器和真实 AASIST，不将它称为完整 Omni GPU 验证。
+父版本兼容修复后，V3.18.6 测试目录的 **76 项 CPU 测试全部通过**，包括 AUG5 音素准备、原 schema/hash 校验、定向扩充配置，以及两种父版本的双 PCL、断点恢复、best 导出与上传重试。Python 3.10 语法检查通过；6 个 Bash 入口沿用首次发布已验证的版本。端到端测试使用小型替代编码器和真实 AASIST，不将它称为完整 Omni GPU 验证。
 
 下一步判断依据应是未见来源/噪声/RTC 下的 AUC/EER、EN/ZH 的 real/fake recall、固定 fake recall 的 real recall，以及两分支有效覆盖和梯度方向。不能仅凭辅助 loss 变小或本地 Weighted 上升认定泛化改善；这一配对拓扑与旧 V3.19 TFCL 有相似处，音素级目标是否更有效仍需实验回答。

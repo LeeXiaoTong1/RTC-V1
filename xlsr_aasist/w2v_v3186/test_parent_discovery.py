@@ -9,18 +9,52 @@ from unittest.mock import patch
 from . import parent_discovery as discovery
 
 
-def candidate(path,version='3.18.5',status='complete'):
+def candidate(path,version='3.18.5',status='complete',aug5=False):
     path.mkdir(parents=True,exist_ok=True)
     for name in discovery.REQUIRED:(path/name).write_text('{}',encoding='utf-8')
     cfg=dict(version=version,recipe=discovery.RECIPE,variant='C3',risk_coefficient=.25,
              pooling='asp',view_factors=[5,5,1,3])
+    if aug5:
+        cfg.update(version='3.18.4',recipe=discovery.AUG5_RECIPE,view_factor=5)
+        cfg.pop('view_factors')
     (path/'config.json').write_text(json.dumps(cfg),encoding='utf-8')
-    (path/'completed.json').write_text(json.dumps(dict(version=version,recipe=discovery.RECIPE,
+    (path/'completed.json').write_text(json.dumps(dict(version=cfg['version'],recipe=cfg['recipe'],
         status=status,best_tag='epoch_4_step_2417')),encoding='utf-8')
     return path.resolve()
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_completed_sealed_aug5_is_eligible_without_renaming_metadata(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);parent=candidate(root/'exp/aug5_sealed_e4_fixture',aug5=True)
+            before=(parent/'config.json').read_bytes()
+            self.assertEqual(discovery.resolve_parent(root=root),parent)
+            self.assertEqual(discovery.resolve_parent(parent,root=root),parent)
+            self.assertEqual((parent/'config.json').read_bytes(),before)
+            self.assertEqual(discovery.inspect_candidate(parent)['parent_view_factors'],[5,5,5,5])
+
+    def test_both_supported_families_require_an_explicit_choice(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);a=candidate(root/'exp/aug5',aug5=True);b=candidate(root/'exp/targeted')
+            with self.assertRaisesRegex(ValueError,'Multiple completed'):discovery.resolve_parent(root=root)
+            self.assertEqual(discovery.resolve_parent(a,root=root),a)
+            self.assertEqual(discovery.resolve_parent(b,root=root),b)
+
+    def test_aug5_recipe_pooling_and_completion_are_not_inferred_from_name(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);parent=candidate(root/'v3184_aug5',aug5=True)
+            cfg=json.loads((parent/'config.json').read_text())
+            for changed in (dict(cfg,recipe='v3184_scene_v1'),dict(cfg,pooling='mean'),
+                            dict(cfg,view_factor=1),dict(cfg,variant='C2')):
+                (parent/'config.json').write_text(json.dumps(changed))
+                self.assertFalse(discovery.inspect_candidate(parent)['eligible'])
+            (parent/'config.json').write_text(json.dumps(cfg))
+            done=json.loads((parent/'completed.json').read_text())
+            for changed in (dict(done,version='3.18.5'),dict(done,recipe=discovery.RECIPE),
+                            dict(done,status='running')):
+                (parent/'completed.json').write_text(json.dumps(changed))
+                self.assertFalse(discovery.inspect_candidate(parent)['eligible'])
+
     def test_missing_pointer_finds_sibling_checkout(self):
         with tempfile.TemporaryDirectory() as d:
             base=Path(d);root=base/'RTC-w2v-improved/xlsr_aasist'

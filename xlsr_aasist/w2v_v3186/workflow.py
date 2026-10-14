@@ -21,7 +21,7 @@ def main():
         if args.resume:
             run=Path(args.resume).expanduser().resolve();cfg=read_json(run/'config.json')
             if cfg.get('version')!='3.18.6' or cfg.get('recipe')!=RECIPE:
-                raise ValueError('--resume accepts only V3.18.6; use --parent-run for a completed V3.18.5')
+                raise ValueError('--resume accepts only V3.18.6; use --parent-run for a completed V3.18.5 or V3.18.4 AUG5 ASP')
             verify_inputs(cfg)
             train=read_json(run/'train_rows.json');dev=read_json(run/'dev_rows.json')
             verify={str(run/n):h for n,h in cfg['saved_manifests'].items()};from .common import verify_files;verify_files(verify)

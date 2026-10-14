@@ -1,22 +1,26 @@
 """Strict best-only migration; removing window ASP is not function-preserving."""
 from pathlib import Path
 import torch
-from w2v_v3185.evaluate import selected
 from w2v_v3183r2.parent import PARENT_ARTIFACTS, baseline_check as cached_baseline
 from .common import read_json,digest,verify_files,partial_state,apply_partial,atomic_json
+from .parent_discovery import validate_parent_config,RECIPE
 
 
 def inspect_parent(run,tag=None):
     run=Path(run).expanduser().resolve()
+    provenance=validate_parent_config(read_json(run/'config.json'))
+    if provenance['parent_recipe']==RECIPE:
+        from w2v_v3185.evaluate import selected
+    else:
+        from w2v_v3184_aug5.evaluate import selected
+    # Each original loader verifies its own schema/config identity and hash.
+    # Never relabel an AUG5 checkpoint as V3.18.5 to bypass these checks.
     cfg,weights,meta=selected(run,'best')
-    if cfg.get('version')!='3.18.5' or cfg.get('variant')!='C3' or cfg.get('risk_coefficient')!=.25:
-        raise ValueError('V3.18.6 requires a completed V3.18.5 C3 best')
-    if cfg.get('pooling')!='asp' or tuple(cfg.get('view_factors',()))!=(5,5,1,3):
-        raise ValueError('Parent must use V3.18.5 ASP and targeted 5/5/1/3 augmentation')
+    if validate_parent_config(cfg)!=provenance:raise ValueError('Parent configuration changed during inspection')
     if tag is not None and tag!=meta['selected']:raise ValueError('Expected parent '+tag+', found '+meta['selected'])
     verify_files({str(run/n):h for n,h in cfg['saved_manifests'].items()})
     files={str(run/n):(meta['checkpoint_sha256'] if n=='last.pt' else digest(run/n)) for n in PARENT_ARTIFACTS}
-    return cfg,weights,dict(run=str(run),tag=meta['selected'],kind='best',parent_version='3.18.5',
+    return cfg,weights,dict(run=str(run),tag=meta['selected'],kind='best',**provenance,
         checkpoint_sha256=meta['checkpoint_sha256'],files=files)
 
 
@@ -48,16 +52,17 @@ def initialize(model,cfg):
     old,values,meta=inspect_parent(init['run'],init['tag'])
     if meta['checkpoint_sha256']!=init['checkpoint_sha256']:raise ValueError('Parent checkpoint changed')
     audit=transfer(model,values)
-    audit.update(mode='parent-transfer',parent_version=old['version'],parent_tag=meta['tag'],
+    audit.update(mode='parent-transfer',parent_version=old['version'],parent_recipe=old['recipe'],
+        parent_view_factors=meta['parent_view_factors'],training_view_factors=cfg['view_factors'],parent_tag=meta['tag'],
         parent_checkpoint_sha256=meta['checkpoint_sha256'],new_fusion=model.fusion.describe(),
         note='Whole-utterance AASIST changes the function. Cached parent metrics are references, never candidate scores.')
-    print('[Initialization] V3.18.5 best inherited; whole-utterance AASIST; fresh optimizer; initial function changed',flush=True)
+    print('[Initialization] V'+old['version']+' '+old['recipe']+' best inherited; whole-utterance AASIST; fresh optimizer; initial function changed',flush=True)
     return audit
 
 
 def baseline_check(model,cfg,run,dev,partition,infer,measure):
     result=cached_baseline(model,cfg,run,dev,partition,infer,measure)
     result.update(prediction_identity_expected=False,new_model_reproduces_parent=False,
-        note='Cached V3.18.5 raw best scores only. Structural migration is not prediction-preserving; no parent fallback.')
+        note='Cached parent raw best scores only. Structural migration is not prediction-preserving; no parent fallback.')
     atomic_json(Path(run)/'parent_baseline.json',result)
     return result

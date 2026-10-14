@@ -14,7 +14,7 @@ from .parent import inspect_parent
 
 def parser():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--parent-run',help='Completed V3.18.5 best; auto-discover if the latest-run pointer is missing')
+    p.add_argument('--parent-run',help='Completed V3.18.5 or V3.18.4 AUG5 ASP best; auto-discover if omitted')
     p.add_argument('--parent-tag',help='Optional assertion for the exact parent best tag')
     p.add_argument('--noise-manifest',default=str(ROOT/'assets/noise_v3184_rnnoise/manifest.json'))
     p.add_argument('--phoneme-manifest',default=str(ROOT/'assets/phonemes_v3186/manifest.json'))
@@ -92,15 +92,9 @@ def validate_locked_cli(args,argv):
     if changed:raise ValueError('Resume uses the saved configuration; remove overrides: '+', '.join(sorted(changed)))
 
 
-def configuration(args):
+def training_configuration(old,args,parent):
+    """Keep compatible weights/data identities; explicitly replace the recipe."""
     validate(args)
-    from .parent_discovery import resolve_parent
-    source=resolve_parent(args.parent_run,root=ROOT)
-    print('[Startup] inspecting completed V3.18.5 BEST',flush=True)
-    old,weights,parent=inspect_parent(source,args.parent_tag);del weights
-    if not args.device.startswith('cuda') or not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
-        raise RuntimeError('Production training requires BF16 CUDA; CPU fixtures are tests only')
-    if old.get('omni_arch')!='3b':raise ValueError('Production V3.18.6 requires an Omni-3B parent')
     cfg=copy.deepcopy(old)
     for key in ('pool_lr','evidence_lr','warm_lr','warm_fusion_lr','warm_layer_mix_lr','warm_evidence_lr','view_factor'):
         cfg.pop(key,None)
@@ -121,6 +115,19 @@ def configuration(args):
         bn_policy='inherit parent buffers; update on unpadded classification utterances only, never auxiliary references',
         inference_requires_phonemes=False,phoneme_manifest=None,phoneme_files={})
     if args.consistency=='none':cfg.update(pcl_platform_weight=0.,pcl_noise_weight=0.)
+    return cfg
+
+
+def configuration(args):
+    validate(args)
+    from .parent_discovery import resolve_parent
+    source=resolve_parent(args.parent_run,root=ROOT)
+    print('[Startup] inspecting completed compatible ASP BEST: '+str(source),flush=True)
+    old,weights,parent=inspect_parent(source,args.parent_tag);del weights
+    if not args.device.startswith('cuda') or not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
+        raise RuntimeError('Production training requires BF16 CUDA; CPU fixtures are tests only')
+    if old.get('omni_arch')!='3b':raise ValueError('Production V3.18.6 requires an Omni-3B parent')
+    cfg=training_configuration(old,args,parent)
     from w2v_v3184.noise import bind_manifest as bind_noise
     cfg.update(bind_noise(args.noise_manifest))
     run=Path(parent['run']);train=read_json(run/'train_rows.json');dev=read_json(run/'dev_rows.json')
@@ -134,7 +141,7 @@ def configuration(args):
         cfg['phoneme_files']={cfg['phoneme_manifest']:digest(cfg['phoneme_manifest'])}
     cfg['data_files'].update(parent['files'])
     # Include production modules only; new tests can be added without invalidating a run.
-    for name in ('w2v_v3186','w2v_v3185','w2v_v3183r2','w2v_v3184'):
+    for name in ('w2v_v3186','w2v_v3185','w2v_v3184_aug5','w2v_v3183r2','w2v_v3184'):
         cfg['code_fingerprints'].update({str(p):digest(p) for p in (ROOT/name).glob('*.py') if not p.name.startswith('test_')})
     from .sampling import Plan
     plan=Plan(train,16,cfg['seed'],cfg['group_quotas'],cfg['view_factors'],cfg['refresh_base_variants'],cfg=cfg)

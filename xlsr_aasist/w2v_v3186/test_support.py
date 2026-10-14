@@ -39,8 +39,21 @@ def save_inputs(run, cfg, train, dev):
 
 
 def completed_v3185(root):
+    return completed_parent(root)
+
+
+def completed_aug5(root):
+    return completed_parent(root,aug5=True)
+
+
+def completed_parent(root,aug5=False):
+    parent_config,parent_model,parent_schema,parent_plan=prior_cfg,prior_model,prior_schema,ParentPlan
+    if aug5:
+        from w2v_v3184_aug5.test_support import tiny_cfg as parent_config,tiny_model as parent_model
+        from w2v_v3184_aug5.common import schema_for as parent_schema
+        from w2v_v3184_aug5.sampling import Plan as parent_plan
     cfg, train, dev = make_fixture(root / 'audio')
-    cfg.update(prior_cfg())
+    cfg.update(parent_config())
     # Existing legacy fixtures deliberately give each stream an independent
     # identity. This fixture explicitly records the official same-source map.
     offline = {r['group_id']: r for r in train if r['condition'] == 'offline'}
@@ -53,12 +66,13 @@ def completed_v3185(root):
     parent = root / 'parent'
     save_inputs(parent, cfg, train, dev)
     atomic_json(parent / 'dev_partition.json', dev_partition(dev, cfg['dev_pairs'], cfg['seed'], cfg['calibration_fraction']))
-    plan = ParentPlan(train, cfg['stream_sources'], cfg['seed'], cfg['group_quotas'], cfg['view_factors'])
+    plan = parent_plan(train, cfg['stream_sources'], cfg['seed'], cfg['group_quotas'],
+                       cfg['view_factor'] if aug5 else cfg['view_factors'])
     atomic_json(parent / 'train_probe_tickets.json', probe_tickets(plan, cfg['train_probe_per_group']))
     rows, tickets = panel_rows(cfg)
     atomic_json(parent / 'independent_panel.json', dict(rows=rows, tickets=tickets))
     seed_all(cfg['seed'])
-    model = prior_model(cfg)
+    model = parent_model(cfg)
     with torch.no_grad():
         for name, value in model.named_parameters():
             if name.endswith('.lora_b'):
@@ -72,11 +86,11 @@ def completed_v3185(root):
     last = copy.deepcopy(best)
     last['fusion.layer_logits'].fill_(.5)
     logits, _ = infer(model, dev, cfg)
-    torch.save(dict(schema=prior_schema(cfg), identity=fingerprint(cfg), best_tag='epoch_1_step_3',
+    torch.save(dict(schema=parent_schema(cfg), identity=fingerprint(cfg), best_tag='epoch_1_step_3',
         last_tag='epoch_2_step_3', best_model=best, model=last, best_logits=torch.from_numpy(logits),
         last_logits=torch.from_numpy(-logits), history=[{'tag': 'epoch_1_step_3'}, {'tag': 'epoch_2_step_3'}]),
         parent / 'last.pt')
-    atomic_json(parent / 'completed.json', dict(version='3.18.5', recipe=PRIOR_RECIPE, status='complete',
+    atomic_json(parent / 'completed.json', dict(version=cfg['version'], recipe=cfg['recipe'], status='complete',
         best_tag='epoch_1_step_3', last_tag='epoch_2_step_3', checkpoint_sha256=digest(parent / 'last.pt')))
     return parent, cfg, train, dev, best
 

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 import torch
 from w2v_v318.test_core import NativeBoundary
-from .test_support import tiny_cfg, tiny_model, scene_fixture, completed_v3185, save_inputs, fixture_phones
+from .test_support import tiny_cfg, tiny_model, scene_fixture, completed_v3185, completed_aug5, save_inputs, fixture_phones
 from .common import read_json, atomic_json, digest
 from .parent import inspect_parent
 from .train import run_experiment, save
@@ -21,16 +21,24 @@ class WorkflowTests(unittest.TestCase):
         torch.set_num_threads(1)
 
     def test_parent_migration_joint_pcl_resume_and_delivery(self):
+        self.check_parent_workflow(completed_v3185,'3.18.5',[5,5,1,3])
+
+    def test_aug5_parent_migration_joint_pcl_resume_and_delivery(self):
+        self.check_parent_workflow(completed_aug5,'3.18.4',[5,5,5,5])
+
+    def check_parent_workflow(self,parent_factory,parent_version,parent_factors):
         with tempfile.TemporaryDirectory() as directory, \
              patch('w2v_v3184.data.Engines', NativeBoundary), \
              patch('w2v_v3185.data.Engines', NativeBoundary), \
              patch('w2v_v3186.data.Engines', NativeBoundary), \
              patch('w2v_v3186.data.Waves._phones', fixture_phones), redirect_stdout(io.StringIO()):
             root = Path(directory)
-            parent, prior, train, dev, parent_best = completed_v3185(root)
+            parent, prior, train, dev, parent_best = parent_factory(root)
             original_hash = digest(parent / 'last.pt')
             _, _, initialization = inspect_parent(parent)
             self.assertEqual(initialization['tag'], 'epoch_1_step_3')
+            self.assertEqual(initialization['parent_version'],parent_version)
+            self.assertEqual(initialization['parent_view_factors'],parent_factors)
             cfg = tiny_cfg()
             for key in ('dev_pairs', 'official_dev_protocol', 'official_dev_root', 'noise_records'):
                 cfg[key] = prior[key]
@@ -49,6 +57,8 @@ class WorkflowTests(unittest.TestCase):
             self.assertFalse(audit['initial_function_preserved'])
             self.assertFalse(audit['external_window_pooling'])
             self.assertEqual(audit['bn_statistics_reset'], [])
+            self.assertEqual(audit['parent_version'],parent_version)
+            self.assertEqual(audit['training_view_factors'],[5,5,1,3])
             self.assertFalse(any('attention_delta' in key or 'contribution' in key for key in initial['model']))
             self.assertFalse((full / 'completed.json').exists())
             with self.assertRaises(FileNotFoundError):
@@ -122,6 +132,16 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(digest(parent / 'last.pt'), original_hash)
             with self.assertRaisesRegex(ValueError, 'Expected parent'):
                 inspect_parent(parent, 'epoch_999_step_3')
+            # The additional family must not weaken its original integrity checks.
+            old_config=read_json(parent/'config.json')
+            changed_config=dict(old_config,seed=old_config['seed']+1)
+            atomic_json(parent/'config.json',changed_config)
+            with self.assertRaisesRegex(ValueError,'checkpoint/config mismatch'):
+                inspect_parent(parent)
+            atomic_json(parent/'config.json',old_config)
+            with (parent/'last.pt').open('ab') as stream:stream.write(b'corrupt')
+            with self.assertRaisesRegex(ValueError,'Checkpoint hash changed'):
+                inspect_parent(parent)
 
 
 if __name__ == '__main__':

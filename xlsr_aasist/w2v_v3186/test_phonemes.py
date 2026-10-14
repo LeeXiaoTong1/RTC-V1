@@ -99,10 +99,16 @@ class CacheTests(unittest.TestCase):
                 else: os.environ[key] = value
         self.addCleanup(restore)
 
-    def fixture(self, root):
+    def fixture(self, root, aug5=False):
         import soundfile as sf
         parent = root / 'parent'; parent.mkdir()
-        atomic_json(parent / 'config.json', {'version': '3.18.5'})
+        from .parent_discovery import RECIPE,AUG5_RECIPE
+        cfg=dict(version='3.18.5',recipe=RECIPE,variant='C3',risk_coefficient=.25,
+                 pooling='asp',view_factors=[5,5,1,3])
+        if aug5:
+            cfg.update(version='3.18.4',recipe=AUG5_RECIPE,view_factor=5)
+            cfg.pop('view_factors')
+        atomic_json(parent / 'config.json', cfg)
         rows = []
         for domain, multiplier in [('offline', 1), ('online', .8)]:
             audio = root / (domain + '.wav')
@@ -115,6 +121,18 @@ class CacheTests(unittest.TestCase):
                 output_samples=16000, split='train', full_length=True, audio=str(audio)))
         atomic_json(parent / 'train_rows.json', rows)
         return parent, rows
+
+    def test_aug5_original_train_inventory_is_supported_without_relabeling(self):
+        class FakeRecognizer:
+            def __init__(self,*args):pass
+            def __call__(self,wave):return [segment('a',400,1200)],{}
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);parent,rows=self.fixture(root,aug5=True)
+            before=(parent/'config.json').read_bytes()
+            binding=prepare(parent,root/'phones',root/'models','cpu',True,FakeRecognizer)
+            self.assertEqual(binding['records'],2)
+            self.assertEqual(PhonemeCache(binding['path'],rows).get(rows[0])['segments'][0]['token'],'a')
+            self.assertEqual((parent/'config.json').read_bytes(),before)
 
     def test_prepare_resume_identity_hash_and_no_model_needed_on_reuse(self):
         calls = []

@@ -1,8 +1,9 @@
-"""Find a completed V3.18.5 parent without a mandatory latest-run pointer.
+"""Find a completed compatible ASP parent without a mandatory run pointer.
 
 Discovery reads small JSON metadata and checks required files. The existing
 parent loader still verifies checkpoint hashes, saved manifests and tensors.
-No Torch/GPU import, disk-wide search, checkpoint mutation, or version fallback.
+No Torch/GPU import, disk-wide search, or checkpoint mutation. V3.18.4 AUG5
+and V3.18.5 share the ASP tensor layout, but retain their own version/schema.
 """
 import argparse
 import json
@@ -11,6 +12,7 @@ import sys
 
 ROOT=Path(__file__).resolve().parent.parent
 RECIPE='v3185_asp_v1'
+AUG5_RECIPE='v3184_aug5_asp_v1'
 REQUIRED=('config.json','completed.json','last.pt','train_rows.json','dev_rows.json',
           'dev_partition.json','train_probe_tickets.json','independent_panel.json')
 
@@ -19,24 +21,40 @@ def _json(path):
     with Path(path).open(encoding='utf-8') as stream:return json.load(stream)
 
 
+def validate_parent_config(cfg):
+    """Check the architecture family, not a directory name or version alone."""
+    pair=(cfg.get('version'),cfg.get('recipe'))
+    if pair==('3.18.5',RECIPE):
+        if cfg.get('view_factors')!=[5,5,1,3]:
+            raise ValueError('V3.18.5 parent requires recorded factors 5/5/1/3')
+        factors=[5,5,1,3]
+    elif pair==('3.18.4',AUG5_RECIPE):
+        if cfg.get('view_factor')!=5:
+            raise ValueError('V3.18.4 AUG5 parent requires recorded view_factor=5')
+        factors=[5,5,5,5]
+    else:
+        raise ValueError('Requires V3.18.5 ASP or V3.18.4 AUG5 ASP; found version='+
+                         str(pair[0])+' recipe='+str(pair[1]))
+    if cfg.get('variant')!='C3' or cfg.get('risk_coefficient')!=.25 or cfg.get('pooling')!='asp':
+        raise ValueError('Parent requires C3, risk_coefficient=0.25, and ASP pooling')
+    return dict(parent_version=pair[0],parent_recipe=pair[1],parent_view_factors=factors)
+
+
 def inspect_candidate(run):
     run=Path(run).expanduser().resolve()
     result=dict(path=str(run),eligible=False,version=None,best_tag=None,reason='')
     try:
         cfg=_json(run/'config.json')
         result['version']=cfg.get('version')
-        if cfg.get('version')!='3.18.5':raise ValueError('Expected V3.18.5, found '+str(cfg.get('version')))
-        if (cfg.get('recipe')!=RECIPE or cfg.get('variant')!='C3' or cfg.get('risk_coefficient')!=.25
-                or cfg.get('pooling')!='asp' or cfg.get('view_factors')!=[5,5,1,3]):
-            raise ValueError('Requires V3.18.5 C3, ASP, and fixed factors 5/5/1/3')
+        result.update(validate_parent_config(cfg))
         missing=[name for name in REQUIRED if not (run/name).is_file()]
         if missing:raise ValueError('Missing required files: '+', '.join(missing))
         done=_json(run/'completed.json')
         result['best_tag']=done.get('best_tag')
-        if (done.get('version')!='3.18.5' or done.get('recipe')!=RECIPE
+        if (done.get('version')!=cfg['version'] or done.get('recipe')!=cfg['recipe']
                 or done.get('status')!='complete' or not isinstance(done.get('best_tag'),str)
                 or not done['best_tag']):
-            raise ValueError('Requires completed V3.18.5 with a recorded best epoch')
+            raise ValueError('Requires matching completed parent metadata and a recorded best epoch')
         if (run/'last.pt').stat().st_size==0:raise ValueError('Empty parent checkpoint')
         result['eligible']=True
     except (OSError,ValueError,TypeError,AttributeError) as exc:
@@ -95,9 +113,9 @@ def resolve_parent(value=None,*,root=ROOT,search_roots=None):
         if pointer_note:print(pointer_note,file=sys.stderr)
         return Path(candidates[0]['path'])
     if len(candidates)>1:
-        raise ValueError('Multiple completed V3.18.5 parents found. Choose the intended run with --parent-run PATH:\n'+_details(candidates))
+        raise ValueError('Multiple completed compatible ASP parents found. Choose the intended run with --parent-run PATH:\n'+_details(candidates))
     relevant=[r for r in rows if str(r['version']).startswith('3.18')]
-    message='No compatible completed V3.18.5 parent found. Searched:\n  '+'\n  '.join(checked)
+    message='No compatible completed V3.18.5 / V3.18.4 AUG5 ASP parent found. Searched:\n  '+'\n  '.join(checked)
     if pointer_note:message+='\n'+pointer_note
     if relevant:message+='\nRecorded runs (not substituted as parents):\n'+_details(relevant[:12])
     message+='\nUse --search-root EXP_DIR to locate moved runs, or --parent-run PATH when known.'
