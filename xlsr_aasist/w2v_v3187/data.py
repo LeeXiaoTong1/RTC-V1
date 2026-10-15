@@ -91,7 +91,16 @@ class Waves(BaseWaves):
             view_id=t['base_view_id'])
         for key in ('batch_group_quotas','pcl_platform_budget','source_cycle'):
             if key in t:base[key]=t[key]
-        if t['kind']=='online':return [prepared(base,base_wave,role='online')]
+        if t['kind']=='online':
+            result=prepared(base,base_wave,role='online')
+            if self.cfg.get('consistency')=='dual' and t['epoch']<self.cfg.get('warm_epochs',1):
+                # Calibrate true phone features on already-encoded Train Online
+                # only. No clean reference or extra encoder pass in warmup.
+                from w2v_v3186.phonemes import map_segments
+                phones=map_segments(self._phones(row),base_meta['time_map'],len(base_wave))
+                result['pcl_calibration_spans']=[[p['start_sample'],p['end_sample']] for p in phones]
+                result['split']='train'
+            return [result]
         if self.bank is None:
             self.bank=NoiseBank(self.cfg['noise_records'][self.split],self.cfg['noise_cache_mib']*1024**2,
                 self.cfg['scene_noise_records'][self.split])
@@ -195,8 +204,13 @@ class Waves(BaseWaves):
 def microbatches(units,size,frame_budget,*,weights=None):
     """Best-fit decreasing packing of complete source/PCL units.
 
-    Units are never split or dropped. Nearby lengths share batches; ties are
-    interleaved across group/stream queues to avoid correlated source blocks.
+    Units are never split or dropped. With active PCL, pack platform pairs,
+    then other pairs, before filling spare capacity with classification-only
+    units. Otherwise Online singletons can leave fewer than four paired
+    sources in every physical batch and silently disable variance learning.
+    Within each phase, nearby lengths and independent class/language groups
+    retain the existing decreasing-length round-robin order. CE-only packing
+    is unchanged. GN/LN do not require mixed Online/Noisy normalization batches.
     Callers that need original output order must use row_index, not iteration.
     """
     if type(size)is not int or size<1 or type(frame_budget)is not int or frame_budget<1:
@@ -217,23 +231,29 @@ def microbatches(units,size,frame_budget,*,weights=None):
             raise ValueError('A complete source/PCL unit exceeds microbatch/frame budget; '
                 'increase --microbatch/--frame-budget rather than truncating audio')
         row=unit[0];group=(row.get('language',''),row.get('label',-1),row.get('role',''))
-        records.append((n,len(rows),group,position,unit))
+        priority=0 if platform else (1 if noise else 2)
+        records.append((n,len(rows),group,position,unit,priority))
+    paired=any(record[5]<2 for record in records)
     # Nearby lengths (<=31 frames apart) can interleave independent groups
     # without requiring an entire shortest/longest batch to share padding.
     buckets=defaultdict(lambda:defaultdict(deque))
-    for record in sorted(records,key=lambda item:(-item[0],item[3])):
-        buckets[record[0]//32][record[2]].append(record)
+    for record in sorted(records,key=lambda item:(item[5],-item[0],item[3])):
+        buckets[(record[5],-(record[0]//32))][record[2]].append(record)
     records=[]
-    for bucket in sorted(buckets,reverse=True):
+    for bucket in sorted(buckets):
         groups=buckets[bucket]
         while any(groups.values()):
             for group in sorted(groups):
                 if groups[group]:records.append(groups[group].popleft())
     bins=[]
-    for length,count,group,position,unit in records:
+    for length,count,group,position,unit,priority in records:
         source=unit[0].get('source_id',unit[0].get('id',position))
         choices=[]
         for index,entry in enumerate(bins):
+            if paired and source in entry['sources']:
+                # An Online view and an Offline-derived unit of the same source
+                # never count as two independent sources for physical PCL.
+                continue
             total=entry['count']+count;longest=max(entry['longest'],length)
             if total<=size and total*longest<=frame_budget:
                 choices.append((source in entry['sources'],group in entry['groups'],size-total,index))

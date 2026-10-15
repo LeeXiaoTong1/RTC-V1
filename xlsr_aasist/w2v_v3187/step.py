@@ -4,7 +4,8 @@ import math
 import torch
 from w2v_v3183r2.common import GROUPS, require_finite
 from w2v_v3183r2.sampling import validate_units
-from .objective import micro_losses, phoneme_loss, source_weight, auxiliary_weights, batch_quotas, confidence_regularization
+from .objective import (micro_losses, phoneme_loss, phoneme_features, phoneme_variance,
+                        source_weight, auxiliary_weights, batch_quotas, confidence_regularization)
 
 
 def schedule(optimizer, cfg, epoch, step, steps):
@@ -21,9 +22,9 @@ def schedule(optimizer, cfg, epoch, step, steps):
     ramp = min(cfg['lr_warmup_updates'], max(1, total // 10))
     for group in optimizer.param_groups:
         if not joint:
-            group['lr'] = 0. if group['name'] == 'lora' else group['initial_lr']
+            group['lr'] = 0. if group.get('role', group['name']) == 'lora' else group['initial_lr']
         else:
-            factor = min(1., index/ramp) if group['name'] == 'lora' else 1.
+            factor = min(1., index/ramp) if group.get('role', group['name']) == 'lora' else 1.
             group['lr'] = group['initial_lr'] * multiplier * factor
     # Derived cursor, not a mutation of fingerprinted experiment config.
     optimizer._v3187_joint_update = index
@@ -97,7 +98,7 @@ def _gradient_audit(ce, branches, model):
         result['norms'][name] = value.norm()
     if 'classification' in values:
         base = values['classification']
-        for name in ('noise', 'platform', 'en_real_confidence'):
+        for name in ('noise', 'platform', 'variance', 'en_real_confidence'):
             if name in values:
                 other = values[name]
                 result['cosines']['classification/' + name] = torch.nn.functional.cosine_similarity(base, other, dim=0, eps=1e-12)
@@ -119,16 +120,19 @@ def _module_grad_norms(optimizer):
 
 
 def _update_snapshot(optimizer, cap=1024):
-    # Bounded sample across optimizer groups; no cloning millions of parameters.
+    # Spread the bounded budget across parameter tensors. Sampling only the
+    # first LoRA A tensor can falsely report zero updates while LoRA B learns.
     result = []
     for group in optimizer.param_groups:
-        remaining = cap
-        for parameter in group['params']:
-            if parameter.grad is None or remaining == 0:
-                continue
-            count = min(remaining, parameter.numel())
+        parameters = [p for p in group['params'] if p.grad is not None and p.numel()]
+        if not parameters:
+            continue
+        if len(parameters) > cap:
+            parameters = [parameters[i*len(parameters)//cap] for i in range(cap)]
+        base, extra = divmod(cap, len(parameters))
+        for index, parameter in enumerate(parameters):
+            count = min(base + int(index < extra), parameter.numel())
             result.append((group['name'], parameter, count, parameter.detach().flatten()[:count].clone()))
-            remaining -= count
     return result
 
 
@@ -145,8 +149,18 @@ def train_step(model, optimizer, units, cfg, coefficient, audit=False):
     runtime = dict(cfg, group_quotas=quotas, joint_phase=joint,
                    current_update=getattr(optimizer, '_v3187_joint_update', 1))
     weights = auxiliary_weights(runtime)
+    pcl_state = getattr(model, 'pcl_scale', None)
+    if any(weights.values()) and (pcl_state is None or not pcl_state.is_frozen):
+        raise RuntimeError('Joint PCL requires frozen Train phone scales from CE warmup')
+    scale = pcl_state.scale if pcl_state is not None else None
+    variance_weight = float(cfg.get('pcl_variance_weight', .01))
+    if not math.isfinite(variance_weight) or variance_weight < 0:
+        raise ValueError('Invalid PCL variance weight')
+    variance_ramp = min(1., max(0, runtime['current_update']) / max(1, cfg.get('pcl_ramp_updates', 300)))
     processing, base_views, coverage = Counter(), Counter(), defaultdict(Counter)
     metadata, telemetry, aux_telemetry, confidence_telemetry = [], [], [], []
+    variance_telemetry, variance_coverage = [], defaultdict(Counter)
+    calibration_phones, calibration_visits = 0, 0
     encoded_views, reference_views, gradient_audit = 0, 0, None
     for unit in units:
         first = unit[0]
@@ -171,6 +185,24 @@ def train_step(model, optimizer, units, cfg, coefficient, audit=False):
         # One encoder call for this microbatch; features are shared by CE and
         # both auxiliary branches and released immediately after backward.
         sequences = model.encode([row['wave'] for row in rows])
+        if not joint and cfg.get('consistency', 'dual') != 'none':
+            if pcl_state is None:
+                raise RuntimeError('PCL warmup requires the persisted scale collector')
+            calibration_records = []
+            for row, sequence in zip(rows, sequences):
+                if 'pcl_calibration_spans' not in row:
+                    continue
+                values = phoneme_features(sequence.detach(), row['pcl_calibration_spans'], cfg.get('pcl_min_frames', 1),
+                                          row.get('pcl_valid_frames'))
+                cap = int(cfg.get('pcl_max_phones_per_source', 8))
+                if len(values) > cap:
+                    indices = torch.linspace(0, len(values)-1, cap, device=values.device).long()
+                    values = values[indices]
+                if len(values):
+                    calibration_records.append((values, row['source_id'], row.get('split')))
+                    calibration_phones += len(values)
+                    calibration_visits += 1
+            pcl_state.observe_batch(calibration_records)
         encoded_views += len(rows)
         reference_views += len(rows) - len(main_indices)
         logits = model.classify_sequences([sequences[i] for i in main_indices])
@@ -179,6 +211,7 @@ def train_step(model, optimizer, units, cfg, coefficient, audit=False):
         regularizer, confidence_counts = confidence_regularization(logits, micro, quotas, runtime)
         confidence_telemetry.append(torch.cat((regularizer.detach().reshape(1), confidence_counts.detach())))
         branches, aux_items, offset = {}, [], 0
+        variance_records = defaultdict(list)
         for unit, (objective, raw), (seq_offset, slots) in zip(micro, parts, layouts):
             first = unit[0]
             z = logits[offset:offset + len(unit)]
@@ -190,14 +223,15 @@ def train_step(model, optimizer, units, cfg, coefficient, audit=False):
                 matches = first['pcl_pairs'][kind]
                 if kind in slots:
                     a, b = slots[kind]
-                    value, valid = phoneme_loss(sequences[seq_offset + a], sequences[seq_offset + b], matches,
+                    value, valid, pooled = phoneme_loss(sequences[seq_offset + a], sequences[seq_offset + b], matches,
                         cfg.get('pcl_min_frames', 1), rows[seq_offset+a].get('pcl_valid_frames'),
-                        rows[seq_offset+b].get('pcl_valid_frames'))
+                        rows[seq_offset+b].get('pcl_valid_frames'), scale=scale, return_features=True)
                 else:
                     value, valid = ce.new_zeros(()), 0
                 weighted = value * source_weight(kind, first, runtime) * weights[kind]
                 if valid:
                     branches[kind] = branches.get(kind, 0) + weighted
+                    variance_records[kind].append((first['source_id'], *pooled, source_weight(kind, first, runtime)))
                 aux_items.append((kind, value.detach(), weighted.detach()))
                 cell = coverage[f'{kind}/{first["language"]}/{first["label"]}']
                 cell.update(scheduled_sources=1, valid_sources=int(valid > 0), matched_phones=len(matches), valid_phones=valid)
@@ -209,6 +243,26 @@ def train_step(model, optimizer, units, cfg, coefficient, audit=False):
                     timing = first.get('pcl_timing', {}).get(stage)
                     if timing is not None and not timing.get('valid', False):
                         cell['invalid_' + stage + '_' + timing.get('reason', 'unknown') + '_sources'] += 1
+        if variance_weight > 0 and any(weights.values()):
+            variance_terms = []
+            reference_weight = max(float(cfg.get('pcl_noise_weight', .15)), float(cfg.get('pcl_platform_weight', .045)))
+            for kind in ('noise', 'platform'):
+                cell = variance_coverage[kind]
+                cell['microbatches'] += 1
+                if not variance_records[kind]:
+                    cell['skipped_no_valid_pairs'] += 1
+                    continue
+                value, status = phoneme_variance(variance_records[kind], scale, runtime)
+                cell['sources'] += status['sources']
+                cell['phones'] += status['phones']
+                cell['applied' if status['applied'] else 'skipped_' + status['reason']] += 1
+                # Relative branch strength is explicit; reference counts alone
+                # do not make the platform constraint weak.
+                relative = float(cfg.get('pcl_' + kind + '_weight', .15 if kind == 'noise' else .045)) / reference_weight
+                variance_terms.append(value * variance_weight * variance_ramp * relative)
+            if variance_terms:
+                branches['variance'] = torch.stack(variance_terms).sum()
+                variance_telemetry.append(branches['variance'].detach())
         loss = ce + sum(branches.values()) + regularizer
         require_finite(loss, 'classification and PCL loss')
         if audit and gradient_audit is None and branches:
@@ -250,8 +304,9 @@ def train_step(model, optimizer, units, cfg, coefficient, audit=False):
             aux[kind]['weighted_loss'] += weighted
             aux[kind]['sources'] += 1
     class_loss = sum(item[0] for item in observed)
+    variance_loss = float(torch.stack(variance_telemetry).sum()) if variance_telemetry else 0.
     regularizer_loss, active, excess_sum, real_views = torch.stack(confidence_telemetry).sum(0).cpu().tolist()
-    return dict(loss=class_loss + sum(item['weighted_loss'] for item in aux.values()) + regularizer_loss, classification_loss=class_loss,
+    return dict(loss=class_loss + sum(item['weighted_loss'] for item in aux.values()) + regularizer_loss + variance_loss, classification_loss=class_loss,
         raw_ce_sum=sum(item[1] for item in observed), max_example_ce=max(item[2] for item in observed),
         views=sum(item[1] for item in metadata), cells={k: dict(v) for k, v in cells.items()},
         predicted_fake_by_true_class=predictions, grad_norm=float(norm), risk_coefficient=coefficient,
@@ -259,12 +314,15 @@ def train_step(model, optimizer, units, cfg, coefficient, audit=False):
         base_source_view_counts=dict(base_views), unique_original_sources=len({unit[0]['group_id'] for unit in units}),
         encoded_views=encoded_views, auxiliary_reference_views=reference_views,
         pcl_weights=weights, pcl_losses=aux, pcl_coverage={k: dict(v) for k, v in coverage.items()},
+        pcl_variance=dict(weighted_loss=variance_loss, coverage={k:dict(v) for k,v in variance_coverage.items()},
+                          configured_weight=variance_weight, gamma=cfg.get('pcl_variance_target', .5)),
+        pcl_scale_calibration=dict(source_visits=calibration_visits, phones=calibration_phones),
         phase='joint' if joint else 'head_warmup', actual_group_quotas=list(quotas),
         en_real_confidence=dict(weighted_loss=regularizer_loss, active_views=int(active), views=int(real_views),
             active_fraction=active/max(1,real_views), mean_excess=excess_sum/max(1,real_views),
-            configured_weight=cfg.get('en_real_confidence_weight', .01),
-            margin=cfg.get('en_real_confidence_margin',3.5), enabled=joint and cfg.get('en_real_confidence_weight',.01)>0),
+            configured_weight=cfg.get('en_real_confidence_weight', 0.),
+            margin=cfg.get('en_real_confidence_margin',3.5), enabled=joint and cfg.get('en_real_confidence_weight',0.)>0),
         pcl_gradient_audit=gradient_audit, module_grad_norms_before_clip=module_norms,
         module_update_norms=updates, module_relative_updates=relative, module_parameter_norms=parameter_norms,
-        module_update_audit_scope='first <=1024 entries per optimizer parameter group, not whole-module norms',
+        module_update_audit_scope='<=1024 entries per optimizer group, spread across gradient-bearing tensors; not whole-module norms',
         module_update_sample_counts=dict(sample_counts))

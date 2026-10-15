@@ -14,7 +14,7 @@ from w2v_v3184.test_support import scene_fixture
 from w2v_v3184.records import dev_partition
 from w2v_v3186.test_support import fixture_phones
 from .test_model import tiny_cfg as model_cfg
-from .common import RECIPE, atomic_json, read_json
+from .common import RECIPE, atomic_json, read_json,partial_state,digest,fingerprint
 from .model import Detector
 from .inference import infer
 from .sampling import Plan
@@ -136,6 +136,7 @@ class TrainingTests(unittest.TestCase):
     def test_stop_requested_during_model_startup_is_not_discarded(self):
         with tempfile.TemporaryDirectory() as directory, \
              patch('w2v_v3187.data.Engines',NativeBoundary), \
+             patch('w2v_v3187.data.Waves._phones',fixture_phones), \
              redirect_stdout(io.StringIO()):
             root=Path(directory);cfg,train,dev=fixture(root)
             run=make_run(root,'startup_stop',cfg,train,dev)
@@ -153,6 +154,7 @@ class TrainingTests(unittest.TestCase):
     def test_stop_during_dev_commits_epoch_without_starting_next_update(self):
         with tempfile.TemporaryDirectory() as directory, \
              patch('w2v_v3187.data.Engines',NativeBoundary), \
+             patch('w2v_v3187.data.Waves._phones',fixture_phones), \
              redirect_stdout(io.StringIO()):
             root=Path(directory);cfg,train,dev=fixture(root)
             run=make_run(root,'eval_stop',cfg,train,dev)
@@ -165,6 +167,46 @@ class TrainingTests(unittest.TestCase):
             self.assertEqual((outcome['status'],saved['epoch'],saved['next_step']),('paused',1,0))
             self.assertEqual(saved['cursor'],3)
             self.assertIsNotNone(saved['best_tag'])
+            self.assertTrue((run/'warmup.pt').is_file())
+            self.assertTrue(saved['model']['pcl_scale.frozen'].item())
+
+    def test_ce_control_inherits_exact_warmup_weights_optimizer_and_rng(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch('w2v_v3187.data.Engines',NativeBoundary), \
+             patch('w2v_v3187.data.Waves._phones',fixture_phones), \
+             patch('w2v_v3187.train.render'),redirect_stdout(io.StringIO()):
+            root=Path(directory);cfg,train,dev=fixture(root)
+            parent=make_run(root,'parent',cfg,train,dev)
+            def stop_after_dev(*args,**kwargs):
+                atomic_json(parent/'stop_requested.json',{})
+                return infer(*args,**kwargs)
+            with patch('w2v_v3187.train.infer',stop_after_dev):
+                run_experiment(cfg,parent,train,dev,tiny_model)
+            warm=torch.load(parent/'warmup.pt',weights_only=True)
+            settings=dict(cfg,consistency='none',pcl_noise_weight=0.,pcl_platform_weight=0.,pcl_variance_weight=0.,
+                warm_start=dict(run=str(parent),checkpoint=str(parent/'warmup.pt'),sha256=digest(parent/'warmup.pt'),parent_identity=fingerprint(cfg)))
+            branch=make_run(root,'control',settings,train,dev);checked=[]
+            def verify_then_step(model,optimizer,units,*args,**kwargs):
+                if not checked:
+                    for name,value in partial_state(model).items():
+                        torch.testing.assert_close(value,warm['model'][name],rtol=0,atol=0)
+                    for key,values in warm['optimizer']['state'].items():
+                        for name,value in values.items():
+                            if isinstance(value,torch.Tensor):
+                                torch.testing.assert_close(value,optimizer.state_dict()['state'][key][name],rtol=0,atol=0)
+                    torch.testing.assert_close(torch.get_rng_state(),warm['rng']['torch'],rtol=0,atol=0)
+                    self.assertTrue(model.pcl_scale.is_frozen)
+                    checked.append(True)
+                self.assertTrue(all('pcl_refs' not in u[0] for u in units))
+                result=train_step(model,optimizer,units,*args,**kwargs)
+                self.assertEqual(result['auxiliary_reference_views'],0)
+                return result
+            with patch('w2v_v3187.train.train_step',verify_then_step):
+                run_experiment(settings,branch,train,dev,tiny_model)
+            self.assertEqual(checked,[True])
+            final=torch.load(branch/'last.pt',weights_only=True)
+            self.assertEqual(final['epoch'],2)
+            self.assertEqual(final['history'][0],warm['history'][0])
 
     def test_failed_resume_loading_retains_valid_paused_best_acknowledgement(self):
         with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()):

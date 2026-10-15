@@ -1,4 +1,4 @@
-"""Actual-quota balanced C3, valid-original-phone PCL, and confidence control."""
+"""Balanced C3 and fixed-scale, variance-preserving same-source phone PCL."""
 import math
 import torch
 from torch.nn import functional as F
@@ -17,15 +17,45 @@ def frame_span(start, end, frames):
     return first, last
 
 
-def phoneme_loss(left, right, matches, min_frames=1, left_valid_frames=None, right_valid_frames=None):
+def phoneme_features(features, spans, min_frames=1, valid_frames=None):
+    """Pool genuine original-region phone intervals without vector normalization."""
+    if features.ndim != 2 or min_frames < 1:
+        raise ValueError('Invalid phoneme feature geometry')
+    if valid_frames is not None:
+        if not isinstance(valid_frames, int) or not 0 <= valid_frames <= len(features):
+            raise ValueError('Invalid original-region PCL frame count')
+        features = features[:valid_frames]
+    indices = [frame_span(float(a), float(b), len(features)) for a, b in spans]
+    indices = [(a, b) for a, b in indices if b-a >= min_frames]
+    if not indices:
+        return features[:0].float()
+    indices = torch.tensor(indices, device=features.device, dtype=torch.long)
+    integral = F.pad(features.float().cumsum(0), (0, 0, 1, 0))
+    return (integral[indices[:, 1]]-integral[indices[:, 0]]) / (indices[:, 1]-indices[:, 0]).unsqueeze(1)
+
+
+def _scale(scale, features):
+    if scale is None or scale.ndim != 1 or len(scale) != features.shape[1]:
+        raise ValueError('PCL requires frozen per-channel Train scales')
+    if scale.requires_grad:
+        raise ValueError('PCL scales must be fixed, finite and positive')
+    # No per-source CUDA synchronization: frozen PCLScale validates values at
+    # calibration. Standalone CPU calls retain strict public input checking.
+    if scale.device.type == 'cpu' and (not bool(torch.isfinite(scale).all()) or bool((scale <= 0).any())):
+        raise ValueError('PCL scales must be fixed, finite and positive')
+    return scale.to(device=features.device, dtype=torch.float32)
+
+
+def phoneme_loss(left, right, matches, min_frames=1, left_valid_frames=None,
+                 right_valid_frames=None, *, scale=None, return_features=False):
     """Mean over matched phone instances of this source, never across sources.
 
-    No detach/teacher, no confidence gate, no cross-recording phone negatives.
-    Prefix sums avoid materializing [phones,time,features] masks. FP32 pooling
-    and L2 normalization prevent gain changes alone from satisfying MSE.
+    No teacher, confidence gate, cross-recording negatives or learned loss head.
+    The fixed Train scale cannot grow with the current features to hide errors.
     """
     if left.ndim != 2 or right.ndim != 2 or left.shape[1] != right.shape[1] or min_frames < 1:
         raise ValueError('Invalid phoneme features/minimum frame count')
+    scale = _scale(scale, left)
     # Mirror extension is classification context only. A frame whose complete
     # 400-sample receptive field crosses the original end is not a phone view.
     for value, features in ((left_valid_frames, left), (right_valid_frames, right)):
@@ -42,15 +72,67 @@ def phoneme_loss(left, right, matches, min_frames=1, left_valid_frames=None, rig
         if b - a >= min_frames and d - c >= min_frames:
             spans.append((a, b, c, d))
     if not spans:
-        return (left.sum() + right.sum()) * 0., 0
+        result = ((left.sum() + right.sum()) * 0., 0)
+        return (*result, (left[:0].float(), right[:0].float())) if return_features else result
     indices = torch.tensor(spans, device=left.device, dtype=torch.long)
     pooled = []
     for features, start, end in ((left, indices[:, 0], indices[:, 1]), (right, indices[:, 2], indices[:, 3])):
         integral = F.pad(features.float().cumsum(0), (0, 0, 1, 0))
         mean = (integral[end] - integral[start]) / (end - start).unsqueeze(1)
-        pooled.append(F.normalize(mean, dim=-1, eps=1e-6))
-    distance = (1. - (pooled[0] * pooled[1]).sum(-1)).clamp_min(0.)
-    return distance.mean(), len(spans)
+        pooled.append(mean)
+    distance = ((pooled[0] - pooled[1]) / scale).square().mean()
+    result = (distance, len(spans))
+    return (*result, tuple(pooled)) if return_features else result
+
+
+def phoneme_variance(records, scale, cfg):
+    """Source-balanced physical-batch moments, never pretend phones are sources.
+
+    records contain (source_id, left_phones, right_phones, planned_source_mass).
+    Duplicated source occurrences contribute only once. Invalid sources retain
+    zero mass; no refill, full-batch graph retention, queue or second forward.
+    """
+    if not records:
+        raise ValueError('Variance calculation requires at least one feature record')
+    scale = _scale(scale, records[0][1])
+    cap = int(cfg.get('pcl_max_phones_per_source', 8))
+    minimum_sources = int(cfg.get('pcl_variance_min_sources', 4))
+    minimum_phones = int(cfg.get('pcl_variance_min_phones', 32))
+    gamma = float(cfg.get('pcl_variance_target', .5))
+    if min(cap, minimum_sources, minimum_phones) < 1 or not math.isfinite(gamma) or gamma <= 0:
+        raise ValueError('Invalid PCL variance settings')
+    selected, seen = [], set()
+    for source, left, right, mass in records:
+        if source in seen:
+            continue
+        if left.ndim != 2 or right.shape != left.shape or mass <= 0 or not math.isfinite(mass):
+            raise ValueError('Invalid PCL variance source record')
+        seen.add(source)
+        if not len(left):
+            continue
+        indices = torch.linspace(0, len(left)-1, min(cap, len(left)), device=left.device).long()
+        selected.append((left[indices], right[indices], float(mass)))
+    count = sum(len(left) for left, _, _ in selected)
+    stats = dict(sources=len(selected), phones=count, applied=False, mass=sum(x[2] for x in selected))
+    zero = sum((left.sum()+right.sum())*0. for _, left, right, _ in records)
+    if len(selected) < minimum_sources or count < minimum_phones:
+        stats['reason'] = 'insufficient_sources' if len(selected) < minimum_sources else 'insufficient_phones'
+        return zero, stats
+    values = []
+    for side in (0, 1):
+        items = []
+        for item in selected:
+            scaled = item[side].float() / scale
+            weight = item[2] / stats['mass']
+            items.append((scaled, weight))
+        mean = torch.stack([weight*value.mean(0) for value,weight in items]).sum(0)
+        # Center first: E[x^2]-E[x]^2 loses the small discriminative residual
+        # when all channels carry a large common offset.
+        variance = torch.stack([weight*(value-mean).square().mean(0) for value,weight in items]).sum(0)
+        deviation = variance.add(1e-6).sqrt()
+        values.append((gamma-deviation).clamp_min(0).mean())
+    stats.update(applied=True, reason='applied')
+    return torch.stack(values).mean() * stats['mass'], stats
 
 
 def source_weight(kind, row, cfg):
@@ -70,7 +152,7 @@ def auxiliary_weights(cfg):
         return dict(platform=0., noise=0.)
     update = int(cfg.get('current_update', 1))
     ramp = min(1., max(0, update) / max(1, cfg.get('pcl_ramp_updates', 300)))
-    return {kind: float(cfg.get('pcl_' + kind + '_weight', .15)) * ramp
+    return {kind: float(cfg.get('pcl_' + kind + '_weight', .15 if kind == 'noise' else .045)) * ramp
             for kind in ('platform', 'noise')}
 
 
@@ -99,7 +181,7 @@ def confidence_regularization(logits, units, quotas, cfg):
     Two Noisy views receive a mean, not a second hard-view maximum. Normalizing
     by all EN-real sources keeps this independent of physical batch grouping.
     """
-    beta = float(cfg.get('en_real_confidence_weight', .01))
+    beta = float(cfg.get('en_real_confidence_weight', 0.))
     margin = float(cfg.get('en_real_confidence_margin', 3.5))
     if beta < 0 or not math.isfinite(beta) or margin <= 0 or not math.isfinite(margin):
         raise ValueError('Invalid EN-real confidence settings')

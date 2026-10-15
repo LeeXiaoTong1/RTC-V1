@@ -1,7 +1,7 @@
 """Version-isolated checkpoint and resume contract."""
 from w2v_v3184.common import *
 
-RECIPE = 'v3187_fresh_window_asp_dynamic_dual_pcl_v1'
+RECIPE = 'v3187_full_lora_gn_temporal_scaled_pcl_v2'
 
 
 def schema_for(cfg):
@@ -19,4 +19,29 @@ def schema_for(cfg):
     arch = cfg.get('omni_arch', '3b')
     if arch not in ('1b', '3b'):
         raise ValueError('Unknown Omni architecture')
-    return 'rtc_v3187_omni' + arch + '_window_asp_dynamic_v1'
+    return 'rtc_v3187_omni' + arch + '_gn_temporal_scaled_pcl_v2'
+
+
+def partial_state(model):
+    """Save every detection tensor plus the Train-only PCL scale lifecycle."""
+    return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+            if k.startswith(('head.', 'fusion.', 'pcl_scale.')) or k.endswith(('.lora_a', '.lora_b'))}
+
+
+def apply_partial(model, values):
+    target = model.state_dict()
+    # Validate metadata against live tensors; do not copy all 60-layer LoRA
+    # weights back to CPU merely to check shapes before loading a checkpoint.
+    expected = {k:v for k,v in target.items()
+                if k.startswith(('head.', 'fusion.', 'pcl_scale.')) or k.endswith(('.lora_a', '.lora_b'))}
+    if set(expected) != set(values):
+        raise ValueError('V3.18.7 v2 partial keys differ; full detector and PCL scale required')
+    # Validate the entire snapshot before changing any live tensor.
+    for name, value in values.items():
+        if value.shape != expected[name].shape or value.dtype != expected[name].dtype or not torch.isfinite(value).all():
+            raise ValueError('Invalid V3.18.7 partial tensor: ' + name)
+    with torch.no_grad():
+        for name, value in values.items():
+            target[name].copy_(value)
+    if hasattr(model,'pcl_scale'):
+        model.pcl_scale.sync_state()

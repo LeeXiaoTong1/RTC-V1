@@ -62,7 +62,7 @@ def export(run,out,kind='best',device='cuda:0',workers=4,protocol=None,audio_roo
     scores_logits=logits if raw else calibrate(logits,calibration)
     metadata=dict(meta,version='3.18.7',recipe=cfg['recipe'],pooling=cfg['pooling'],view_factors=cfg['view_factors'],
         refresh_base_variants=cfg['refresh_base_variants'],base_original_fraction=cfg['base_original_fraction'],
-        run=str(run),initialization=cfg['initialization'],frontend=cfg['omni_provenance'],
+        run=str(run),initialization=cfg['initialization'],warm_start=cfg.get('warm_start'),frontend=cfg['omni_provenance'],
         calibration=calibration,score='P(fake=0)',threshold=.5,count=len(rows),protocol_sha256=protocol_hash,
         id_order_sha256=fingerprint([r['id'] for r in rows]),
         input=f'full 16kHz waveform; whole-wave layer_norm; all encoder layers: {cfg["encoder_dim"]}-dim SSL, shared projection, SwiGLU, learned softmax layer mixture',
@@ -70,7 +70,11 @@ def export(run,out,kind='best',device='cuda:0',workers=4,protocol=None,audio_roo
         resource_audit=resource_audit,
         scene_noise_summary=cfg.get('scene_noise_summary'),scene_probability=cfg['scene_probability'],rtc_policy=cfg['rtc_policy'],
         local_evidence=bool(cfg['local_evidence']),whole_utterance=cfg['pooling']=='whole',full_waveform_input=True,
-        classification_readout='overlapping window AASIST; attention weighted mean and standard deviation' if cfg['pooling']=='asp' else 'whole-utterance AASIST',
+        classification_readout='overlapping window AASIST; 320-dimensional attention weighted mean/std plus 64-dimensional within-window temporal variation' if cfg.get('temporal_stats',True) else 'overlapping window AASIST; 320-dimensional attention weighted mean/std',
+        classifier_input_dim=int(model.head.aasist.out_layer.in_features),
+        normalization=getattr(model.head.aasist,'normalization',None),
+        lora_layers=cfg['lora_layers'],
+        pcl_training_scale=model.pcl_scale.describe() if hasattr(model,'pcl_scale') else None,
         inference_requires_phonemes=False,consistency=cfg['consistency'],eval_amp='SSL BF16 / AASIST FP32')
     if dev:
         raw_metrics=measure(rows,logits);metrics=measure(rows,scores_logits)

@@ -2,7 +2,8 @@
 import math
 import unittest
 import torch
-from .objective import phoneme_loss, frame_span, micro_losses, source_weight, auxiliary_weights, confidence_regularization, batch_quotas
+from .objective import (phoneme_loss, phoneme_variance, frame_span, micro_losses,
+                        source_weight, auxiliary_weights, confidence_regularization, batch_quotas)
 from w2v_v3183r2.common import GROUPS
 
 
@@ -37,19 +38,54 @@ class TestObjective(unittest.TestCase):
         left = torch.tensor([[1., 0.], [1., 0.], [0., 1.], [0., 1.]], requires_grad=True)
         right = torch.tensor([[.6, .8], [.6, .8], [.8, .6], [.8, .6]], requires_grad=True)
         matches = [[0, 840, 0, 840], [840, 1480, 840, 1480]]
-        loss, count = phoneme_loss(left, right, matches)
+        loss, count = phoneme_loss(left, right, matches, scale=torch.ones(2))
         self.assertEqual(count, 2)
         self.assertAlmostEqual(float(loss), .4, places=6)
         loss.backward()
         self.assertGreater(float(left.grad.norm()), 0.)
         self.assertGreater(float(right.grad.norm()), 0.)
-        same, _ = phoneme_loss(left.detach(), left.detach() * 3, matches)
-        self.assertAlmostEqual(float(same), 0., places=6)
+        changed, _ = phoneme_loss(left.detach(), left.detach() * 3, matches, scale=torch.ones(2))
+        self.assertAlmostEqual(float(changed), 2., places=6)
+        with self.assertRaisesRegex(ValueError, 'frozen'):
+            phoneme_loss(left, right, matches)
+
+    def test_shared_offset_cannot_hide_phone_mismatch(self):
+        left=torch.tensor([[1.,2.],[2.,4.]],requires_grad=True)
+        right=torch.tensor([[1.,3.],[3.,4.]],requires_grad=True)
+        kwargs=dict(matches=[[0,520,0,520],[520,1000,520,1000]],scale=torch.tensor([.5,2.]))
+        a,_=phoneme_loss(left,right,**kwargs)
+        b,_=phoneme_loss(left+10000.,right+10000.,**kwargs)
+        torch.testing.assert_close(a,b)
+
+    def test_variance_counts_distinct_sources_and_caps_phones(self):
+        x=torch.arange(40,dtype=torch.float32).reshape(20,2)/1000
+        x.requires_grad_()
+        records=[(str(i),x,x+.01,.25) for i in range(4)]
+        loss,stats=phoneme_variance(records,torch.ones(2),{})
+        self.assertEqual((stats['sources'],stats['phones'],stats['applied']),(4,32,True))
+        self.assertGreater(float(loss),0.)
+        loss.backward()
+        self.assertTrue(bool(torch.isfinite(x.grad).all()))
+        self.assertGreater(float(x.grad.norm()),0.)
+        duplicate,stats=phoneme_variance([records[0]]*4,torch.ones(2),{})
+        self.assertEqual((stats['sources'],stats['phones'],stats['applied']),(1,8,False))
+        self.assertEqual(stats['reason'],'insufficient_sources')
+        self.assertEqual(float(duplicate),0.)
+
+    def test_variance_rejects_phone_shortage_and_releases_healthy_variance(self):
+        x=torch.tensor([[-2.,-2.],[2.,2.]],requires_grad=True)
+        records=[(str(i),x,x,.25) for i in range(4)]
+        loss,stats=phoneme_variance(records,torch.ones(2),{})
+        self.assertEqual(stats['reason'],'insufficient_phones')
+        self.assertEqual(float(loss),0.)
+        loss,stats=phoneme_variance(records,torch.ones(2),dict(pcl_variance_min_phones=8))
+        self.assertTrue(stats['applied'])
+        self.assertEqual(float(loss),0.)
 
     def test_empty_or_short_phones_do_not_inflate_other_sources(self):
         a = torch.randn(3, 4, requires_grad=True)
         b = torch.randn(3, 4, requires_grad=True)
-        value, count = phoneme_loss(a, b, [[0, 100, 0, 100]])
+        value, count = phoneme_loss(a, b, [[0, 100, 0, 100]], scale=torch.ones(4))
         self.assertEqual(count, 0)
         self.assertEqual(float(value), 0.)
         value.backward()
@@ -67,12 +103,12 @@ class TestObjective(unittest.TestCase):
 
     def test_reflection_frames_receive_no_direct_pcl_gradient(self):
         a=torch.randn(12,4,requires_grad=True);b=torch.randn(12,4,requires_grad=True)
-        loss,count=phoneme_loss(a,b,[[0,3920,0,3920]],left_valid_frames=2,right_valid_frames=3)
+        loss,count=phoneme_loss(a,b,[[0,3920,0,3920]],left_valid_frames=2,right_valid_frames=3,scale=torch.ones(4))
         self.assertEqual(count,1)
         loss.backward()
         self.assertEqual(float(a.grad[2:].abs().sum()),0.)
         self.assertEqual(float(b.grad[3:].abs().sum()),0.)
-        zero,count=phoneme_loss(a,b,[[0,3920,0,3920]],left_valid_frames=0,right_valid_frames=3)
+        zero,count=phoneme_loss(a,b,[[0,3920,0,3920]],left_valid_frames=0,right_valid_frames=3,scale=torch.ones(4))
         self.assertEqual(count,0)
         self.assertEqual(float(zero),0.)
 

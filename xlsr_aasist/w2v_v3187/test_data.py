@@ -6,6 +6,25 @@ from .data import Waves,ready,prepared,_valid_pairs,microbatches
 
 
 class DataTests(unittest.TestCase):
+    def test_train_online_warmup_calibrates_mapped_phones_without_reference_generation(self):
+        wave=np.random.default_rng(2).normal(0,.1,16000).astype(np.float32)
+        row=dict(id='on',source_id='off',group_id='g',language='en',label=1,split='train')
+        cfg=dict(seed=1,warm_epochs=1,consistency='dual')
+        ds=Waves([row],cfg);ds.original=lambda _:wave.copy()
+        phones=[dict(token='a',instance=0,start_sample=1000,end_sample=5000)]
+        ds._phones=lambda _:phones
+        ticket=dict(index=0,kind='online',base_variant=1,base_family='speed_slow',base_generation=0,
+            base_dynamic=False,base_view_id='view',occurrence='visit',epoch=0)
+        with patch('w2v_v3187.data.generate',side_effect=AssertionError('No RTC reference in Online warmup')):
+            result=ds[ticket][0]
+        self.assertEqual(result['split'],'train')
+        self.assertNotIn('pcl_refs',result)
+        self.assertEqual(len(result['pcl_calibration_spans']),1)
+        scale=result['base_augmentation']['time_map']['scale']
+        self.assertAlmostEqual(result['pcl_calibration_spans'][0][0],round(1000*scale),delta=1)
+        self.assertAlmostEqual(result['pcl_calibration_spans'][0][1],round(5000*scale),delta=1)
+        self.assertNotIn('pcl_calibration_spans',ds[dict(ticket,epoch=1)][0])
+
     def test_complete_content_and_exact_timing(self):
         x=np.linspace(-.4,.4,96000,dtype=np.float32)
         for variant,family in enumerate(FAMILIES):
@@ -107,6 +126,64 @@ class DataTests(unittest.TestCase):
                 language=lang,label=label,role='online',wave=np.zeros(16000,np.float32))])
         for batch in microbatches(units,4,1000):
             self.assertEqual(len({(u[0]['language'],u[0]['label']) for u in batch}),4)
+
+    def test_pair_first_packing_makes_default_variance_population_available(self):
+        # Default logical batch: 24 Online + 24 Offline (two Noisy each),
+        # twelve official-platform references. The old interleaved packing
+        # never put four platform sources together even for equal lengths.
+        for variable_length in (False,True):
+            units=[]
+            for group,(language,label) in enumerate((('en',0),('en',1),('zh',0),('zh',1))):
+                for index in range(6):
+                    source=f'{language}-{label}-{index}'
+                    samples=16000+(6400*(index%3)+1600*group if variable_length else 0)
+                    base=dict(id=source,source_id=source,language=language,label=label,
+                              wave=np.zeros(samples,np.float32))
+                    units.append([dict(base,role='online')])
+                    first=dict(base,role='noisy_a',pcl_pairs={'noise':[[0,2000,0,2000]]},
+                               pcl_refs={'clean':dict(base,role='clean_ref')})
+                    if index<3:
+                        first['pcl_pairs']['platform']=[[0,2000,0,2000]]
+                        first['pcl_refs']['official']=dict(base,role='official_ref')
+                    units.append([first,dict(base,role='noisy_b')])
+            batches=list(microbatches(units,16,12000,weights={'noise':.15,'platform':.045}))
+            self.assertCountEqual([id(u) for b in batches for u in b],[id(u) for u in units])
+            platform_populations=[];noise_populations=[]
+            for batch in batches:
+                self.assertEqual(len({u[0]['source_id'] for u in batch}),len(batch))
+                rows=[r for u in batch for r in list(u)+list(u[0].get('pcl_refs',{}).values())]
+                self.assertLessEqual(len(rows),16)
+                self.assertLessEqual(len(rows)*max((len(r['wave'])-400)//320+1 for r in rows),12000)
+                platform_populations.append(sum('platform' in u[0].get('pcl_pairs',{}) for u in batch))
+                noise_populations.append(sum('noise' in u[0].get('pcl_pairs',{}) for u in batch))
+            self.assertEqual(sorted(n for n in platform_populations if n),[4,4,4])
+            self.assertGreaterEqual(sum(n>=4 for n in noise_populations),5)
+
+    def test_ce_only_pair_metadata_keeps_original_packing(self):
+        units=[]
+        for group,(language,label) in enumerate((('en',0),('en',1),('zh',0),('zh',1))):
+            for index in range(3):
+                row=dict(id=f'{group}-{index}',source_id=f'{group}-{index}',language=language,label=label,
+                         role='online',wave=np.zeros(8000+index*16000,np.float32))
+                units.append([row])
+        baseline=[[u[0]['id'] for u in b] for b in microbatches(units,4,1000)]
+        for unit in units:
+            unit[0]['pcl_pairs']={'noise':[[0,2000,0,2000]],'platform':[[0,2000,0,2000]]}
+            unit[0]['pcl_refs']={'clean':dict(unit[0]),'official':dict(unit[0])}
+        actual=[[u[0]['id'] for u in b] for b in microbatches(units,4,1000,weights={'noise':0.,'platform':0.})]
+        self.assertEqual(actual,baseline)
+
+    def test_pair_first_packing_never_forces_four_sources_past_frame_budget(self):
+        units=[]
+        for index in range(5):
+            base=dict(id=str(index),source_id=str(index),language='en',label=index%2,role='noisy_a',
+                      wave=np.zeros(320400,np.float32))
+            first=dict(base,pcl_pairs={'noise':[[0,2000,0,2000]],'platform':[[0,2000,0,2000]]},
+                       pcl_refs={'clean':dict(base),'official':dict(base)})
+            units.append([first,dict(base,role='noisy_b')])
+        batches=list(microbatches(units,16,12000,weights={'noise':.15,'platform':.045}))
+        self.assertCountEqual([id(u) for b in batches for u in b],[id(u) for u in units])
+        self.assertTrue(all(len(batch)<=2 for batch in batches))
 
 
 if __name__=='__main__':unittest.main()

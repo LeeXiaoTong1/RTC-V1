@@ -6,7 +6,8 @@ import numpy as np
 import torch
 from torch import nn
 from w2v_v3183r2.common import GROUPS
-from .step import train_step, schedule
+from .step import train_step, schedule, _update_snapshot
+from .pcl_state import PCLScale
 
 
 class CountingDetector(nn.Module):
@@ -15,6 +16,10 @@ class CountingDetector(nn.Module):
         self.fusion = nn.Module()
         self.fusion.projection = nn.Linear(4, 128)
         self.classifier = nn.Linear(128, 2)
+        self.pcl_scale = PCLScale(128)
+        self.pcl_scale.observe(torch.stack((torch.zeros(128),torch.ones(128))), 'calibration-a')
+        self.pcl_scale.observe(torch.stack((torch.zeros(128),torch.ones(128))), 'calibration-b')
+        self.pcl_scale.freeze()
         self.encoded, self.classified, self.lookup = [], [], {}
 
     def encode(self, waves):
@@ -138,10 +143,13 @@ class TestStep(unittest.TestCase):
         settings = tiny_cfg()
         settings.update(cfg)
         model = Detector(TinyFrontend(), TinyEncoder(), settings, TinyLayout)
+        model.pcl_scale.observe(torch.stack((torch.zeros(128),torch.ones(128))), 'calibration-a')
+        model.pcl_scale.observe(torch.stack((torch.zeros(128),torch.ones(128))), 'calibration-b')
+        model.pcl_scale.freeze()
         stats = train_step(model, optimizer_for(model, settings), units, settings, .25, audit=True)
         self.assertTrue(np.isfinite(stats['loss']))
         self.assertEqual(stats['encoded_views'], 20)
-        self.assertGreater(stats['module_grad_norms_before_clip']['lora'], 0.)
+        self.assertGreater(sum(v for k,v in stats['module_grad_norms_before_clip'].items() if k.startswith('lora')), 0.)
         self.assertIn('classification/noise', stats['pcl_gradient_audit']['cosines'])
         self.assertFalse(any(layer._forward_hooks for layer in model.encoder.layers))
 
@@ -159,6 +167,10 @@ class TestStep(unittest.TestCase):
         cfg, units = fixture()
         cfg.update(warm_epochs=1, en_real_confidence_weight=.01)
         model = CountingDetector()
+        model.pcl_scale=PCLScale(128)
+        for unit in units:
+            if len(unit)==1:
+                unit[0]['pcl_calibration_spans']=[[0,2000],[2000,5000]]
         opt = optimizer(model)
         schedule(opt,cfg,0,0,10)
         stats = train_step(model,opt,units,cfg,.25)
@@ -167,9 +179,64 @@ class TestStep(unittest.TestCase):
         self.assertEqual(stats['auxiliary_reference_views'],0)
         self.assertEqual(stats['loss'],stats['classification_loss'])
         self.assertFalse(stats['en_real_confidence']['enabled'])
+        self.assertEqual(stats['pcl_scale_calibration'],dict(source_visits=4,phones=8))
+        self.assertEqual(int(model.pcl_scale.source_visits),4)
+        self.assertFalse(model.pcl_scale.is_frozen)
         schedule(opt,cfg,1,0,10)
         self.assertEqual(opt._v3187_joint_update,1)
         self.assertTrue(opt._v3187_joint)
+
+    def test_joint_rejects_missing_frozen_scale_before_encoding(self):
+        cfg,units=fixture();model=CountingDetector();model.pcl_scale=PCLScale(128)
+        with self.assertRaisesRegex(RuntimeError,'frozen Train phone scales'):
+            train_step(model,optimizer(model),units,cfg,.25)
+        self.assertEqual(model.encoded,[])
+
+    def test_variance_has_explicit_sparse_batch_coverage(self):
+        cfg,units=fixture();model=CountingDetector()
+        cfg.update(pcl_variance_weight=.01,pcl_ramp_updates=1)
+        stats=train_step(model,optimizer(model),units,cfg,.25)
+        self.assertEqual(stats['pcl_variance']['weighted_loss'],0.)
+        self.assertGreater(sum(v.get('skipped_insufficient_sources',0) for v in stats['pcl_variance']['coverage'].values()),0)
+
+    def test_variance_valid_batch_reuses_features_and_has_gradient_audit(self):
+        cfg,units=fixture();model=CountingDetector()
+        cfg.update(microbatch=20,frame_budget=10000,pcl_variance_weight=.01,
+                   pcl_variance_min_phones=8,pcl_variance_target=10.,pcl_ramp_updates=1)
+        stats=train_step(model,optimizer(model),units,cfg,.25,audit=True)
+        self.assertEqual(stats['encoded_views'],20)
+        self.assertEqual(len(model.encoded),len(set(model.encoded)))
+        self.assertGreater(stats['pcl_variance']['weighted_loss'],0.)
+        self.assertEqual(stats['pcl_variance']['coverage']['noise']['applied'],1)
+        self.assertIn('classification/variance',stats['pcl_gradient_audit']['cosines'])
+        total=stats['classification_loss']+sum(v['weighted_loss'] for v in stats['pcl_losses'].values())
+        self.assertAlmostEqual(stats['loss'],total+stats['pcl_variance']['weighted_loss'],places=6)
+
+    def test_all_depth_lora_roles_receive_warmup_and_joint_ramp(self):
+        cfg,_=fixture();cfg.update(warm_epochs=1)
+        parameters=[nn.Parameter(torch.ones(1)) for _ in range(4)]
+        groups=[dict(params=[p],name='lora_'+name,role='lora',lr=.01,initial_lr=.01)
+                for p,name in zip(parameters[:3],('early','middle','late'))]
+        groups.append(dict(params=[parameters[-1]],name='head',lr=.02,initial_lr=.02))
+        opt=torch.optim.SGD(groups,lr=.01)
+        schedule(opt,cfg,0,0,10)
+        self.assertEqual([g['lr'] for g in opt.param_groups],[0.,0.,0.,.02])
+        schedule(opt,cfg,1,0,10)
+        self.assertEqual([g['lr'] for g in opt.param_groups],[.005,.005,.005,.02])
+
+    def test_update_audit_samples_lora_b_even_when_all_a_gradients_are_zero(self):
+        parameters=[nn.Parameter(torch.ones(2000)) for _ in range(6)]
+        for index,value in enumerate(parameters):
+            value.grad=torch.zeros_like(value) if index%2==0 else torch.ones_like(value)
+        opt=torch.optim.SGD([dict(params=parameters,name='lora_early',lr=.1)],lr=.1)
+        snapshots=_update_snapshot(opt)
+        self.assertEqual(len(snapshots),6)
+        self.assertEqual(sum(item[2] for item in snapshots),1024)
+        opt.step()
+        changes=[float((parameter.detach().flatten()[:count]-before).square().sum())
+                 for _,parameter,count,before in snapshots]
+        self.assertTrue(all(changes[i]==0 for i in (0,2,4)))
+        self.assertTrue(all(changes[i]>0 for i in (1,3,5)))
 
     def test_variable_actual_quota_metadata_overrides_static_configuration(self):
         cfg, units = fixture()

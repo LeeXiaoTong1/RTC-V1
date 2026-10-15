@@ -27,7 +27,7 @@ def _frames(samples):
 def _limits(cfg):
     return dict(whole_max_frames=int(cfg.get('whole_max_frames',3000)),
         frame_budget=int(cfg.get('frame_budget',12000)),
-        microbatch=int(cfg.get('microbatch',24)))
+        microbatch=int(cfg.get('microbatch',16)))
 
 
 def _check_units(units,cfg,scope):
@@ -53,7 +53,10 @@ def _check_units(units,cfg,scope):
         waveform_policy='Encode full waveforms once; reflect only inputs shorter than 3920 samples after RTC; cover all fused feature frames with overlapping AASIST windows; no audio truncation.',
         aasist_windows=dict(window=window,hop=hop,window_batch=window_batch,
             max_temporal_graph_cells_per_window=(window//3)**2),
-        estimate='Resource guards are bounds, not measured GPU-memory guarantees.')
+        encoder_adaptation=dict(lora_layers=cfg.get('lora_layers',60),
+            checkpoint_layers=cfg.get('checkpoint_layers',60),
+            note='All-depth adapter training retains a backward path through the whole encoder; checkpointing trades additional computation for activation memory.'),
+        estimate='Resource guards are bounds, not measured GPU-memory guarantees; they do not predict backward activation or optimizer memory.')
     if violations:
         flags=' '.join('--'+key.replace('_','-')+' '+str(value) for key,value in requirements.items() if value>limits[key])
         examples='; '.join(str(v['source_id'])+' ['+', '.join(r['role']+':'+str(r['frames'])+' frames' for r in v['rows'])+']' for v in violations[:5])
@@ -72,7 +75,7 @@ def audit_training(train,dev,cfg):
     """
     enabled=cfg.get('consistency','dual')!='none'
     noise=enabled and cfg.get('pcl_noise_weight',.15)>0
-    platform=enabled and cfg.get('pcl_platform_weight',.15)>0 and cfg.get('platform_sources_per_group',2)>0
+    platform=enabled and cfg.get('pcl_platform_weight',.045)>0 and cfg.get('platform_sources_per_group',3)>0
     online={};counts={};metadata={};units=[]
     for row in train:
         if row.get('condition') not in ('online','offline'):

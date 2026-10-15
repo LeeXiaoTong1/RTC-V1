@@ -1,8 +1,10 @@
-# V3.18.7: fresh detector, dynamic source exposure and efficient full-content input
+# V3.18.7 schema v2: all-depth adaptation and batch-independent full-content detection
 
-V3.18.7 loads the official Omni W2V 3B pretrained backbone. LoRA, all-layer fusion, AASIST, window attention/statistics pooling, the complete 320-dimensional classifier and detection BN statistics are initialized afresh. `--data-run` reuses data manifests, fixed Dev partitions and asset locations only: no historical detector or optimizer checkpoint is loaded.
+V3.18.7 schema v2 loads the official Omni W2V 3B pretrained backbone. LoRA in all 60 encoder layers, all-layer fusion, AASIST, window attention/statistics pooling and the complete 384-dimensional classifier are initialized afresh. AASIST uses GroupNorm in its convolutional path and per-node LayerNorm in its graph path, without BatchNorm running statistics. `--data-run` reuses data manifests, fixed Dev partitions and asset locations only: no historical detector or optimizer checkpoint is loaded.
 
-Production defaults are **20 epochs, including one head warmup epoch**. Warmup freezes LoRA and omits both PCL branches and EN-real confidence regularization. Joint training then enables these objectives with a gradual ramp. This release does not claim a measured server GPU speedup or a validated optimal learning rate; the real A100 memory/throughput measurements are still required.
+Production defaults are **20 epochs, including one head warmup epoch**. Warmup freezes LoRA, trains the new reader/head, and collects the feature scale for PCL from Train only. PCL losses are off during warmup; their fixed scale is saved and frozen before joint training. EN-real confidence regularization is disabled by default. This release does not claim a measured server GPU speedup or a validated optimal learning rate; the real A100 memory/throughput measurements are still required.
+
+Schema v2 is an architecture/objective change within the requested V3.18.7 name. A checkpoint from the earlier 320-dimensional BN-based V3.18.7 schema cannot be resumed as schema v2. Existing data, noise and phoneme caches can still be reused. Start a new run; do not convert or silently truncate an old classifier.
 
 ## Training composition and exact budgets
 
@@ -31,15 +33,23 @@ Only inputs shorter than 3,920 samples (0.245 seconds at 16 kHz) are extended by
 
 PCL excludes artificial mirrored positions and CNN frames whose complete 400-sample receptive field crosses the original boundary. Waveforms shorter than 400 original samples have no valid PCL frames and can receive classification supervision only. Their phoneme metadata explicitly records the exclusion. Original-position contextual representations can still attend to mirrored context through the encoder; this is not a claim of complete isolation from the artificial context.
 
-The dual PCL branches remain: simulated clean RTC versus same-parameter simulated Noisy RTC, and official Online versus same-source simulated clean RTC. Pairing uses valid mapped phone instances and delay/reliability checks. Mirroring is applied after signal processing, and artificial reversed phone instances are not fabricated.
+The dual PCL branches remain: simulated clean RTC versus same-parameter simulated Noisy RTC, and official Online versus same-source simulated clean RTC. Pairing uses valid mapped phone instances and delay/reliability checks. Mirroring is applied after signal processing, and artificial reversed phone instances are not fabricated. Their default weights are 0.15 and 0.045 respectively; source-count normalization remains explicit rather than treating fewer platform pairs as a smaller loss coefficient.
+
+PCL now measures the MSE of aligned phoneme means in coordinates scaled by frozen Train statistics; it does not L2-normalize each phoneme vector before alignment. A variance floor discourages constant representations in the same scaled coordinates. Classification continues to supply the real/fake separation objective. This is an adaptation, not an exact replication of the benchmark's unscaled MSE. Feature-scale buffers, freeze status and diagnostics are checkpointed, and Dev/Progress never update them. Neither a low alignment loss nor the variance floor alone establishes better spoof detection.
 
 ## Architecture, regularization and throughput
 
-The detector retains full-layer Omni fusion, overlapping AASIST windows (128 feature frames, hop 64), and attention-weighted mean plus standard deviation pooling. Tail windows preserve complete temporal coverage. PCL references bypass the classifier and its BN statistics.
+The detector retains full-layer Omni fusion, overlapping AASIST windows (128 feature frames, hop 64), and the complete 320-dimensional attention-weighted mean plus standard deviation representation. Tail windows preserve complete temporal coverage. An additional 64-dimensional temporal-variation representation reuses AASIST features before temporal graph top-k pooling. It is computed for both short and long utterances, and does not require another Omni pass. The classifier reads all 384 dimensions. A single window correctly has zero between-window standard deviation; the new path supplies within-window variation instead of inventing extra windows. PCL references bypass the classifier.
 
-EN-real classification weight is not reduced. The existing C3 classification objective and label smoothing 0.02 remain. A small additional EN-real confidence penalty activates only on a correctly oriented, excessively large real-versus-fake logit gap: the default margin is 3.5 and coefficient is 0.01. It is zero for incorrect and borderline EN-real predictions and disabled in head warmup. This class-conditioned heuristic can change calibration; its activation fraction and loss are recorded, and effectiveness must be judged by AUC/EER and Real recall at matched Fake recall, not only the threshold-0.5 recall. Set `--en-real-confidence-weight 0` only on a new controlled comparison run to disable it.
+EN-real classification weight is not reduced. The existing C3 classification objective and label smoothing 0.02 remain. The optional EN-real confidence penalty has default coefficient **0**; it is not part of the default optimization. If explicitly enabled in a new controlled experiment, it activates above a real-versus-fake logit gap of 3.5 and is disabled during warmup. This class-conditioned heuristic can change calibration and is not assumed to solve the persistent English errors.
 
-The default physical encoded-view cap is 16, including active auxiliary references, with a 12,000-frame budget. Length-aware packing keeps each source/reference unit intact. CE and both PCL branches share each encoder result. Classification windows interleave sources, use a window batch cap of 32, and do not include auxiliary references in BN. Eight upper trainable layers use activation checkpointing by default. Gradient audits are sparse; full fixed Dev is evaluated each epoch, while extra mechanism/scene panels run every five epochs and at the end.
+All 60 encoder layers receive Q/K/V/O LoRA. Initial adapter learning rates are 5e-6 for layers 1-20, 1e-5 for layers 21-40 and 2e-5 for layers 41-60, with the existing schedule and ramp. The official encoder weights remain frozen; this is not a full 3B-parameter fine-tune. Moving the earliest adapters into the encoder also extends backward computation through the whole encoder, even though the adapter parameter count remains much smaller than the backbone.
+
+Convolutional normalization uses GN(1,1) for the initial single channel and GN(8,C) for channels 32/64/128. Graph normalization uses LN over each node's 64 or 32 features. Exact valid-length windows are still grouped without padding; changing normalization does not make arbitrary padded graph input safe. This removes normalization's dependency on other sources in the physical batch, but does not guarantee better unseen-source performance.
+
+The default physical encoded-view cap is 16, including active auxiliary references, with a 12,000-frame budget. Length-aware packing keeps each source/reference unit intact. CE and both PCL branches share each encoder result. Classification windows interleave sources and use a window batch cap of 32. All 60 adapted layers use activation checkpointing by default. Checkpointing saves activation memory by recomputing forward operations; all-depth adaptation can still be slower or require more memory than the previous 16-layer recipe. Gradient audits are sparse; full fixed Dev is evaluated each epoch, while extra mechanism/scene panels run every five epochs and at the end.
+
+When PCL is active, physical packing groups official-platform pairs first, then other noise pairs, and only then fills spare capacity with Online/classification-only units. This makes four independent paired sources available for the variance objective when their lengths fit, instead of filling every batch with too few pairs. Length and encoded-view limits remain strict; long recordings or insufficient valid phones can still skip variance and are reported explicitly. No source/reference unit is split or repeated, and CE-only packing is unchanged. GN/LN removes the earlier need to mix Online and Noisy units for BatchNorm statistics.
 
 Logical batch size 72 does not mean 72 waveforms are forced into one physical forward. The cap is deliberately bounded until the longest recordings and active references have been measured on the server. Increase `--microbatch` or change checkpointing only for a **new run**, after measuring throughput and peak memory. A paused run resumes its exact saved configuration.
 
@@ -104,7 +114,27 @@ RUN=$(cat exp/.latest_v3187_run)
 bash run_w2v_v3187.sh --resume "$RUN"
 ```
 
-Do not append new learning rates, epoch counts, batch caps or augmentation settings to a resume command. Saved submission/report plans are retained. Unexpected termination resumes from the most recently committed checkpoint; only a confirmed graceful pause guarantees preservation through its acknowledged optimizer boundary.
+Do not append new learning rates, epoch counts, batch caps or augmentation settings to a resume command. Saved submission/report plans and the PCL scale/freeze state are retained. Unexpected termination resumes from the most recently committed checkpoint; only a confirmed graceful pause guarantees preservation through its acknowledged optimizer boundary. These commands resume only the same schema v2 run, not an earlier V3.18.7 architecture.
+
+## Shared warmup classification-only control
+
+The completed warmup stage saves `warmup.pt` (after epoch 1 with the defaults). A new comparison run can inherit exactly those model weights, optimizer state and RNG state, then continue at epoch 2 with PCL disabled. It retains the same total epoch budget and does not repeat the warmup or load a later best checkpoint. This is a new run, not an in-place change to the source run.
+
+First finish or gracefully pause the source job; the two jobs must not train concurrently. Set `SOURCE_RUN` to the schema v2 run whose `warmup.pt` you want to reuse. Save that path before starting the new branch, because the latest-run marker will then point to the branch.
+
+```bash
+SOURCE_RUN=$(cat exp/.latest_v3187_run)
+bash run_w2v_v3187.sh \
+  --warm-start-run "$SOURCE_RUN" \
+  --consistency none \
+  --submit-best \
+  --upload-submission \
+  --download-dir /home/ubuntu/LXT/temp \
+  --submission-protocol /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/progress.txt \
+  --submission-audio-root /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/wav/progress
+```
+
+Only the consistency choice and delivery options may change in this control. Do not append `--epochs`, learning rates, batch caps or augmentation overrides. The existing dual-PCL run and this classification-only branch therefore start joint training from the same recorded warmup state. Different active reference views can still change physical packing; shared initialization is not a guarantee that every later random draw is identical.
 
 ## Best submission and both download links
 
@@ -137,4 +167,4 @@ The run records `input_audit.json`, `augmentation_budget_audit.json`, per-epoch 
 
 CPU tests exercise source-budget exactness, dynamic refresh, reflection masks, matching/normalization, shared encoder features, fresh initialization, checkpoint resume, report boundaries and append-only terminal history. Native A100 runtime, peak memory, full-data convergence and Progress improvement require server execution and are not established by these tests.
 
-Final local acceptance: 88 CPU tests passed across the full suite and the final affected lifecycle regressions; 7 Bash entrypoints passed native Bash syntax checks; all 41 Python files parse under Python 3.10 syntax. The release snapshot preserves all 1,090 files of remote base `08f764e4b9f3a80c05d6c9a56d6cd79d3f1c72fe` and adds only the 49 V3.18.7 source, test, entrypoint and documentation files. These are CPU and interface checks, not an A100 throughput or convergence result.
+Historical validation counts for the earlier V3.18.7 schema do not establish acceptance of schema v2. The updated tests cover normalization independence, complete classifier geometry, all-depth adapter gradients, Train-only PCL scale lifecycle and exact resume state. The startup viewer regression remains covered. Run the current suite for this source revision. The native interface smoke test uses the installed fairseq2 encoder with a small randomly initialized model; it is not a real 3B GPU throughput or convergence measurement.

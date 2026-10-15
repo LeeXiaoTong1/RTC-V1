@@ -24,6 +24,13 @@ class ResourceTests(unittest.TestCase):
         out=audit_inference([row('tiny',10)],{})
         self.assertEqual(out['maxima']['classification_frames'],12)
 
+    def test_all_depth_resource_metadata_is_not_memory_claim(self):
+        out=audit_inference([row('short',16000)],{})
+        self.assertEqual(out['limits']['microbatch'],16)
+        self.assertEqual(out['encoder_adaptation']['lora_layers'],60)
+        self.assertEqual(out['encoder_adaptation']['checkpoint_layers'],60)
+        self.assertIn('not measured GPU-memory guarantees',out['estimate'])
+
     def test_header_only_resampling_ceil(self):
         r=row('stereo',1);del r['output_samples']
         with patch('soundfile.info',return_value=SimpleNamespace(frames=48002,samplerate=48000,channels=2)) as info, \

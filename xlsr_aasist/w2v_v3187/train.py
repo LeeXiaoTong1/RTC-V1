@@ -71,11 +71,11 @@ def initial_audit(model,cfg):
     adapters=[p for n,p in model.named_parameters() if n.endswith('.lora_b')]
     if any(torch.count_nonzero(p.detach()).item() for p in adapters):
         raise ValueError('Fresh LoRA B must start at zero')
-    tracked=[b for n,b in model.named_buffers() if n.endswith('num_batches_tracked') and n.startswith('head.')]
-    if any(int(b)!=0 for b in tracked):
-        raise ValueError('Fresh detection BN buffers are required')
+    batch_norms=[m for m in model.head.modules() if isinstance(m,torch.nn.modules.batchnorm._BatchNorm)]
+    if batch_norms:
+        raise ValueError('V3.18.7 v2 detection backend must contain no BatchNorm')
     return dict(mode='pretrained',detector_checkpoint_loaded=False,optimizer_loaded=False,
-        zero_lora_b=len(adapters),fresh_bn_counters=len(tracked),
+        zero_lora_b=len(adapters),batch_norm_modules=0,normalization='GroupNorm/LayerNorm',
         scope='Official SSL backbone only; all detection parameters are new; no random-Dev baseline inference')
 
 
@@ -86,7 +86,8 @@ def _accumulator(value=None):
         processing=Counter(value.get('processing',{})),base_views=Counter(value.get('base_views',{})),
         pcl_totals=defaultdict(Counter,{k:Counter(v) for k,v in value.get('pcl_totals',{}).items()}),
         pcl_coverage=defaultdict(Counter,{k:Counter(v) for k,v in value.get('pcl_coverage',{}).items()}),
-        confidence=Counter(value.get('confidence',{})))
+        confidence=Counter(value.get('confidence',{})),variance=Counter(value.get('variance',{})),
+        variance_coverage=defaultdict(Counter,{k:Counter(v) for k,v in value.get('variance_coverage',{}).items()}))
 
 
 def _plain(acc):
@@ -111,7 +112,9 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
     inventory=dict(head=sum(p.numel() for p in model.head.parameters()),
         lora=sum(p.numel() for n,p in model.named_parameters() if n.endswith(('.lora_a','.lora_b'))),
         fusion=sum(p.numel() for p in model.fusion.parameters()),encoder_base_frozen=True,
-        external_window_pooling=True,pooling='asp',classification_dim=320,head_buffers_saved=True)
+        external_window_pooling=True,pooling='asp',classification_dim=model.head.aasist.out_layer.in_features,
+        normalization='GroupNorm/LayerNorm',optimizer_groups=[dict(name=g['name'],lr=g['initial_lr']) for g in optimizer.param_groups],
+        head_buffers_saved=True,pcl_scale_saved=True)
     atomic_json(run/'parameter_inventory.json',inventory)
     if shutil.disk_usage(run).free<cfg['free_reserve_bytes']+1024**3:
         raise OSError('Need 1 GiB plus free-space reserve for partial checkpoints')
@@ -139,7 +142,21 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
         if state.get('schema')!=schema_for(cfg) or state.get('identity')!=fingerprint(cfg):
             raise ValueError('Resume configuration changed')
         apply_partial(model,state['model']);optimizer.load_state_dict(state['optimizer']);restore_rng(state['rng'])
-        print(f'[Resume] completed epochs={state["epoch"]}; next step={state["next_step"]}; optimizer and BN restored',flush=True)
+        print(f'[Resume] completed epochs={state["epoch"]}; next step={state["next_step"]}; optimizer and PCL scale restored',flush=True)
+    elif cfg.get('warm_start'):
+        origin=cfg['warm_start'];checkpoint=Path(origin['checkpoint'])
+        if digest(checkpoint)!=origin['sha256']:
+            raise ValueError('Warmup checkpoint changed')
+        state=torch.load(checkpoint,map_location='cpu',weights_only=True)
+        if (state.get('schema')!=schema_for(cfg) or state.get('identity')!=origin['parent_identity'] or
+                state.get('epoch')!=cfg['warm_epochs'] or state.get('next_step')!=0):
+            raise ValueError('Not the verified completed warmup state')
+        apply_partial(model,state['model']);optimizer.load_state_dict(state['optimizer']);restore_rng(state['rng'])
+        if cfg['consistency']=='dual' and not model.pcl_scale.is_frozen:
+            raise ValueError('PCL warm start lacks frozen Train scale')
+        state['identity']=fingerprint(cfg)
+        atomic_json(run/'warm_start_audit.json',dict(origin,epoch=state['epoch'],optimizer_and_rng_restored=True))
+        save(run,cfg,state,model,optimizer)
     else:
         state['initialization_audit']=initial_audit(model,cfg)
         atomic_json(run/'initialization_audit.json',state['initialization_audit'])
@@ -154,6 +171,8 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
     try:
         for epoch in range(state['epoch'],cfg['epochs']):
             joint=epoch>=cfg['warm_epochs'];model.set_phase(joint);model.train()
+            if joint and cfg['consistency']=='dual' and not model.pcl_scale.is_frozen:
+                raise ValueError('Joint PCL requires frozen Train-warmup scale')
             phase='joint' if joint else 'head_warmup'
             if cfg['device'].startswith('cuda'):
                 torch.cuda.reset_peak_memory_stats(cfg['device'])
@@ -175,6 +194,9 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
                 for key,values in stats['pcl_coverage'].items():acc['pcl_coverage'][key].update(values)
                 for name in ('weighted_loss','active_views','views'):
                     acc['confidence'][name]+=stats['en_real_confidence'][name]
+                acc['variance']['weighted_loss']+=stats.get('pcl_variance',{}).get('weighted_loss',0.)
+                for kind,values in stats.get('pcl_variance',{}).get('coverage',{}).items():
+                    acc['variance_coverage'][kind].update(values)
                 state['cursor']+=1;state['next_step']=step+1
                 append_json(run/'steps.jsonl',dict(update=state['cursor'],epoch=epoch+1,step=step+1,**stats,
                                                  compute_seconds=seconds,wait_seconds=wait))
@@ -191,6 +213,9 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
                 start=time.monotonic()
             if int(totals['updates'])!=plan.steps:
                 raise RuntimeError('Incomplete logical epoch')
+            if epoch+1==cfg['warm_epochs'] and cfg['consistency']=='dual':
+                model.pcl_scale.freeze()
+                atomic_json(run/'pcl_scale_calibration.json',model.pcl_scale.describe())
             tag=f'epoch_{epoch+1}_step_{plan.steps}';evaluation_seconds={}
             def timed_infer(name,*args):
                 atomic_json(run/'progress.json',dict(status='evaluating',phase=name,epoch=epoch+1,epochs=cfg['epochs'],step=plan.steps,steps=plan.steps,loss=totals['loss']/plan.steps))
@@ -207,6 +232,8 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
                 processing_counts=dict(acc['processing']),base_source_view_counts=dict(acc['base_views']),
                 mean_unique_sources_per_update=totals['unique_sources_per_update']/plan.steps,
                 en_real_confidence=dict(acc['confidence']),
+                pcl_variance=dict(acc['variance'],coverage={k:dict(v) for k,v in acc['variance_coverage'].items()}),
+                pcl_scale=model.pcl_scale.describe(),
                 auxiliary=dict(mean_per_update={k:totals[k]/plan.steps for k in ('classification_loss','encoded_views','auxiliary_reference_views')},
                     losses={k:dict(v) for k,v in acc['pcl_totals'].items()},coverage={k:dict(v) for k,v in acc['pcl_coverage'].items()}),
                 cuda_peak_memory=None)
@@ -227,6 +254,8 @@ def run_experiment(cfg,run,train,dev,model_factory=load_model,baseline_only=Fals
             np.savez_compressed(run/f'dev_scores_{tag}.npz',logits=logits)
             atomic_json(run/f'sampling_and_loss_{tag}.json',dict(coverage=coverage,actual=training))
             checkpoint_start=time.monotonic();save(run,cfg,state,model,optimizer,current);checkpoint_seconds=time.monotonic()-checkpoint_start
+            if epoch+1==cfg['warm_epochs'] and not cfg.get('warm_start'):
+                atomic_save(run/'warmup.pt',state,cfg['free_reserve_bytes']+cfg['disk_margin_bytes'])
             print_epoch(entry,state);render(run,state['history'],state['steps'])
             atomic_json(run/f'performance_{tag}.json',dict(epoch=epoch+1,train_compute_seconds=totals['compute_seconds'],
                 train_wait_seconds=totals['wait_seconds'],evaluation_seconds=evaluation_seconds,checkpoint_write_seconds=checkpoint_seconds,
