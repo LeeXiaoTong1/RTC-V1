@@ -5,7 +5,7 @@ import secrets
 import traceback
 import sys
 from w2v_aasist.launch import run_lock
-from w2v_aasist.full_workflow import ensure_idle
+from .processes import ensure_idle
 from .common import ROOT,RECIPE,atomic_json,read_json,digest
 from .config import parser,validate,validate_locked_cli,configuration,verify_inputs
 from .train import run_experiment

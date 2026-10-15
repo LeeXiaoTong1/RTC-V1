@@ -8,7 +8,7 @@ import torch
 from w2v_aasist.data import read_protocol
 from w2v_aasist.evaluate import package_scores
 from w2v_aasist.launch import run_lock
-from w2v_aasist.full_workflow import ensure_idle
+from .processes import ensure_idle
 from .common import ROOT,RECIPE,schema_for,read_json,atomic_json,digest,verify_files,fingerprint,apply_partial,seed_all
 from .config import verify_inputs
 from .model import load_model

@@ -12,7 +12,7 @@ for ARG in "${ARGS[@]}"; do
   if [[ "$ARG" == --help || "$ARG" == -h ]]; then exec python -m w2v_v3187.config "${ARGS[@]}"; fi
 done
 python -m w2v_v3187.config "${ARGS[@]}"
-python -c 'from w2v_aasist.full_workflow import ensure_idle; ensure_idle()'
+python -m w2v_v3187.processes
 export TMPDIR="${V3187_TMPDIR:-$PWD/.tmp_v3187}"
 mkdir -p "$TMPDIR" exp
 LOG="$PWD/exp/v3187_$(date +%Y%m%d_%H%M%S)_$$.log"

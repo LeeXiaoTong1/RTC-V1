@@ -81,6 +81,8 @@ This preparation command verifies and reuses an existing valid cache, the existi
 
 The launcher starts training in an isolated background session. Ctrl+C in the watcher closes only the viewer. The current progress line includes loss, CE and ETA; each completed epoch's full Dev table is appended and never cleared by the next epoch. Reopening the watcher replays all committed epoch tables once. The detailed raw log remains available through `exp/.latest_v3187_log`.
 
+Startup correction: all V3.18.7 launch and export checks now distinguish the exact read-only `python -m w2v_v3187.monitor` entrypoint from training, evaluation and cache jobs. This prevents the automatically opened viewer from blocking its own detached worker. Other model/cache jobs remain blocked; the launch lock remains in place. A viewer name appearing only in another process's arguments does not exempt that process. The correction passes 21 focused CPU tests, including six new process-table regressions; it does not change the training recipe.
+
 ```bash
 bash watch_w2v_v3187.sh
 bash watch_w2v_v3187.sh --once
