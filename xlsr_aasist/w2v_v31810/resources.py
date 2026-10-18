@@ -53,9 +53,9 @@ def _check_units(units,cfg,scope):
         waveform_policy='Encode full waveforms once; reflect only inputs shorter than 3920 samples after RTC; cover all fused feature frames with overlapping AASIST windows; no audio truncation.',
         aasist_windows=dict(window=window,hop=hop,window_batch=window_batch,
             max_temporal_graph_cells_per_window=(window//3)**2),
-        encoder_adaptation=dict(lora_layers=cfg.get('lora_layers',60),
-            checkpoint_layers=cfg.get('checkpoint_layers',60),
-            note='All-depth adapter training retains a backward path through the whole encoder; checkpointing trades additional computation for activation memory.'),
+        encoder_adaptation=dict(lora_layers=cfg.get('lora_layers',16),
+            checkpoint_layers=cfg.get('checkpoint_layers',cfg.get('lora_layers',16)),
+            note='Only the selected final encoder layers contain adapters and encoder backward paths. All encoder layers still feed trainable fusion; checkpointing recomputes selected adapter layers only. This is not a GPU-memory estimate.'),
         estimate='Resource guards are bounds, not measured GPU-memory guarantees; they do not predict backward activation or optimizer memory.')
     if violations:
         flags=' '.join('--'+key.replace('_','-')+' '+str(value) for key,value in requirements.items() if value>limits[key])

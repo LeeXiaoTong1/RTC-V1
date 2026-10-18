@@ -37,6 +37,8 @@ def parser():
     p.add_argument('--experiment',choices=('E0','E1','E2'),default='E2')
     p.add_argument('--resume',help='Resume only this V3.18.10 experiment at a committed outer-update boundary')
     p.add_argument('--epochs',type=int,default=15)
+    p.add_argument('--lora-layers',type=int,choices=(16,60),default=16,
+        help='Adapt the last 16 encoder layers by default; 60 is the same-recipe full-depth comparison. The reader always uses all layers')
     p.add_argument('--device',default='cuda:0')
     p.add_argument('--workers',type=int,default=None)
     p.add_argument('--eval-workers',type=int,default=None)
@@ -76,6 +78,8 @@ def validate_locked_cli(args,argv):
 
 def training_configuration(old,args,source):
     validate(args);cfg=copy.deepcopy(old)
+    depth=old['encoder_layers'];lora_layers=args.lora_layers
+    if lora_layers>depth:raise ValueError('Selected LoRA depth exceeds the pretrained encoder depth')
     for key in ('saved_manifests','parent_init','warm_start','augmentation_budget_audit','window_resource_audit',
                 'learning_rate_origin','warm_lr','warm_fusion_lr','warm_layer_mix_lr','warm_evidence_lr','phoneme_provenance',
                 'source_registry'):
@@ -85,11 +89,15 @@ def training_configuration(old,args,source):
         source_draws_per_stream=[9668,8000,8000,8000],group_quotas=[6,6,6,6],
         view_factors=[5,5,1,3],refresh_base_variants=True,base_original_fraction=.2,
         pooling='asp',local_evidence=True,temporal_stats=True,window=128,hop=64,
-        fusion_dim=128,fusion_layers=list(range(1,old['encoder_layers']+1)),
-        lora_layers=old['encoder_layers'],lora_rank=16,lora_alpha=32.,lora_dropout=.05,
+        fusion_dim=128,fusion_layers=list(range(1,depth+1)),
+        lora_layers=lora_layers,lora_rank=16,lora_alpha=32.,lora_dropout=.05,
+        adaptation_policy=dict(strategy='last_n_encoder_layers',layer_numbering='one_based',
+            trainable_encoder_layers=list(range(depth-lora_layers+1,depth+1)),
+            frozen_encoder_prefix_layers=depth-lora_layers,read_encoder_layers=list(range(1,depth+1)),
+            checkpoint_encoder_layers=lora_layers),
         lora_early_lr=5e-6,lora_middle_lr=1e-5,lora_lr=2e-5,
         fusion_lr=1e-4,layer_mix_lr=1e-4,head_lr=1e-4,pool_lr=1e-4,classifier_lr=1e-4,evidence_lr=1e-4,
-        weight_decay=1e-4,max_grad_norm=1.,label_smoothing=.02,lr_floor=.1,lr_warmup_updates=200,
+        weight_decay=.01,max_grad_norm=1.,label_smoothing=.02,lr_floor=.1,lr_warmup_updates=200,
         meta_beta=.5,meta_beta_ramp_epochs=2,inner_grad_norm=1.,
         inner_candidates=[.001,.003,.01,.03,.1],calibration_tasks=12,
         gradient_audit_interval=200,diagnostic_interval=1,
@@ -98,7 +106,7 @@ def training_configuration(old,args,source):
         phoneme_manifest=None,phoneme_files={},inference_requires_phonemes=False,
         noisy_views_per_source=1,risk_coefficient=0.,classification_objective='source_isolated_metadg_ce',
         scene_probability=1.,rtc_policy='three-profile',rtc_activity_policy='mixed',
-        checkpoint_layers=old['encoder_layers'],checkpointing=True,fusion_checkpointing=True,
+        checkpoint_layers=lora_layers,checkpointing=True,fusion_checkpointing=True,
         short_input_policy='reflect_to_3920',normalization='group_layer',patience=0,
         device=args.device,microbatch=args.microbatch,frame_budget=args.frame_budget,
         whole_max_frames=args.whole_max_frames,

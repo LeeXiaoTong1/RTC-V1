@@ -22,7 +22,9 @@ def main():
         if args.resume:
             run=Path(args.resume).expanduser().resolve();cfg=read_json(run/'config.json')
             if cfg.get('version')!='3.18.10' or cfg.get('recipe')!=RECIPE:
-                raise ValueError('--resume accepts only V3.18.10 runs; --data-run reuses data without inheriting detector weights')
+                raise ValueError('--resume accepts only this V3.18.10 recipe v2. Start a NEW run using --data-run '
+                                 'from the original V3.18.4 through V3.18.9 data run; older detector/optimizer states '
+                                 'and LoRA depths are not migrated')
             require_registry_config(cfg)
             if 'source_registry.json' not in cfg.get('saved_manifests',{}):
                 raise ValueError('Missing saved PCM source registry; start a NEW run using --data-run from the original V3.18.4 through V3.18.9 data run, not --resume')

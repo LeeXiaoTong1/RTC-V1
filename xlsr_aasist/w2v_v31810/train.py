@@ -6,7 +6,7 @@ import shutil
 import torch
 from .common import (schema_for,atomic_json,read_json,digest,fingerprint,seed_all,partial_state,apply_partial,
     atomic_save,to_cpu,capture_rng,restore_rng,append_json)
-from .model import load_model,optimizer_for
+from .model import load_model,optimizer_for,adapter_inventory
 from .sampling import Plan
 from .data import Waves,TicketSampler,loader,close
 from .meta import train_step
@@ -61,7 +61,8 @@ def run_experiment(cfg,run,train,dev,protocol,model_factory=load_model,baseline_
     if paused.is_file() and request.is_file() and request.stat().st_mtime_ns<=paused.stat().st_mtime_ns:request.unlink()
     if model_factory is load_model:
         from .interface_smoke import main
-        main(cfg['device'],cfg['backend_precision'])
+        main(cfg['device'],cfg['backend_precision'],lora_layers=cfg['lora_layers'],
+            checkpoint_layers=cfg['checkpoint_layers'],fusion_checkpointing=cfg['fusion_checkpointing'])
     _progress(run,cfg,0,0,0,'Loading official Omni; initializing new detector')
     model=model_factory(cfg);optimizer=optimizer_for(model,cfg)
     if hasattr(model,'pcl_scale'):raise ValueError('V3.18.10 must not instantiate PCL state')
@@ -83,7 +84,9 @@ def run_experiment(cfg,run,train,dev,protocol,model_factory=load_model,baseline_
             trainable_parameters=sum(p.numel() for n,p in model.named_parameters() if p.requires_grad or n.endswith(('.lora_a','.lora_b'))),
             classification_dim=model.head.aasist.out_layer.in_features,pcl_state=False,
             backend_precision=cfg.get('backend_precision','fp32'),trainable_snapshot_only=True,
-            optimizer_groups=[dict(name=g['name'],lr=g['initial_lr']) for g in optimizer.param_groups])
+            encoder_adaptation=adapter_inventory(model),
+            optimizer_groups=[dict(name=g['name'],lr=g['initial_lr'],weight_decay=g['weight_decay'],
+                parameters=sum(p.numel() for p in g['params'])) for g in optimizer.param_groups])
         atomic_json(run/'parameter_inventory.json',inventory)
         save(run,cfg,state,model,optimizer)
     trim_step_log(run/'steps.jsonl',state['cursor'])

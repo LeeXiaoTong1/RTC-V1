@@ -4,11 +4,11 @@ import numpy as np
 import torch
 
 
-def main(device='cuda:0',backend_precision='fp16'):
+def main(device='cuda:0',backend_precision='fp16',lora_layers=16,checkpoint_layers=None,fusion_checkpointing=True):
     import omnilingual_asr
     from fairseq2.models.wav2vec2 import get_wav2vec2_model_hub
     from fairseq2.nn.batch_layout import BatchLayout
-    from .model import Detector,optimizer_for
+    from .model import Detector,optimizer_for,adapter_inventory
     from .meta import train_step
     from .common import capture_rng,restore_rng,partial_state,apply_partial
     rng=capture_rng()
@@ -19,15 +19,23 @@ def main(device='cuda:0',backend_precision='fp16'):
         ec.feature_dim=32;ec.feature_extractor_layer_descs=[(32,k,s) for _,k,s in ec.feature_extractor_layer_descs]
         ec.pos_conv_kernel_size=16;ec.num_pos_conv_groups=4
         arch.quantized_dim=32;arch.final_dim=32;arch.num_codebook_entries=8
-        cfg=dict(device=device,backend_precision=backend_precision,encoder_dim=64,lora_layers=4,lora_rank=4,lora_alpha=8.,lora_dropout=.05,
+        if lora_layers not in (16,60):raise ValueError('Native acceptance expects the 16- or 60-layer recipe')
+        tiny_lora=2 if lora_layers==16 else 4
+        tiny_checkpoints=tiny_lora if checkpoint_layers is None else min(tiny_lora,checkpoint_layers)
+        cfg=dict(device=device,backend_precision=backend_precision,encoder_dim=64,lora_layers=tiny_lora,lora_rank=4,lora_alpha=8.,lora_dropout=.05,
             local_evidence=True,window=128,hop=64,window_batch=8,checkpointing=True,pooling='asp',whole_max_frames=3000,
             lora_lr=2e-5,lora_early_lr=5e-6,lora_middle_lr=1e-5,head_lr=1e-4,evidence_lr=1e-4,fusion_lr=1e-4,
-            layer_mix_lr=1e-4,weight_decay=1e-4,classifier_lr=1e-4,pool_lr=1e-4,fusion_layers=[1,2,3,4],fusion_dim=128,
-            warm_epochs=1,checkpoint_layers=4,fusion_checkpointing=True,temporal_stats=True,microbatch=4,frame_budget=2000,
+            layer_mix_lr=1e-4,weight_decay=.01,classifier_lr=1e-4,pool_lr=1e-4,fusion_layers=[1,2,3,4],fusion_dim=128,
+            warm_epochs=1,checkpoint_layers=tiny_checkpoints,fusion_checkpointing=fusion_checkpointing,temporal_stats=True,microbatch=4,frame_budget=2000,
             label_smoothing=.02,max_grad_norm=1.,inner_grad_norm=1.,consistency='none')
         dtype=torch.bfloat16 if device.startswith('cuda') else torch.float32
         ssl=hub.create_new_model(arch,device=torch.device(device),dtype=dtype)
         model=Detector(ssl.encoder_frontend,ssl.encoder,cfg,BatchLayout).to(device);del ssl
+        inventory=adapter_inventory(model)
+        prefix=[model.encoder.layers[i] for i in inventory['frozen_prefix_indices_zero_based']]
+        prefix_parameters=[(parameter,parameter.detach().clone()) for layer in prefix for parameter in layer.parameters()]
+        prefix_requires_grad=[]
+        prefix_hooks=[layer.register_forward_hook(lambda _m,_a,y:prefix_requires_grad.append(y.requires_grad)) for layer in prefix]
         opt=optimizer_for(model,cfg);units=[]
         for side in ('A','B'):
             for role in ('online','noisy'):
@@ -43,15 +51,29 @@ def main(device='cuda:0',backend_precision='fp16'):
                 if not result.get('amp',{}).get('skipped_update'):return result
             raise RuntimeError('Native smoke repeatedly overflowed after scaler backoff')
         warm=accepted_step(alpha=0.,beta=0.,joint=False,audit=False)
+        if any(bool(torch.count_nonzero(p)) for n,p in model.named_parameters() if n.endswith('.lora_b')):
+            raise RuntimeError('Warmup must not update fresh LoRA adapters')
         joint=accepted_step(alpha=.003,beta=.5,joint=True,audit=True)
         hook.remove()
+        for handle in prefix_hooks:handle.remove()
+        if prefix and (not prefix_requires_grad or any(prefix_requires_grad)):
+            raise RuntimeError('Frozen prefix unexpectedly retains an encoder autograd graph')
+        if any(not torch.equal(p,old) or p.grad is not None for p,old in prefix_parameters):
+            raise RuntimeError('Frozen prefix weights changed during native acceptance')
+        gradients=joint['meta']['module_A_gradient_norms'];updates=joint['meta']['module_outer_update_norms']
+        if not any(name.startswith('lora_') and value>0 for name,value in gradients.items()):
+            raise RuntimeError('Native selected LoRA layers received no joint gradient')
+        if not any(name.startswith('lora_') and value>0 for name,value in updates.items()):
+            raise RuntimeError('Native selected LoRA layers did not update')
+        if gradients.get('fusion',0)<=0:raise RuntimeError('Full-depth fusion received no gradient')
+        adapter_inventory(model)
         expected=torch.float16 if device.startswith('cuda') and backend_precision=='fp16' else torch.float32
         if not seen or any(v!=expected for v in seen):raise RuntimeError('Backend native precision acceptance failed')
         if any(result.get('amp',{}).get('skipped_update') for result in (warm,joint)):raise RuntimeError('Native smoke gradient overflow')
         if hasattr(model,'pcl_scale') or any(isinstance(m,torch.nn.modules.batchnorm._BatchNorm) for m in model.head.modules()):raise RuntimeError('Unexpected PCL or BatchNorm state')
         state=partial_state(model);apply_partial(model,state)
         if any(layer._forward_hooks for layer in model.encoder.layers):raise RuntimeError('Encoder hook leak')
-        print('V31810_NATIVE_INTERFACE_OK=True; official small architecture / FP16 head / fresh CE warmup / source-isolated first-order joint step / checkpoint state; not a 3B memory benchmark',flush=True)
+        print(f'V31810_NATIVE_INTERFACE_OK=True; official small architecture / {tiny_lora} of 4 LoRA layers / all-layer fusion / frozen-prefix checks / {backend_precision} head / fresh CE warmup / source-isolated first-order joint step / checkpoint state; not a 3B memory benchmark',flush=True)
     finally:restore_rng(rng)
     if device.startswith('cuda'):
         del model,opt,state,units

@@ -2,7 +2,7 @@
 from pathlib import Path
 import torch
 from torch import nn
-from w2v_v3183r2.model import Detector as R2Detector, RecomputedLayer
+from w2v_v3183r2.model import Detector as R2Detector, RecomputedLayer, LoRALinear
 from w2v_v3183r2.common import require_finite
 from .aasist import SSLAASIST
 from .regions import StatisticsHead
@@ -24,6 +24,7 @@ class Detector(R2Detector):
         # pretrained classifier. Only this experiment's resume loads detector state.
         self.fusion.checkpointing = bool(cfg.get('fusion_checkpointing', True))
         self.set_phase(cfg.get('warm_epochs', 1) == 0)
+        adapter_inventory(self)
 
     def set_phase(self, joint):
         super().set_phase(joint)
@@ -80,6 +81,47 @@ def load_model(cfg):
     model = Detector(ssl.encoder_frontend, ssl.encoder, cfg, BatchLayout)
     del ssl
     return model.to(device)
+
+
+def adapter_inventory(model):
+    """Audit actual adapter placement independently of requested configuration.
+
+    The inherited streaming reader still consumes every encoder layer. Frozen
+    prefix outputs have no encoder autograd graph, while the trainable reader
+    can learn from them. Only the selected suffix is checkpoint-recomputed.
+    """
+    depth = len(model.encoder.layers)
+    expected = list(range(depth - model.cfg['lora_layers'], depth))
+    active, parameters, recomputed = [], [], []
+    for index, layer in enumerate(model.encoder.layers):
+        adapters = [module for module in layer.modules() if isinstance(module, LoRALinear)]
+        if adapters:
+            if len(adapters) != 4 or not isinstance(layer, RecomputedLayer):
+                raise ValueError('Expected four wrapped Q/K/V/O adapters in selected encoder layer')
+            active.append(index)
+            parameters.extend(parameter for module in adapters
+                              for parameter in (module.lora_a, module.lora_b))
+            if layer.enabled:
+                recomputed.append(index)
+        elif any(parameter.requires_grad for parameter in layer.parameters()):
+            raise ValueError('Frozen encoder prefix contains trainable parameters')
+        for name, parameter in layer.named_parameters():
+            if not name.endswith(('.lora_a', '.lora_b')) and parameter.requires_grad:
+                raise ValueError('Base encoder weights must remain frozen')
+    if active != expected or tuple(model.fusion.layers) != tuple(range(1, depth + 1)):
+        raise ValueError('Adapter suffix or full-depth fusion inventory changed')
+    if any(parameter.requires_grad for parameter in model.frontend.parameters()):
+        raise ValueError('Official frontend must remain frozen')
+    if any(parameter.dtype != torch.float32 for parameter in parameters):
+        raise ValueError('LoRA master parameters must remain FP32')
+    return dict(encoder_depth=depth, lora_layers=len(active),
+        lora_layer_indices_zero_based=active,
+        frozen_prefix_indices_zero_based=list(range(depth - len(active))),
+        fusion_layers_one_based=list(model.fusion.layers),
+        lora_parameters=sum(parameter.numel() for parameter in parameters),
+        active_lora_parameters=sum(parameter.numel() for parameter in parameters if parameter.requires_grad),
+        recomputed_layer_indices_zero_based=recomputed,
+        frozen_prefix_encoder_backward=False, frozen_prefix_reader_trainable=True)
 
 
 def optimizer_for(model, cfg):

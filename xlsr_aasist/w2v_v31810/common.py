@@ -1,12 +1,24 @@
 """Version-isolated checkpoint and resume contract."""
 from w2v_v3184.common import *
 
-RECIPE = 'v31810_source_isolated_first_order_metadg_v1'
+RECIPE = 'v31810_source_isolated_first_order_metadg_v2'
 
 
 def schema_for(cfg):
     if cfg.get('version') != '3.18.10' or cfg.get('recipe') != RECIPE:
-        raise ValueError('Expected V3.18.10 configuration; older runs cannot be resumed')
+        raise ValueError('Expected V3.18.10 recipe v2; older recipes cannot be resumed. '
+                         'Start a NEW run with --data-run; do not inherit an old detector or override its LoRA depth')
+    # Tiny CPU fixtures use smaller encoders; production CLI limits comparisons
+    # to 16 or 60 adapters. In every case checkpointing stays inside that suffix.
+    if 'encoder_layers' in cfg:
+        depth=cfg['encoder_layers'];count=cfg.get('lora_layers')
+        if type(depth) is not int or type(count) is not int or not 1<=count<=depth:
+            raise ValueError('Invalid encoder/LoRA depth')
+        checkpoints=cfg.get('checkpoint_layers',count)
+        if type(checkpoints) is not int or not 0<=checkpoints<=count:
+            raise ValueError('Checkpoint layers must fit the adapted encoder suffix')
+        if tuple(cfg.get('fusion_layers',()))!=tuple(range(1,depth+1)):
+            raise ValueError('The learned reader must retain every encoder layer')
     if cfg.get('pooling') != 'asp' or not cfg.get('local_evidence'):
         raise ValueError('V3.18.10 requires overlapping windows and statistics pooling')
     for name in ('window', 'hop', 'window_batch'):
@@ -25,7 +37,7 @@ def schema_for(cfg):
     arch = cfg.get('omni_arch', '3b')
     if arch not in ('1b', '3b'):
         raise ValueError('Unknown Omni architecture')
-    return 'rtc_v31810_omni' + arch + '_gn_temporal_metadg_v1'
+    return 'rtc_v31810_omni' + arch + '_gn_temporal_metadg_v2'
 
 
 def partial_state(model):

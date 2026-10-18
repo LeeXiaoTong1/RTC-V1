@@ -27,8 +27,8 @@ def inherited():
         noise_cache_mib=128, scene_cache_mib=32)
 
 
-def fresh():
-    old = inherited(); args = parser().parse_args([])
+def fresh(argv=()):
+    old = inherited(); args = parser().parse_args(argv)
     source = dict(run='data/run', files={'data/run/train_rows.json': 'hash'})
     host = dict(usable_cpu_cores=16, available_memory_bytes=None)
     with patch('w2v_v31810.config.runtime_versions', return_value={}), \
@@ -43,8 +43,10 @@ class Adapter(nn.Module):
 
 
 class OptimizerFixture(nn.Module):
-    def __init__(self):
-        super().__init__(); self.encoder = nn.Module(); self.encoder.layers = nn.ModuleList(Adapter() for _ in range(60))
+    def __init__(self, lora_layers=16):
+        super().__init__(); self.encoder = nn.Module()
+        self.encoder.layers = nn.ModuleList(nn.Linear(3, 3).requires_grad_(False)
+            if index < 60-lora_layers else Adapter() for index in range(60))
         self.encoder.frozen = nn.Parameter(torch.ones(3), requires_grad=False)
         self.head = nn.Module(); self.head.aasist = nn.Module()
         self.head.aasist.hidden = nn.Linear(3, 3); self.head.aasist.out_layer = nn.Linear(3, 2)
@@ -67,7 +69,13 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(cfg['consistency'], 'none'); self.assertIsNone(cfg['phoneme_manifest'])
         for name in ('pcl_noise_weight', 'pcl_platform_weight', 'pcl_variance_weight', 'en_real_confidence_weight'):
             self.assertEqual(cfg[name], 0.)
-        self.assertEqual((cfg['lora_layers'], cfg['lora_rank'], cfg['lora_alpha']), (60, 16, 32.))
+        self.assertEqual((cfg['lora_layers'], cfg['lora_rank'], cfg['lora_alpha']), (16, 16, 32.))
+        self.assertEqual(cfg['checkpoint_layers'], 16); self.assertEqual(cfg['lora_dropout'], .05)
+        self.assertEqual(cfg['weight_decay'], .01)
+        self.assertEqual(cfg['adaptation_policy']['trainable_encoder_layers'], list(range(45, 61)))
+        self.assertEqual(cfg['adaptation_policy']['frozen_encoder_prefix_layers'], 44)
+        self.assertEqual(cfg['adaptation_policy']['read_encoder_layers'], list(range(1, 61)))
+        self.assertEqual(cfg['adaptation_policy']['checkpoint_encoder_layers'], 16)
         self.assertEqual(cfg['fusion_layers'], list(range(1, 61)))
         self.assertEqual((cfg['window'], cfg['hop'], cfg['fusion_dim']), (128, 64, 128))
         self.assertEqual(cfg['normalization'], 'group_layer'); self.assertTrue(cfg['temporal_stats'])
@@ -77,7 +85,10 @@ class ContractTests(unittest.TestCase):
         self.assertEqual((len(quotas), sum(quotas[-1]), len(quotas) * cfg['epochs']), (1403, 20, 21045))
 
     def test_all_sixty_lora_layers_and_backend_groups_have_prescribed_rates_and_decay(self):
-        cfg = fresh(); model = OptimizerFixture(); optimizer = optimizer_for(model, cfg)
+        cfg = fresh(['--lora-layers', '60']); model = OptimizerFixture(60); optimizer = optimizer_for(model, cfg)
+        self.assertEqual((cfg['lora_layers'], cfg['checkpoint_layers']), (60, 60))
+        self.assertEqual(cfg['adaptation_policy']['frozen_encoder_prefix_layers'], 0)
+        self.assertEqual(cfg['adaptation_policy']['trainable_encoder_layers'], list(range(1, 61)))
         groups = optimizer.param_groups
         for name, lr in (('lora_early', 5e-6), ('lora_middle', 1e-5), ('lora_late', 2e-5)):
             selected = [g for g in groups if g['name'] == name]
@@ -86,9 +97,35 @@ class ContractTests(unittest.TestCase):
         for group in groups:
             if group['role'] != 'lora': self.assertEqual(group['initial_lr'], 1e-4)
             for parameter in group['params']:
-                self.assertEqual(group['weight_decay'], 1e-4 if parameter.ndim >= 2 else 0.)
+                self.assertEqual(group['weight_decay'], .01 if parameter.ndim >= 2 else 0.)
         actual = [id(p) for g in groups for p in g['params']]
         self.assertEqual(len(actual), len(set(actual))); self.assertNotIn(id(model.encoder.frozen), actual)
+
+    def test_default_last_sixteen_have_only_late_lora_rate_and_no_prefix_optimizer_state(self):
+        cfg = fresh(); model = OptimizerFixture(); optimizer = optimizer_for(model, cfg)
+        groups=optimizer.param_groups
+        adapters=[group for group in groups if group['role']=='lora']
+        self.assertEqual({group['name'] for group in adapters}, {'lora_late'})
+        self.assertEqual(sum(len(group['params']) for group in adapters), 32)
+        self.assertTrue(all(group['initial_lr']==2e-5 for group in adapters))
+        expected={id(p) for layer in model.encoder.layers[44:] for p in layer.parameters()}
+        actual={id(p) for group in adapters for p in group['params']}
+        self.assertEqual(actual, expected)
+        all_params={id(p) for group in groups for p in group['params']}
+        self.assertTrue(all(id(p) not in all_params for layer in model.encoder.layers[:44] for p in layer.parameters()))
+        for group in groups:
+            if group['role']!='lora':self.assertEqual(group['initial_lr'], 1e-4)
+            for parameter in group['params']:
+                self.assertEqual(group['weight_decay'], .01 if parameter.ndim>=2 else 0.)
+
+    def test_all_experiments_share_adapter_and_regularization_defaults(self):
+        configurations=[fresh(['--experiment', name]) for name in ('E0','E1','E2')]
+        for cfg in configurations:
+            self.assertEqual(cfg['lora_layers'], 16)
+            self.assertEqual(cfg['fusion_layers'], list(range(1,61)))
+            self.assertEqual((cfg['lora_lr'],cfg['head_lr'],cfg['fusion_lr'],cfg['weight_decay']), (2e-5,1e-4,1e-4,.01))
+        comparable=[{key:value for key,value in cfg.items() if key!='experiment'} for cfg in configurations]
+        self.assertEqual(comparable[0],comparable[1]);self.assertEqual(comparable[1],comparable[2])
 
     def test_head_warmup_then_lora_two_hundred_updates_beta_ramp_and_cosine_floor(self):
         cfg = fresh(); optimizer = optimizer_for(OptimizerFixture(), cfg); steps = 1403
@@ -112,8 +149,13 @@ class ContractTests(unittest.TestCase):
         for change in ({'version': '3.18.9'}, {'recipe': 'old'}, {'consistency': 'dual'},
                        {'pcl_noise_weight': .1}, {'pcl_platform_weight': .1},
                        {'pcl_variance_weight': .1}, {'en_real_confidence_weight': .1},
-                       {'noisy_views_per_source': 2}, {'hop': 129}):
+                       {'noisy_views_per_source': 2}, {'hop': 129}, {'lora_layers':61},
+                       {'checkpoint_layers':60}, {'fusion_layers':list(range(45,61))}):
             with self.subTest(change=change), self.assertRaises(ValueError): schema_for(dict(cfg, **change))
+        with self.assertRaisesRegex(ValueError, 'recipe v2.*NEW run'):
+            schema_for(dict(cfg,recipe='v31810_source_isolated_first_order_metadg_v1'))
+        tiny=dict(cfg,encoder_layers=2,lora_layers=2,checkpoint_layers=2,fusion_layers=[1,2])
+        self.assertIn('metadg_v2',schema_for(tiny))
 
     def test_worker_queue_estimate_is_forty_eight_classification_views_not_legacy_refs(self):
         args = parser().parse_args([]); old = inherited(); old['stream_sources'] = 999
@@ -141,8 +183,10 @@ class ContractTests(unittest.TestCase):
         args = parser().parse_args(['--resume', 'run'])
         validate_locked_cli(args, ['--resume', 'run'])
         validate_locked_cli(args, ['--resume', 'run', '--submit-best', '--upload-submission'])
-        for option in ('--epochs', '--experiment', '--workers', '--backend-precision'):
+        for option in ('--epochs', '--experiment', '--workers', '--backend-precision', '--lora-layers'):
             with self.assertRaisesRegex(ValueError, 'Resume uses saved'): validate_locked_cli(args, ['--resume', 'run', option, 'changed'])
+        with self.assertRaisesRegex(ValueError, 'Resume uses saved'):
+            validate_locked_cli(parser().parse_args(['--resume','run','--lora-layers','60']), ['--resume','run','--lora-layers=60'])
         with self.assertRaises(ValueError): validate(parser().parse_args(['--epochs', '3']))
 
     def test_configuration_audits_new_protocol_audio_not_obsolete_cached_dev(self):
