@@ -104,36 +104,43 @@ def _speech_partition(cfg, train, dev, official, identity):
                 else:
                     tokens[alias] = node
             values.append(item)
-    # Official pair IDs can contain an extra dataset prefix. Only exact IDs or
-    # a unique explicitly listed basename may resolve; no name-pattern guessing.
-    ids = defaultdict(set)
-    stems = defaultdict(set)
-    for index, row in enumerate(values):
-        # Resolve pairs against real official recordings. Older noisy metadata
-        # may use a different dataset path prefix and is not a second candidate.
-        if index >= len(train)+len(dev):
+    # Both Train and Dev official/embedded pairing edges join this SAME graph,
+    # before split/content checks. A basename is only an explicit-pair lookup.
+    def bind_pairs(split, indices, pair_path, embedded):
+        ids = defaultdict(set); basenames = defaultdict(set)
+        for index in indices:
+            row = values[index]
             for key in ('id', 'source_id'):
                 if row.get(key):
-                    ids[row[key]].add(f'row:{index}')
-                    stems[Path(row[key]).name].add(f'row:{index}')
-    def resolve(value):
-        matches = ids.get(value) or stems.get(Path(value).name, set())
-        roots = {graph.find(node) for node in matches}
-        if len(roots) > 1:
-            raise ValueError('Ambiguous official Dev pair ID: ' + value)
-        return next(iter(roots), None)
-    pair_path = Path(cfg['dev_pairs'])
-    identity.file(pair_path)
-    with pair_path.open(encoding='utf-8-sig', newline='') as stream:
-        reader = csv.DictReader(stream)
-        if not {'offline_id', 'online_id'} <= set(reader.fieldnames or []):
-            raise ValueError('Dev pairing file lacks offline_id/online_id')
-        for pair in reader:
-            left, right = resolve(pair['offline_id']), resolve(pair['online_id'])
+                    value = str(row[key]); node = f'row:{index}'
+                    ids[value].add(node); basenames[Path(value).name].add(node)
+        def resolve(value):
+            matches = ids.get(value) or basenames.get(Path(value).name, set())
+            roots = {graph.find(node) for node in matches}
+            if len(roots) > 1:
+                raise ValueError(f'Ambiguous official {split} pair ID: ' + value)
+            return next(iter(roots), None)
+        pairs = {(str(r['offline_id']), str(r['online_id'])) for r in embedded
+                 if r.get('offline_id') and r.get('online_id')}
+        if pair_path:
+            path = Path(pair_path); identity.file(path)
+            with path.open(encoding='utf-8-sig', newline='') as stream:
+                reader = csv.DictReader(stream)
+                if not {'offline_id', 'online_id'} <= set(reader.fieldnames or []):
+                    raise ValueError(f'{split} pairing file lacks offline_id/online_id')
+                pairs.update((p['offline_id'], p['online_id']) for p in reader)
+        matched = 0
+        for off, on in sorted(pairs):
+            left, right = resolve(off), resolve(on)
             if left is not None and right is not None:
-                graph.join(left, right)
+                graph.join(left, right); matched += 1
             elif (left is None) != (right is None):
-                raise ValueError('Official Dev pair has a missing member: ' + str(pair))
+                raise ValueError(f'Official {split} pair has a missing member: ' + str((off, on)))
+        return matched
+    start = len(train) + len(dev)
+    pair_records = dict(
+        train=bind_pairs('Train', range(len(train)), cfg.get('train_pairs') or cfg.get('train_pair_path'), train),
+        dev=bind_pairs('Dev', range(start, len(values)), cfg['dev_pairs'], official + dev))
     components = defaultdict(list)
     for index, row in enumerate(values):
         components[graph.find(f'row:{index}')].append(row)
@@ -144,7 +151,11 @@ def _speech_partition(cfg, train, dev, official, identity):
         if len({(r['language'], r['label']) for r in members}) != 1:
             raise ValueError('Canonical speech source has conflicting language/class metadata')
         source_keys[root] = _digest(sorted({(r['_split'], r['id'], r.get('audio_sha256', '')) for r in members}))
-    start = len(train) + len(dev)
+    prepared_train = []
+    for index in range(len(train)):
+        row = dict(values[index]); row.pop('_split')
+        row['canonical_source'] = source_keys[graph.find(f'row:{index}')]
+        prepared_train.append(row)
     prepared = []
     for index in range(start, len(values)):
         row = dict(values[index]); row.pop('_split')
@@ -173,11 +184,13 @@ def _speech_partition(cfg, train, dev, official, identity):
             groups = {(r['language'], r['label']) for r in rows if r['domain'] == domain}
             if groups != set(GROUPS):
                 raise ValueError(f'{split} lacks genuine official {domain} speech in every language/class; cannot synthesize missing Offline')
+    from .identity import build_registry
+    registry = build_registry(prepared_train, prepared, pair_records)
     return result, dict(raw_audio_hashing='SHA256 bytes plus exact decoded float32 PCM; no speaker identity claim',
                        source_counts={s: len({r['canonical_source'] for r in rows}) for s, rows in result.items()},
                        original_official_rows=len(official), historical_cached_noisy_used=False,
                        train_sources=sum(any(r['_split']=='train' for r in members) for members in components.values()),
-                       unknown_identity='No inferred speaker, corpus, or generator domain labels')
+                       unknown_identity='No inferred speaker, corpus, or generator domain labels'), prepared_train, registry
 
 
 def split_noise_records(cfg, identity=None):
@@ -279,12 +292,12 @@ def _panels(rows, split):
                 speech_sources=sorted({r['canonical_source'] for r in rows}))
 
 
-def build_protocol(cfg, train, dev, source_run):
+def build_protocol(cfg, train, dev, source_run, *, return_registry=False):
     from w2v_aasist.data import read_protocol
     identity = _AudioIdentity()
     official = read_protocol(cfg['official_dev_protocol'], cfg['official_dev_root'])
     identity.file(cfg['official_dev_protocol'])
-    speech, audit = _speech_partition(cfg, train, dev, official, identity)
+    speech, audit, registered_train, registry = _speech_partition(cfg, train, dev, official, identity)
     noise, noise_audit = split_noise_records(cfg, identity)
     if cfg.get('scene_noise_manifest'): identity.file(cfg['scene_noise_manifest'])
     result = dict(schema=SCHEMA, seed=cfg['seed'], threshold=.5, calibration='none',
@@ -293,15 +306,17 @@ def build_protocol(cfg, train, dev, source_run):
                   historical_dev_warning='This Dev was used during earlier development; its newly locked audit is not a previously unseen external benchmark',
                   audit_rule='Evaluate only the selected completed checkpoint after training; never choose epoch, alpha, beta or thresholds using audit results',
                   speech_provenance=audit, noise_provenance=noise_audit,
+                  source_registry_hash=registry['registry_hash'],
                   noise_partition_policy='Connected original sources, composed-source provenance and actual decoded PCM; no split of slices')
     for split in ('select', 'audit'):
         result[split] = dict(_panels(speech[split], split), scene_noise_records=noise[split])
     result['input_files'] = dict(sorted(identity.input_files.items()))
     result['protocol_hash'] = _digest(result)
-    return result
+    return (result, registered_train, registry) if return_registry else result
 
 
 def binary_metrics(rows, logits):
+    from .predictions import ranking_metrics
     z = np.asarray(logits, dtype=np.float64)
     y = np.asarray([r['label'] for r in rows], dtype=np.int64)
     if z.shape != (len(rows), 2) or not np.isfinite(z).all() or set(y.tolist()) != {0, 1}:
@@ -313,10 +328,14 @@ def binary_metrics(rows, logits):
         true = y == label; predicted = prediction == label
         tp = int((true & predicted).sum()); fp = int((~true & predicted).sum()); fn = int((true & ~predicted).sum())
         f1.append(2*tp / max(1, 2*tp+fp+fn)); recalls.append(tp/int(true.sum()))
+    counts = [[int(((y==actual) & (prediction==predicted)).sum()) for predicted in (0, 1)]
+              for actual in (0, 1)]
     return dict(count=len(rows), macro_f1=float(np.mean(f1)), fake_f1=f1[0], real_f1=f1[1],
                 recall=recalls, fake_recall=recalls[0], real_recall=recalls[1], real_false_positive=1-recalls[1],
                 fake_false_negative=1-recalls[0], threshold=.5,
-                real_count=int((y==1).sum()), fake_count=int((y==0).sum()))
+                real_count=int((y==1).sum()), fake_count=int((y==0).sum()),
+                confusion=dict(label_order=['fake', 'real'], rows='actual', columns='predicted', matrix=counts),
+                **ranking_metrics(y, z[:, 0]-z[:, 1]))
 
 
 def summarize_protocol(protocol, logits, split='select'):
@@ -336,7 +355,8 @@ def summarize_protocol(protocol, logits, split='select'):
                 selection_eligible=split=='select')
 
 
-def evaluate_protocol(model, protocol, cfg, split='select', *, infer_fn=None, selected_checkpoint=None):
+def evaluate_protocol(model, protocol, cfg, split='select', *, infer_fn=None, selected_checkpoint=None,
+                      predictions_path=None, checkpoint_tag=None):
     if split=='audit' and not selected_checkpoint:
         raise ValueError('Locked audit requires the already selected checkpoint identity')
     if getattr(model, '_v31810_virtual_active', False):
@@ -353,4 +373,9 @@ def evaluate_protocol(model, protocol, cfg, split='select', *, infer_fn=None, se
     if actual != expected: raise ValueError('Validation row order/coverage changed')
     result = summarize_protocol(protocol, z, split)
     if selected_checkpoint: result['selected_checkpoint'] = str(selected_checkpoint)
+    if predictions_path is not None:
+        from .predictions import save_predictions
+        result['predictions'] = save_predictions(predictions_path, part['rows'], z,
+            protocol_hash=protocol['protocol_hash'], protocol_content_hash=cfg.get('validation_protocol_hash'),
+            checkpoint_tag=checkpoint_tag or selected_checkpoint, split=split)
     return result

@@ -1,7 +1,93 @@
 """Canonical original-recording relations; never infer a domain from a filename."""
 from collections import defaultdict
 import csv
+import hashlib
+import json
 from pathlib import Path
+
+REGISTRY_SCHEMA = 'rtc_v31810_pcm_source_registry_v1'
+_IDENTITY_FIELDS = ('id', 'audio', 'source_id', 'group_id', 'source_sha256',
+                    'audio_sha256', 'decoded_pcm_sha256', 'canonical_source',
+                    'language', 'label', 'split', 'condition')
+_LEGACY_MESSAGE = ('This V3.18.10 run has no verified PCM source registry and cannot be resumed '
+                   'with the corrected sampler. Start a NEW run with --data-run pointing to '
+                   'the original V3.18.4 through V3.18.9 data run; do not use --resume. '
+                   'Existing checkpoints remain unchanged.')
+
+
+def _digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'),
+                                    allow_nan=False).encode()).hexdigest()
+
+
+def identity_records(rows):
+    """Bind identity, actual bytes/PCM and manifest ordering without audio copies."""
+    return [{key: row.get(key) for key in _IDENTITY_FIELDS} for row in rows]
+
+
+def build_registry(train, dev, pair_records):
+    registry = dict(schema=REGISTRY_SCHEMA, train=identity_records(train),
+                    dev=identity_records(dev), official_pair_records=pair_records)
+    registry['registry_hash'] = _digest(registry)
+    for row in train:
+        row['source_registry_hash'] = registry['registry_hash']
+        row['source_registry_schema'] = REGISTRY_SCHEMA
+    return registry
+
+
+def registry_config(registry):
+    return dict(schema=REGISTRY_SCHEMA, registry_hash=registry['registry_hash'],
+                train_identity_hash=_digest(registry['train']))
+
+
+def require_registry_config(cfg):
+    value = cfg.get('source_registry', {})
+    if (value.get('schema') != REGISTRY_SCHEMA or not value.get('registry_hash')
+            or not value.get('train_identity_hash')):
+        raise ValueError(_LEGACY_MESSAGE)
+    return value
+
+
+def registered_sources(rows, cfg):
+    """Consume the startup registry verbatim; never reconstruct source groups."""
+    bound = require_registry_config(cfg)
+    if _digest(identity_records(rows)) != bound['train_identity_hash']:
+        raise ValueError('Train row identity/order differs from the saved PCM source registry')
+    groups = defaultdict(list)
+    for row in rows:
+        if (row.get('source_registry_schema') != REGISTRY_SCHEMA or
+                row.get('source_registry_hash') != bound['registry_hash']):
+            raise ValueError('Train row is not bound to the verified PCM source registry')
+        for field in ('canonical_source', 'audio_sha256', 'decoded_pcm_sha256'):
+            value = row.get(field)
+            if not isinstance(value, str) or len(value) != 64 or any(c not in '0123456789abcdef' for c in value):
+                raise ValueError('Missing actual source identity: ' + field)
+        if row.get('split') != 'train':
+            raise ValueError('Training registry accepts Train only')
+        groups[row['canonical_source']].append(row)
+    for members in groups.values():
+        if len({(r['language'], r['label']) for r in members}) != 1:
+            raise ValueError('Registered source has conflicting language/class labels')
+        if 'online' in {r['condition'] for r in members} and 'offline' not in {r['condition'] for r in members}:
+            raise ValueError('Registered Online lacks a verified Offline relationship')
+    return [r['canonical_source'] for r in rows], dict(
+        original_recordings=len(groups), rows=len(rows), registry_hash=bound['registry_hash'],
+        schema=REGISTRY_SCHEMA, actual_pcm_verified=True,
+        guarantee='Startup Train/Dev shared source registry; no independent sampler regrouping')
+
+
+def verify_registry(train, registry, cfg, protocol):
+    bound = require_registry_config(cfg)
+    if registry.get('schema') != REGISTRY_SCHEMA:
+        raise ValueError(_LEGACY_MESSAGE)
+    expected = _digest({k: v for k, v in registry.items() if k != 'registry_hash'})
+    if expected != registry.get('registry_hash') or expected != bound['registry_hash']:
+        raise ValueError('Saved PCM source registry hash changed')
+    if protocol.get('source_registry_hash') != expected:
+        raise ValueError('Validation and training reference different PCM source registries')
+    if identity_records(train) != registry['train']:
+        raise ValueError('Train rows differ from the persisted PCM source registry')
+    registered_sources(train, cfg)
 
 
 def canonical_sources(rows, pair_path=None, *, require_online_pairs=False):
@@ -17,7 +103,8 @@ def canonical_sources(rows, pair_path=None, *, require_online_pairs=False):
     for i, row in enumerate(rows):
         if not row.get('source_id') or not row.get('group_id'):
             raise ValueError('Canonical source_id and group_id are required; filenames cannot establish identity')
-        for field in ('source_id', 'group_id', 'source_sha256', 'audio_sha256'):
+        for field in ('source_id', 'group_id', 'source_sha256', 'audio_sha256',
+                      'decoded_pcm_sha256', 'canonical_source'):
             value = row.get(field)
             if value:
                 key = field, str(value)

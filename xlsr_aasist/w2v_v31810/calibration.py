@@ -7,7 +7,8 @@ import statistics
 import torch
 
 from .meta import (Transaction, NonfiniteGradient, raw_gradients, restore_rng,
-                   side_pass, validate_units, virtual_step)
+                   side_pass, validate_units, virtual_step, virtual_update_statistics,
+                   logit_change)
 from .precision import scaler_for
 
 CANDIDATES = (.001, .003, .01, .03, .1)
@@ -78,7 +79,7 @@ def calibrate(model, optimizer, task_factory, cfg, progress=None):
                 transaction.restore()
                 model.train()
                 optimizer.zero_grad(set_to_none=True)
-                before = side_pass(model, sides['A'], cfg, scaler, backward=True)
+                before = side_pass(model, sides['A'], cfg, scaler, backward=True, capture_logits=True)
                 report['encoded_views'] += len(sides['A'])
                 current_scale = float(scaler.get_scale())
                 try:
@@ -96,21 +97,25 @@ def calibrate(model, optimizer, task_factory, cfg, progress=None):
             for alpha in CANDIDATES:
                 transaction.restore()
                 model.train()
-                virtual_step(transaction, gradients, alpha, float(cfg.get('max_grad_norm', 1.)), norm=norm)
+                inner_norm, inner_factor = virtual_step(transaction, gradients, alpha,
+                    float(cfg.get('max_grad_norm', 1.)), norm=norm)
+                update = virtual_update_statistics(optimizer, transaction)
                 # Same dropout/RNG and unchanged A waveform as the before pass.
                 restore_rng(transaction.rng)
                 try:
-                    after = side_pass(model, sides['A'], cfg, scaler, backward=False)
+                    after = side_pass(model, sides['A'], cfg, scaler, backward=False, capture_logits=True)
                     relative_drop = (before['loss'] - after['loss']) / max(before['loss'], 1e-12)
                     finite = math.isfinite(after['loss']) and math.isfinite(norm)
                     record = dict(task=index, task_kind=kind, alpha=alpha,
                                   before=before['loss'], after=after['loss'],
                                   relative_drop=relative_drop, gradient_norm=norm, finite=finite,
-                                  loss_scale=current_scale)
+                                  loss_scale=current_scale, A_logit_change=logit_change(before, after))
                 except NonfiniteGradient as exc:
                     record = dict(task=index, task_kind=kind, alpha=alpha,
                                   before=before['loss'], after=None, relative_drop=None,
                                   gradient_norm=norm, finite=False, error=str(exc), loss_scale=current_scale)
+                record.update(update, planned_virtual_update_norm=alpha * inner_factor * inner_norm,
+                              virtual_update_measured=True)
                 records.append(record)
                 report['encoded_views'] += len(sides['A'])
             del gradients

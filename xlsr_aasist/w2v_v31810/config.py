@@ -77,7 +77,8 @@ def validate_locked_cli(args,argv):
 def training_configuration(old,args,source):
     validate(args);cfg=copy.deepcopy(old)
     for key in ('saved_manifests','parent_init','warm_start','augmentation_budget_audit','window_resource_audit',
-                'learning_rate_origin','warm_lr','warm_fusion_lr','warm_layer_mix_lr','warm_evidence_lr','phoneme_provenance'):
+                'learning_rate_origin','warm_lr','warm_fusion_lr','warm_layer_mix_lr','warm_evidence_lr','phoneme_provenance',
+                'source_registry'):
         cfg.pop(key,None)
     cfg.update(version='3.18.10',recipe=RECIPE,experiment=args.experiment,seed=3181001,
         epochs=args.epochs,warm_epochs=1,source_epoch_offset=0,stream_sources=24,
@@ -117,7 +118,10 @@ def configuration(args):
     cfg=training_configuration(old,args,provenance)
     train=read_json(source/'train_rows.json');dev=read_json(source/'dev_rows.json')
     from .validation import build_protocol
-    protocol=build_protocol(cfg,train,dev,source)
+    protocol,train,registry=build_protocol(cfg,train,dev,source,return_registry=True)
+    from .identity import registry_config,verify_registry
+    cfg['source_registry']=registry_config(registry)
+    verify_registry(train,registry,cfg,protocol)
     from .resources import audit_training
     cfg['window_resource_audit']=audit_training(train,protocol['select']['rows']+protocol['audit']['rows'],cfg)
     from .sampling import Plan
@@ -128,7 +132,7 @@ def configuration(args):
     cfg['code_fingerprints']=code_inventory()
     print('[Startup] verifying fresh-model assets, source-isolated tasks and locked validation protocol',flush=True)
     verify_inputs(cfg)
-    return cfg,train,dev,protocol
+    return cfg,train,dev,protocol,registry
 
 
 def verify_inputs(cfg,*,training=True):

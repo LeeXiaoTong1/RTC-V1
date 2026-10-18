@@ -147,7 +147,9 @@ class ContractTests(unittest.TestCase):
 
     def test_configuration_audits_new_protocol_audio_not_obsolete_cached_dev(self):
         source = Path('prepared-data-run')
-        train = [dict(id='train', audio='/actual/train.wav')]
+        train = [dict(id='train', audio='/actual/train.wav', source_id='origin', group_id='origin',
+                      language='en', label=0, split='train', condition='offline')]
+        registered = [dict(train[0], audio_sha256='a'*64, decoded_pcm_sha256='b'*64, canonical_source='c'*64)]
         historical = [dict(id='legacy-noisy', audio='/deleted/old-dev-cache.wav')]
         selected = [dict(id='select-online', audio='/actual/dev-online.wav'),
                     dict(id='select-noisy', audio='/actual/dev-offline.wav')]
@@ -155,15 +157,19 @@ class ContractTests(unittest.TestCase):
                    dict(id='audit-noisy', audio='/actual/audit-offline.wav')]
         protocol = dict(select={'rows': selected}, audit={'rows': audited},
             input_files={'/actual/dev-online.wav': 'verified-hash', '/actual/dev-pairs.csv': 'pair-hash'})
+        from .identity import build_registry
+        registry = build_registry(registered, [], dict(train=0, dev=0))
+        protocol['source_registry_hash'] = registry['registry_hash']
         provenance = dict(run=str(source), files={'prepared-data-run/train_rows.json': 'manifest-hash'})
         events = []
-        def build(cfg, observed_train, observed_dev, observed_source):
+        def build(cfg, observed_train, observed_dev, observed_source, *, return_registry):
+            self.assertTrue(return_registry)
             self.assertIs(observed_train, train); self.assertIs(observed_dev, historical)
             self.assertEqual(observed_source, source); events.append('protocol')
-            return protocol
+            return protocol, registered, registry
         def resources(observed_train, observed_dev, cfg):
             self.assertEqual(events, ['protocol']); events.append('resources')
-            self.assertIs(observed_train, train); self.assertEqual(observed_dev, selected + audited)
+            self.assertIs(observed_train, registered); self.assertEqual(observed_dev, selected + audited)
             self.assertNotIn('/deleted/old-dev-cache.wav', [row['audio'] for row in observed_dev])
             return {'new_protocol_only': True}
         def read(path):
@@ -183,9 +189,10 @@ class ContractTests(unittest.TestCase):
              patch('w2v_v31810.config.verify_inputs') as verify:
             plan.return_value.audit_budget.return_value = {'exposure_budget': 'unchanged'}
             output = configuration(parser().parse_args([]))
-        self.assertEqual(len(output), 4)
-        cfg, actual_train, actual_dev, actual_protocol = output
-        self.assertIs(actual_train, train); self.assertIs(actual_dev, historical); self.assertIs(actual_protocol, protocol)
+        self.assertEqual(len(output), 5)
+        cfg, actual_train, actual_dev, actual_protocol, actual_registry = output
+        self.assertIs(actual_train, registered); self.assertIs(actual_dev, historical); self.assertIs(actual_protocol, protocol)
+        self.assertIs(actual_registry, registry)
         self.assertEqual(events, ['protocol', 'resources'])
         self.assertEqual(build_mock.call_count, 1); self.assertEqual(resources_mock.call_count, 1)
         plan.return_value.audit_budget.assert_called_once_with(15)

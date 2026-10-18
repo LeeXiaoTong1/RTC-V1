@@ -7,7 +7,7 @@ from w2v_v3185.sampling import DEFAULT_VIEW_FACTORS
 from w2v_v3185.common import GROUPS, seed_for
 from w2v_v3184.noise import CATEGORIES
 from w2v_v318.sampling import probe_tickets
-from .identity import canonical_sources
+from .identity import canonical_sources, registered_sources
 
 FAMILIES = ('webrtc', 'ffmpeg', 'light')
 TASKS = ('noise', 'rtc', 'joint')
@@ -77,8 +77,13 @@ class Plan(CyclePlan):
     def __init__(self, rows, stream_sources=24, seed=31801, quotas=(6, 6, 6, 6),
                  view_factors=DEFAULT_VIEW_FACTORS, refresh_base_variants=True, *, cfg=None):
         cfg = dict(cfg or {}); cfg['consistency'] = 'none'
-        self.canonical, self.identity_audit = canonical_sources(rows,
-            cfg.get('train_pairs') or cfg.get('train_pair_path'), require_online_pairs=True)
+        if cfg.get('version') == '3.18.10' or cfg.get('source_registry'):
+            self.canonical, self.identity_audit = registered_sources(rows, cfg)
+        else:
+            # Metadata-only fixtures remain available, but production always
+            # consumes the persisted startup registry, including calibration.
+            self.canonical, self.identity_audit = canonical_sources(rows,
+                cfg.get('train_pairs') or cfg.get('train_pair_path'), require_online_pairs=True)
         if any(r.get('split') != 'train' for r in rows): raise ValueError('Training sampler accepts Train only')
         super().__init__(rows, stream_sources, seed, quotas, view_factors, refresh_base_variants, cfg=cfg)
         self.schedule = quota_schedule(tuple(cfg.get('source_draws_per_stream', DEFAULT_SOURCE_DRAWS)), stream_sources)

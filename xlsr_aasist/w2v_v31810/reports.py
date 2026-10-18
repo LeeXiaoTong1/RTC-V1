@@ -8,7 +8,7 @@ from .common import RECIPE,atomic_json,read_json,digest,fingerprint
 
 EXCLUDED={'report_status.json','report_upload_receipt.json','report_temp_download_url.txt',
           'artifact_links.json','download_links.txt','REPORT_MANIFEST.json'}
-SCORE_FILE=re.compile(r'(?:dev_scores_epoch_\d+_step_\d+|scene_scores_epoch_\d+_step_\d+|scene_baseline_scores|parent_baseline_scores|parent_reference_scores)\.npz')
+SCORE_FILE=re.compile(r'(?:selection_scores_epoch_\d+_step_\d+|locked_audit_scores|dev_scores_epoch_\d+_step_\d+|scene_scores_epoch_\d+_step_\d+|scene_baseline_scores|parent_baseline_scores|parent_reference_scores)\.npz')
 
 
 def prepare_request(args,run,argv):

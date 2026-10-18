@@ -45,6 +45,15 @@ def _flatten(result):
         heldout_f1=p['heldout_noisy']['macro_f1'],score=result['score'])
 
 
+def _evaluate(evaluator,model,protocol,cfg,run,split,tag):
+    kwargs=dict(split=split)
+    if split=='audit':kwargs['selected_checkpoint']=tag
+    if evaluator is evaluate_protocol:
+        name=f'selection_scores_{tag}.npz' if split=='select' else 'locked_audit_scores.npz'
+        kwargs.update(predictions_path=Path(run)/name,checkpoint_tag=tag)
+    return evaluator(model,protocol,cfg,**kwargs)
+
+
 def run_experiment(cfg,run,train,dev,protocol,model_factory=load_model,baseline_only=False,evaluator=evaluate_protocol):
     run=Path(run);seed_all(cfg['seed'])
     if fingerprint(protocol)!=cfg['validation_protocol_hash']:raise ValueError('Locked validation protocol changed')
@@ -146,7 +155,7 @@ def run_experiment(cfg,run,train,dev,protocol,model_factory=load_model,baseline_
             if totals['updates']!=plan.steps:raise RuntimeError('Incomplete logical epoch')
             tag=f'epoch_{epoch+1}_step_{plan.steps}'
             _progress(run,cfg,epoch+1,plan.steps,plan.steps,'Selection evaluation; no temporary adaptation')
-            before=time.monotonic();result=evaluator(model,protocol,cfg,split='select');eval_seconds=time.monotonic()-before
+            before=time.monotonic();result=_evaluate(evaluator,model,protocol,cfg,run,'select',tag);eval_seconds=time.monotonic()-before
             score=float(result['score']);current=partial_state(model)
             improved=state['best_score'] is None or score>state['best_score']
             if improved:state.update(best_tag=tag,best_score=score,best_model=current)
@@ -171,7 +180,7 @@ def run_experiment(cfg,run,train,dev,protocol,model_factory=load_model,baseline_
     if not previous or previous.get('identity')!=audit_identity:
         atomic_json(run/'progress.json',dict(status='evaluating_final',phase='Locked audit of selected best',epoch=state['epoch'],epochs=cfg['epochs']))
         apply_partial(model,state['best_model'])
-        audit=evaluator(model,protocol,cfg,split='audit',selected_checkpoint=state['best_tag'])
+        audit=_evaluate(evaluator,model,protocol,cfg,run,'audit',state['best_tag'])
         atomic_json(audit_path,dict(identity=audit_identity,metrics=audit,used_for_selection=False))
     done=dict(status='complete',version='3.18.10',recipe=cfg['recipe'],experiment=cfg['experiment'],best_tag=state['best_tag'],last_tag=state['last_tag'],
         completed_epochs=state['epoch'],planned_epochs=cfg['epochs'],checkpoint_sha256=checksum,best_origin='fresh_official_omni',threshold=.5,

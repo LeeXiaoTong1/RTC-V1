@@ -12,6 +12,7 @@ from .train import run_experiment
 from .sampling import describe
 from .delivery import prepare_request,finish_request
 from .reports import report,prepare_request as prepare_report_request
+from .identity import require_registry_config,verify_registry
 
 
 def main():
@@ -22,18 +23,24 @@ def main():
             run=Path(args.resume).expanduser().resolve();cfg=read_json(run/'config.json')
             if cfg.get('version')!='3.18.10' or cfg.get('recipe')!=RECIPE:
                 raise ValueError('--resume accepts only V3.18.10 runs; --data-run reuses data without inheriting detector weights')
-            verify_inputs(cfg)
+            require_registry_config(cfg)
+            if 'source_registry.json' not in cfg.get('saved_manifests',{}):
+                raise ValueError('Missing saved PCM source registry; start a NEW run using --data-run from the original V3.18.4 through V3.18.9 data run, not --resume')
             train=read_json(run/'train_rows.json');dev=read_json(run/'dev_rows.json')
             verify={str(run/n):h for n,h in cfg['saved_manifests'].items()};from .common import verify_files;verify_files(verify)
             protocol=read_json(run/'validation_protocol.json')
+            registry=read_json(run/'source_registry.json')
+            verify_registry(train,registry,cfg,protocol)
+            verify_inputs(cfg)
             print('[Resume] recorded V3.18.10 configuration; replay from saved optimizer boundary',flush=True)
         else:
-            cfg,train,dev,protocol=configuration(args)
+            cfg,train,dev,protocol,registry=configuration(args)
             run=ROOT/'exp'/('w2v_v31810_'+datetime.now().strftime('%Y%m%d_%H%M%S')+'_'+secrets.token_hex(2))
             run.mkdir(parents=True,exist_ok=False)
             atomic_json(run/'train_rows.json',train);atomic_json(run/'dev_rows.json',dev)
             atomic_json(run/'validation_protocol.json',protocol)
-            cfg['saved_manifests']={n:digest(run/n) for n in ('train_rows.json','dev_rows.json','validation_protocol.json')}
+            atomic_json(run/'source_registry.json',registry)
+            cfg['saved_manifests']={n:digest(run/n) for n in ('train_rows.json','dev_rows.json','validation_protocol.json','source_registry.json')}
             atomic_json(run/'config.json',cfg)
             atomic_json(run/'input_audit.json',describe(train,cfg['seed'],cfg['stream_sources'],cfg['group_quotas'],cfg['view_factors'],cfg['refresh_base_variants'],cfg=cfg))
         (ROOT/'exp'/'.latest_v31810_run').write_text(str(run)+'\n',encoding='utf-8')

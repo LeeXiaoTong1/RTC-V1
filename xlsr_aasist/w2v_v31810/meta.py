@@ -42,6 +42,9 @@ exception there cannot alter its moments. A successful final AdamW step is
 the commit point; fatal device failures inside that step require disk resume.
 """
     def __init__(self, model):
+        if getattr(model, '_v31810_virtual_active', False):
+            raise ValueError('Cannot start a transaction on temporary adapted parameters')
+        self.model = model
         self.parameters = [(name, p) for name, p in model.named_parameters() if p.requires_grad]
         if not self.parameters:
             raise ValueError('No trainable detector parameters')
@@ -56,6 +59,7 @@ the commit point; fatal device failures inside that step require disk resume.
         with torch.no_grad():
             for (_, p), old in zip(self.parameters, self.original):
                 p.copy_(old)
+        self.model._v31810_virtual_active = False
 
     def restore_buffers(self):
         with torch.no_grad():
@@ -110,13 +114,13 @@ def validate_units(units):
     return sides
 
 
-def side_pass(model, units, cfg, scaler, *, backward):
+def side_pass(model, units, cfg, scaler, *, backward, capture_logits=False):
     """Accumulate the same 8-cell objective regardless of physical packing."""
     from w2v_v3189.data import microbatches
     counts = Counter(cell(unit[0]) for unit in units)
     if set(counts) != set(CELLS):
         raise ValueError('Each loss must contain all eight balanced classification cells')
-    metadata, records = [], []
+    metadata, records, logit_records, logit_sources = [], [], [], []
     encoded = 0
     for micro in microbatches(units, int(cfg.get('microbatch', 12)),
                               int(cfg.get('frame_budget', 9000)), weights={'noise': 0., 'platform': 0.}):
@@ -140,6 +144,11 @@ def side_pass(model, units, cfg, scaler, *, backward):
             if backward:
                 scaler.scale(loss).backward()
         predictions = logits.detach().argmax(1)
+        if capture_logits:
+            # Two scalars per view, detached; reuse existing forwards and
+            # retain no activation graph or extra encoder pass.
+            logit_records.append(logits.detach())
+            logit_sources.extend(row.get('canonical_source', row.get('id')) for row in rows)
         records.append(torch.stack((weighted.detach(), raw.detach(),
                                    (predictions == targets).float(), (predictions == 0).float()), 1))
         metadata.extend(cell(row) for row in rows)
@@ -151,8 +160,12 @@ def side_pass(model, units, cfg, scaler, *, backward):
         for name, value in dict(objective=weighted, raw_ce_sum=raw, views=1,
                                 correct=int(correct), predicted_fake=int(fake)).items():
             target[name] += value
-    return dict(loss=sum(value[0] for value in values), raw_ce_sum=sum(value[1] for value in values),
-                max_example_ce=max(value[1] for value in values), cells=dict(cells), views=encoded)
+    result = dict(loss=sum(value[0] for value in values), raw_ce_sum=sum(value[1] for value in values),
+                  max_example_ce=max(value[1] for value in values), cells=dict(cells), views=encoded)
+    if capture_logits:
+        result['_logits'] = torch.cat(logit_records).cpu()
+        result['_logit_sources'] = logit_sources
+    return result
 
 
 def raw_gradients(transaction, scale):
@@ -185,6 +198,10 @@ def virtual_step(transaction, gradients, alpha, maximum=1., *, norm=None):
     if not math.isfinite(norm):
         raise NonfiniteGradient('Nonfinite inner gradient norm')
     factor = min(1., maximum / (norm + 1e-6))
+    # Mark before the first write, so an interrupted partial update cannot be
+    # mistaken for the deployment model. Restoration clears the marker only
+    # after every original tensor has been restored.
+    transaction.model._v31810_virtual_active = True
     with torch.no_grad():
         for (_, parameter), original, gradient in zip(transaction.parameters, transaction.original, gradients):
             parameter.copy_(original)
@@ -218,6 +235,30 @@ def _update_norms(optimizer, transaction):
             if terms:
                 result[name] = float(torch.linalg.vector_norm(torch.stack(terms).double()))
     return result
+
+
+def virtual_update_statistics(optimizer, transaction):
+    """Actual FP32 master changes; not a claim about low-precision forwards.
+
+    Run only for sparse audits or the bounded calibration sweep. This reuses
+    Transaction's trainable snapshots and never copies the frozen backbone.
+    """
+    modules = _update_norms(optimizer, transaction)
+    return dict(virtual_update_norm=math.sqrt(sum(value * value for value in modules.values())),
+                module_virtual_update_norms=modules)
+
+
+def logit_change(before, after):
+    """Matched-waveform output change from already required diagnostic passes."""
+    if before['_logit_sources'] != after['_logit_sources']:
+        raise ValueError('Diagnostic logits have mismatched source order')
+    left, right = before['_logits'], after['_logits']
+    if left.shape != right.shape:
+        raise ValueError('Diagnostic logits have mismatched shapes')
+    difference = (right - left).double()
+    return dict(l2=float(torch.linalg.vector_norm(difference)),
+                rms=float(difference.square().mean().sqrt()),
+                max_abs=float(difference.abs().max()))
 
 
 def _summary(units, a, b, beta, *, warm=False):
@@ -279,7 +320,7 @@ def train_step(model, optimizer, units, cfg, alpha, beta, joint=True, audit=Fals
                     p.grad = g.mul_(scale)
             diagnostics.update(A_loss=None, B_loss=None, inner_grad_norm=None, inner_clip_factor=None)
         else:
-            a = side_pass(model, sides['A'], cfg, scaler, backward=True)
+            a = side_pass(model, sides['A'], cfg, scaler, backward=True, capture_logits=audit)
             encoded += len(sides['A'])
             gradients, norm_a = raw_gradients(transaction, scale)
             gradient_audit = module_norms(optimizer, transaction, gradients) if audit else {}
@@ -292,14 +333,14 @@ def train_step(model, optimizer, units, cfg, alpha, beta, joint=True, audit=Fals
                 restore_rng(transaction.rng)
                 transaction.restore_buffers()
                 virtual_step(transaction, gradients, alpha, float(cfg.get('max_grad_norm', 1.)), norm=norm_a)
-                a_after = side_pass(model, sides['A'], cfg, scaler, backward=False)['loss']
+                a_after = side_pass(model, sides['A'], cfg, scaler, backward=False, capture_logits=True)
                 encoded += len(sides['A'])
                 transaction.restore_parameters()
                 restore_rng(b_rng)
                 with torch.no_grad():
                     for buffer, old in post_a_buffers:
                         buffer.copy_(old)
-                b_before = side_pass(model, sides['B'], cfg, scaler, backward=False)['loss']
+                b_before = side_pass(model, sides['B'], cfg, scaler, backward=False, capture_logits=True)
                 encoded += len(sides['B'])
                 restore_rng(b_rng)
                 with torch.no_grad():
@@ -307,18 +348,27 @@ def train_step(model, optimizer, units, cfg, alpha, beta, joint=True, audit=Fals
                         buffer.copy_(old)
             inner_norm, inner_factor = virtual_step(transaction, gradients, alpha,
                                                     float(cfg.get('max_grad_norm', 1.)), norm=norm_a)
-            b = side_pass(model, sides['B'], cfg, scaler, backward=beta > 0)
-            encoded += len(sides['B'])
-            diagnostics.update(A_loss=a['loss'], B_loss=b['loss'], A_after=a_after, B_before=b_before,
-                               delta_A=None if a_after is None else a_after - a['loss'],
-                               delta_B=None if b_before is None else b['loss'] - b_before,
-                               inner_grad_norm=inner_norm, inner_clip_factor=inner_factor,
-                               virtual_update_norm=alpha * inner_factor * inner_norm,
-                               module_A_gradient_norms=gradient_audit)
             if audit:
-                diagnostics['module_virtual_update_norms'] = {
+                diagnostics.update(virtual_update_statistics(optimizer, transaction))
+            b = side_pass(model, sides['B'], cfg, scaler, backward=beta > 0, capture_logits=audit)
+            encoded += len(sides['B'])
+            diagnostics.update(A_loss=a['loss'], B_loss=b['loss'],
+                               A_after=None if a_after is None else a_after['loss'],
+                               B_before=None if b_before is None else b_before['loss'],
+                               delta_A=None if a_after is None else a_after['loss'] - a['loss'],
+                               delta_B=None if b_before is None else b['loss'] - b_before['loss'],
+                               inner_grad_norm=inner_norm, inner_clip_factor=inner_factor,
+                               planned_virtual_update_norm=alpha * inner_factor * inner_norm,
+                               virtual_update_measured=bool(audit),
+                               module_A_gradient_norms=gradient_audit)
+            if not audit:
+                diagnostics['virtual_update_norm'] = None
+            if audit:
+                diagnostics['module_planned_virtual_update_norms'] = {
                     name: alpha * inner_factor * value if value is not None else None
                     for name, value in gradient_audit.items()}
+                diagnostics['A_logit_change'] = logit_change(a, a_after)
+                diagnostics['B_logit_change'] = logit_change(b_before, b)
                 diagnostics['trainable_parameter_elements'] = sum(p.numel() for _, p in transaction.parameters)
                 diagnostics['original_parameter_cache_bytes'] = sum(p.numel() * p.element_size()
                                                                      for p in transaction.original)

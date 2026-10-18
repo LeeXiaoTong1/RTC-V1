@@ -2,6 +2,7 @@
 import argparse
 from datetime import datetime
 import os
+import shutil
 from pathlib import Path
 import torch
 from w2v_aasist.data import read_protocol
@@ -45,7 +46,15 @@ def export(run,out,kind='best',device='cuda:0',workers=4,protocol=None,audio_roo
         result=read_json(run/'locked_audit.json')
         expected=dict(checkpoint_sha256=meta['checkpoint_sha256'],selected=meta['selected'],protocol_sha256=original['validation_protocol_hash'])
         if meta['status']!='complete' or result['identity']!=expected:raise ValueError('No verified locked audit for the completed best')
-        out.mkdir(parents=True,exist_ok=True);atomic_json(out/'metrics.json',result)
+        out.mkdir(parents=True,exist_ok=True)
+        artifact=result.get('metrics',{}).get('predictions')
+        if artifact:
+            if artifact['file']!='locked_audit_scores.npz':raise ValueError('Unexpected locked audit prediction artifact')
+            saved=run/artifact['file']
+            if saved.is_symlink() or not saved.is_file() or digest(saved)!=artifact['sha256']:
+                raise ValueError('Locked audit prediction artifact changed or missing')
+            shutil.copyfile(saved,out/artifact['file'])
+        atomic_json(out/'metrics.json',result)
         print('LOCKED_AUDIT='+str(out/'metrics.json'),flush=True)
         return out/'metrics.json'
     seed_all(cfg['seed'])
@@ -65,7 +74,8 @@ def export(run,out,kind='best',device='cuda:0',workers=4,protocol=None,audio_roo
     print(f'SUBMISSION_SELECTED=V3.18.10 {meta["selected"]}; kind={kind}; fixed_identity; no target adaptation',flush=True)
     if dev:
         from .validation import evaluate_protocol
-        result=evaluate_protocol(model,fixed,cfg,split='select')
+        result=evaluate_protocol(model,fixed,cfg,split='select',
+            predictions_path=out/f'selection_scores_{meta["selected"]}.npz',checkpoint_tag=meta['selected'])
         atomic_json(out/'metrics.json',dict(selected=meta['selected'],checkpoint_sha256=meta['checkpoint_sha256'],**result))
         print('SELECTION_SCORE='+format(result['score']*100,'.4f'),flush=True)
         path=out/'metrics.json'
