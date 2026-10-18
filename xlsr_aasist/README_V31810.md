@@ -10,6 +10,10 @@
 
 启动阶段对实际 Train 音频计算文件和解码 PCM 身份，并将其与已知来源、官方配对统一归并。最终来源登记表 `source_registry.json` 传给正式采样和校准任务，随实验保存并校验；不再由未补全的原清单另建一套来源身份。同内容、不同 WAV 封装的录音也不能进入同一个 A/B 任务。
 
+官方配对表的 `online_id` 允许为空：部分 Offline 的传输结果被过滤，未保留 Online。这类 Offline 是合法独立来源，继续进入模拟 Noisy 的来源池；不要求每条 Offline 都有 Online，也不补造官方 Online 或删除原始 Offline。有效配对仍合并同一来源。非空 Online ID 只有一端能找到、缺失 Offline ID、损坏 CSV 或标签／跨集合冲突仍报错。注册表及验证报告分别记录有效配对数和空 Online 记录数。
+
+Dev 的完整来源组件保持隔离。原有固定哈希划分若因 Offline-only 来源导致某个语言／类别在一侧没有真实 Online，会按固定顺序交换完整来源组件，保持 Audit 来源数量，并记录交换。两侧必须各有真实 Online 和 Offline；不会用模拟音频填充官方 Online 指标。已有完整配对数据的正常划分不变。
+
 稀疏诊断同时区分计划步长与实际 FP32 参数变化，并复用已有匹配前向记录 logits 变化。临时参数状态会阻止常规验证，恢复主参数后解除。FP32 参数发生变化本身仍不保证某个 BF16 LoRA 分支的计算输出改变；整体 logits 变化也不能单独归因于 LoRA。
 
 每轮 Select 的 `selection_scores_epoch_*_step_*.npz` 和最终一次 Audit 的 `locked_audit_scores.npz` 保存已有推理结果的压缩逐条预测，包含来源身份、语言、标签、面板、协议哈希及 checkpoint 标记；补充 AUC、EER 和混淆计数，并纳入 report.zip。没有增加验证前向，也不把这些诊断另作选模目标。

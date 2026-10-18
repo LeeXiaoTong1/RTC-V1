@@ -4,7 +4,6 @@ Only the select scalar chooses a checkpoint.  Audit is a one-time measurement
 of the already selected main model; historical Dev is not an external test.
 """
 from collections import defaultdict
-import csv
 import hashlib
 import json
 from pathlib import Path
@@ -115,32 +114,37 @@ def _speech_partition(cfg, train, dev, official, identity):
                     value = str(row[key]); node = f'row:{index}'
                     ids[value].add(node); basenames[Path(value).name].add(node)
         def resolve(value):
+            if not value:
+                return None
             matches = ids.get(value) or basenames.get(Path(value).name, set())
             roots = {graph.find(node) for node in matches}
             if len(roots) > 1:
                 raise ValueError(f'Ambiguous official {split} pair ID: ' + value)
             return next(iter(roots), None)
-        pairs = {(str(r['offline_id']), str(r['online_id'])) for r in embedded
-                 if r.get('offline_id') and r.get('online_id')}
         if pair_path:
-            path = Path(pair_path); identity.file(path)
-            with path.open(encoding='utf-8-sig', newline='') as stream:
-                reader = csv.DictReader(stream)
-                if not {'offline_id', 'online_id'} <= set(reader.fieldnames or []):
-                    raise ValueError(f'{split} pairing file lacks offline_id/online_id')
-                pairs.update((p['offline_id'], p['online_id']) for p in reader)
-        matched = 0
-        for off, on in sorted(pairs):
+            identity.file(pair_path)
+        from .identity import read_official_pairs
+        matched = 0; offline_without_online = 0; outside_scope = 0
+        for off, on in read_official_pairs(embedded, pair_path):
             left, right = resolve(off), resolve(on)
-            if left is not None and right is not None:
+            if not on:
+                # Official filtering can retain Offline while dropping Online.
+                # Keep the existing source node; never fabricate an Online edge.
+                if left is not None: offline_without_online += 1
+                else: outside_scope += 1
+            elif left is not None and right is not None:
                 graph.join(left, right); matched += 1
             elif (left is None) != (right is None):
                 raise ValueError(f'Official {split} pair has a missing member: ' + str((off, on)))
-        return matched
+            else:
+                outside_scope += 1
+        return dict(matched_pairs=matched, offline_without_online_records=offline_without_online,
+                    outside_scope_records=outside_scope)
     start = len(train) + len(dev)
-    pair_records = dict(
+    pairing_audit = dict(
         train=bind_pairs('Train', range(len(train)), cfg.get('train_pairs') or cfg.get('train_pair_path'), train),
         dev=bind_pairs('Dev', range(start, len(values)), cfg['dev_pairs'], official + dev))
+    pair_records = {split: counts['matched_pairs'] for split, counts in pairing_audit.items()}
     components = defaultdict(list)
     for index, row in enumerate(values):
         components[graph.find(f'row:{index}')].append(row)
@@ -163,19 +167,44 @@ def _speech_partition(cfg, train, dev, official, identity):
         row.update(canonical_source=source, source_id=row['id'], group_id=source, split='dev',
                    condition=row['domain'], full_length=True)
         prepared.append(row)
-    strata = defaultdict(set)
+    strata = defaultdict(set); source_domains = defaultdict(set)
     for row in prepared:
         strata[row['language'], row['label']].add(row['canonical_source'])
+        source_domains[row['canonical_source']].add(row['domain'])
     fraction = float(cfg.get('validation_audit_fraction', .2))
     if not 0 < fraction < 1:
         raise ValueError('Audit source fraction must be between zero and one')
-    audit = set()
+    audit = set(); split_repairs = []
     for group in GROUPS:
         ordered = sorted(strata[group], key=lambda key: _digest((cfg['seed'], 'locked-dev', key)))
         if len(ordered) < 2:
             raise ValueError('Need at least two independent Dev sources in ' + str(group))
         count = max(1, min(len(ordered)-1, round(len(ordered)*fraction)))
-        audit.update(ordered[:count])
+        selected = set(ordered[:count])
+        domains = ('online', 'offline')
+        totals = {domain: sum(domain in source_domains[source] for source in ordered) for domain in domains}
+        if min(totals.values()) < 2:
+            raise ValueError('Need at least two independent Dev sources with each genuine Online/Offline domain in ' + str(group))
+        counts = {domain: sum(domain in source_domains[source] for source in selected) for domain in domains}
+        if any(not 0 < counts[domain] < totals[domain] for domain in domains):
+            # Keep the old hash split unless Offline-only sources leave a panel
+            # empty. Swap complete components, preserving the Audit source count
+            # and all pairing/PCM edges; no new recording or target score used.
+            replacement = None
+            for outgoing in ordered[:count]:
+                for incoming in ordered[count:]:
+                    changed = {domain: counts[domain] - (domain in source_domains[outgoing])
+                               + (domain in source_domains[incoming]) for domain in domains}
+                    if all(0 < changed[domain] < totals[domain] for domain in domains):
+                        replacement = outgoing, incoming
+                        break
+                if replacement is not None: break
+            if replacement is None:
+                raise ValueError('Dev source split cannot retain Online and Offline in both partitions at the configured fraction: ' + str(group))
+            outgoing, incoming = replacement
+            selected.remove(outgoing); selected.add(incoming)
+            split_repairs.append(dict(language=group[0], label=group[1], audit_to_select=outgoing, select_to_audit=incoming))
+        audit.update(selected)
     result = {'select': [], 'audit': []}
     for row in prepared:
         result['audit' if row['canonical_source'] in audit else 'select'].append(row)
@@ -185,8 +214,10 @@ def _speech_partition(cfg, train, dev, official, identity):
             if groups != set(GROUPS):
                 raise ValueError(f'{split} lacks genuine official {domain} speech in every language/class; cannot synthesize missing Offline')
     from .identity import build_registry
-    registry = build_registry(prepared_train, prepared, pair_records)
+    registry = build_registry(prepared_train, prepared, pair_records, pairing_audit)
     return result, dict(raw_audio_hashing='SHA256 bytes plus exact decoded float32 PCM; no speaker identity claim',
+                       official_pairing=pairing_audit,
+                       source_split_coverage_repairs=split_repairs,
                        source_counts={s: len({r['canonical_source'] for r in rows}) for s, rows in result.items()},
                        original_official_rows=len(official), historical_cached_noisy_used=False,
                        train_sources=sum(any(r['_split']=='train' for r in members) for members in components.values()),

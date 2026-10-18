@@ -25,9 +25,11 @@ def identity_records(rows):
     return [{key: row.get(key) for key in _IDENTITY_FIELDS} for row in rows]
 
 
-def build_registry(train, dev, pair_records):
+def build_registry(train, dev, pair_records, pairing_audit=None):
     registry = dict(schema=REGISTRY_SCHEMA, train=identity_records(train),
                     dev=identity_records(dev), official_pair_records=pair_records)
+    if pairing_audit is not None:
+        registry['pairing_audit'] = pairing_audit
     registry['registry_hash'] = _digest(registry)
     for row in train:
         row['source_registry_hash'] = registry['registry_hash']
@@ -70,8 +72,10 @@ def registered_sources(rows, cfg):
             raise ValueError('Registered source has conflicting language/class labels')
         if 'online' in {r['condition'] for r in members} and 'offline' not in {r['condition'] for r in members}:
             raise ValueError('Registered Online lacks a verified Offline relationship')
+    offline_only = sum({r['condition'] for r in members} == {'offline'} for members in groups.values())
     return [r['canonical_source'] for r in rows], dict(
         original_recordings=len(groups), rows=len(rows), registry_hash=bound['registry_hash'],
+        offline_only_sources=offline_only, paired_sources=len(groups)-offline_only,
         schema=REGISTRY_SCHEMA, actual_pcm_verified=True,
         guarantee='Startup Train/Dev shared source registry; no independent sampler regrouping')
 
@@ -88,6 +92,36 @@ def verify_registry(train, registry, cfg, protocol):
     if identity_records(train) != registry['train']:
         raise ValueError('Train rows differ from the persisted PCM source registry')
     registered_sources(train, cfg)
+
+
+def read_official_pairs(rows, pair_path=None):
+    """An empty Online field documents an Offline source with no retained Online.
+
+    It is not a pairing edge and must not discard that source. A nonempty pair
+    must resolve both IDs if either endpoint belongs to the active scope. CSV missing columns
+    (None rather than an explicit empty cell) remain a malformed input error.
+    """
+    pairs = set()
+    def add(off, on, origin):
+        if not isinstance(off, str) or (on is not None and not isinstance(on, str)):
+            raise ValueError('Invalid official pair identifiers: ' + origin)
+        off, on = off.strip(), (on or '').strip()
+        if not off:
+            raise ValueError('Official pair lacks a nonempty Offline ID: ' + origin)
+        pairs.add((off, on))
+    for row in rows:
+        if row.get('offline_id') or row.get('online_id'):
+            add(row.get('offline_id', ''), row.get('online_id'), 'embedded '+str(row.get('id', 'row')))
+    if pair_path:
+        with Path(pair_path).open(encoding='utf-8-sig', newline='') as stream:
+            reader = csv.DictReader(stream)
+            if not {'offline_id', 'online_id'} <= set(reader.fieldnames or []):
+                raise ValueError('Pairing file lacks offline_id/online_id: ' + str(pair_path))
+            for number, item in enumerate(reader, 2):
+                if item['offline_id'] is None or item['online_id'] is None or None in item:
+                    raise ValueError(f'Malformed official pair CSV row at {pair_path}:{number}')
+                add(item['offline_id'], item['online_id'], f'{pair_path}:{number}')
+    return sorted(pairs)
 
 
 def canonical_sources(rows, pair_path=None, *, require_online_pairs=False):
@@ -115,18 +149,18 @@ def canonical_sources(rows, pair_path=None, *, require_online_pairs=False):
             basenames[Path(value).name].add(i)
     # Explicit pair metadata may use protocol ids or unique basenames. The
     # basename is only a lookup key for a documented pair, never an inferred pair.
-    pairs = []
-    if pair_path:
-        with Path(pair_path).open(encoding='utf-8-sig', newline='') as stream:
-            for item in csv.DictReader(stream): pairs.append((item['offline_id'], item['online_id']))
-    for row in rows:
-        if row.get('offline_id') and row.get('online_id'):
-            pairs.append((row['offline_id'], row['online_id']))
-    matched = 0
-    for off, on in pairs:
+    matched = 0; offline_without_online = 0; outside_scope = 0
+    for off, on in read_official_pairs(rows, pair_path):
         aa = ids.get(str(off)) or basenames.get(Path(str(off)).name, set())
-        bb = ids.get(str(on)) or basenames.get(Path(str(on)).name, set())
-        if not aa and not bb: continue
+        bb = (ids.get(str(on)) or basenames.get(Path(str(on)).name, set())) if on else set()
+        if not aa and not bb:
+            outside_scope += 1
+            continue
+        if not on:
+            if len({find(i) for i in aa}) != 1:
+                raise ValueError('Ambiguous official pair endpoint: '+str((off, on)))
+            offline_without_online += 1
+            continue
         if not aa or not bb:
             raise ValueError('Official pair is missing one endpoint: '+str((off, on)))
         for candidates in (aa, bb):
@@ -147,6 +181,7 @@ def canonical_sources(rows, pair_path=None, *, require_online_pairs=False):
         key = min(str(rows[i]['source_id']) for i in indices)
         for i in indices: keys[i] = key
     audit = dict(original_recordings=len(members), rows=len(rows), official_pair_records=matched,
+        offline_without_online_records=offline_without_online, outside_scope_records=outside_scope,
         speaker_ids_known=sum(bool(r.get('speaker_id')) for r in rows),
         generator_ids_known=sum(bool(r.get('generator_id')) for r in rows),
         guarantee='Original recording isolation; unknown speaker/generator identities remain unknown')
