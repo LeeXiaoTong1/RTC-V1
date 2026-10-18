@@ -104,10 +104,11 @@ def run_experiment(cfg,run,train,dev,protocol,model_factory=load_model,baseline_
                 _progress(run,cfg,epoch+1,0,12,'Train-only inner-step calibration')
                 def task_factory():
                     dataset=Waves(train,cfg)
-                    for i,tickets in enumerate(plan.calibration_batches()):
-                        _progress(run,cfg,epoch+1,i,12,'Train-only inner-step calibration')
+                    for tickets in plan.calibration_batches():
                         yield [dataset[t] for t in tickets]
-                try:calibration=calibrate(model,optimizer,task_factory,cfg)
+                def calibration_progress(done,total,report):
+                    _progress(run,cfg,epoch+1,done,total,'Train-only inner-step calibration')
+                try:calibration=calibrate(model,optimizer,task_factory,cfg,progress=calibration_progress)
                 except Exception as exc:
                     atomic_json(run/'inner_calibration_failure.json',dict(error=str(exc),details=getattr(exc,'report',None),
                         retained_checkpoint=str(run/'last.pt'),policy='No silent zero-step fallback'))

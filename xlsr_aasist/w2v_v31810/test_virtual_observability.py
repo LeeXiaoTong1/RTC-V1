@@ -6,7 +6,7 @@ import unittest
 import torch
 from torch import nn
 
-from .calibration import CalibrationError, calibrate
+from .calibration import CANDIDATES, CalibrationError, calibrate
 from .meta import (Transaction, logit_change, restore_rng, rng_state, train_step,
                    virtual_step, virtual_update_statistics)
 from .test_calibration import tasks
@@ -132,8 +132,8 @@ class VirtualObservabilityTests(unittest.TestCase):
             report = calibrate(model, opt, tasks, cfg)
         except CalibrationError as exc:
             report = exc.report
-        self.assertEqual(report['encoded_views'], 12 * 8 * 6)
-        self.assertEqual(len(report['records']), 60)
+        self.assertEqual(report['encoded_views'], 12 * 8 * (1 + len(CANDIDATES)))
+        self.assertEqual(len(report['records']), 12 * len(CANDIDATES))
         for row in report['records']:
             self.assertTrue(row['virtual_update_measured'])
             self.assertGreater(row['planned_virtual_update_norm'], 0.)

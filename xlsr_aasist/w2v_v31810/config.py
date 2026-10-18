@@ -10,6 +10,7 @@ from w2v_v3185.config import verify_unique
 from .common import ROOT,RECIPE,schema_for,read_json,digest,fingerprint
 from .source import resolve_data_run,metadata
 from .workers import settings
+from .calibration import CANDIDATES
 
 
 def code_inventory(root=ROOT):
@@ -99,7 +100,7 @@ def training_configuration(old,args,source):
         fusion_lr=1e-4,layer_mix_lr=1e-4,head_lr=1e-4,pool_lr=1e-4,classifier_lr=1e-4,evidence_lr=1e-4,
         weight_decay=.01,max_grad_norm=1.,label_smoothing=.02,lr_floor=.1,lr_warmup_updates=200,
         meta_beta=.5,meta_beta_ramp_epochs=2,inner_grad_norm=1.,
-        inner_candidates=[.001,.003,.01,.03,.1],calibration_tasks=12,
+        inner_candidates=list(CANDIDATES),calibration_tasks=12,
         gradient_audit_interval=200,diagnostic_interval=1,
         consistency='none',pcl_noise_weight=0.,pcl_platform_weight=0.,pcl_variance_weight=0.,
         platform_sources_per_group=0,en_real_confidence_weight=0.,pcl_objective=None,

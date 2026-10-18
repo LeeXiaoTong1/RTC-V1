@@ -11,7 +11,19 @@ from .meta import (Transaction, NonfiniteGradient, raw_gradients, restore_rng,
                    logit_change)
 from .precision import scaler_for
 
-CANDIDATES = (.001, .003, .01, .03, .1)
+LEGACY_CANDIDATES = (.001, .003, .01, .03, .1)
+# A clipped SGD step of 1e-3 can already reduce A's loss by more than 5%.
+# Include smaller steps instead of relaxing the fixed safety/effect-size gates.
+CANDIDATES = (.00001, .00003, .0001, .0003) + LEGACY_CANDIDATES
+
+
+def candidate_grid(values):
+    values = tuple(float(value) for value in values)
+    if not values or any(not math.isfinite(value) or value <= 0 for value in values):
+        raise ValueError('Calibration candidates must be positive finite step sizes')
+    if tuple(sorted(set(values))) != values:
+        raise ValueError('Calibration candidates must be unique and increasing')
+    return values
 
 
 class CalibrationError(RuntimeError):
@@ -20,19 +32,28 @@ class CalibrationError(RuntimeError):
         self.report = report
 
 
-def choose_alpha(records):
+def choose_alpha(records, candidates=CANDIDATES):
     summaries = []
-    for alpha in CANDIDATES:
+    for alpha in candidate_grid(candidates):
         selected = [row for row in records if row['alpha'] == alpha]
-        finite = len(selected) == 12 and all(row.get('finite', False) for row in selected)
-        changes = [row['relative_drop'] for row in selected if row.get('finite', False)]
+        valid = [row for row in selected if row.get('finite', False)
+                 and isinstance(row.get('relative_drop'), (int, float))
+                 and math.isfinite(row['relative_drop'])]
+        finite = len(selected) == 12 and len(valid) == 12
+        changes = [row['relative_drop'] for row in valid]
         nonincrease = sum(value >= 0 for value in changes)
         median = statistics.median(changes) if len(changes) == 12 else None
         worst = max((-value for value in changes), default=None)
-        passed = bool(finite and nonincrease >= 9 and .005 <= median <= .05 and worst <= .2)
+        reasons = []
+        if not finite: reasons.append('nonfinite_or_incomplete_tasks')
+        if nonincrease < 9: reasons.append('fewer_than_9_nonincrease_tasks')
+        if median is not None and median < .005: reasons.append('median_drop_below_0.5_percent')
+        if median is not None and median > .05: reasons.append('median_drop_above_5_percent')
+        if worst is not None and worst > .2: reasons.append('worst_increase_above_20_percent')
+        passed = not reasons
         summaries.append(dict(alpha=alpha, finite=finite, nonincrease_tasks=nonincrease,
                               median_relative_drop=median, worst_relative_increase=worst,
-                              accepted=passed))
+                              accepted=passed, rejection_reasons=reasons))
     chosen = next((item['alpha'] for item in summaries if item['accepted']), None)
     return chosen, summaries
 
@@ -48,6 +69,7 @@ def calibrate(model, optimizer, task_factory, cfg, progress=None):
     """
     if hasattr(model, 'joint') and not model.joint:
         raise ValueError('Enable full LoRA training before inner-step calibration')
+    candidates = candidate_grid(cfg.get('inner_candidates', CANDIDATES))
     transaction = Transaction(model)
     live_scaler = scaler_for(optimizer, cfg)
     scaler_state = copy.deepcopy(live_scaler.state_dict())
@@ -59,7 +81,7 @@ def calibrate(model, optimizer, task_factory, cfg, progress=None):
                                  enabled=live_scaler.is_enabled(), init_scale=scale)
     scaler.load_state_dict(scaler_state)
     records, kinds = [], Counter()
-    report = dict(status='running', candidates=list(CANDIDATES), records=records,
+    report = dict(status='running', candidates=list(candidates), records=records,
                   task_count=0, task_counts={}, encoded_views=0,
                   selection_data='fixed Train A only; no B, Dev, Progress or Eval',
                   initial_scale=scale, gradient_retries=[], final_calibration_scale=scale)
@@ -94,7 +116,7 @@ def calibrate(model, optimizer, task_factory, cfg, progress=None):
                         previous_scale=current_scale, scale=next_scale, reason=str(exc),
                         same_waveforms=True, same_rng=True))
                     report['final_calibration_scale'] = next_scale
-            for alpha in CANDIDATES:
+            for alpha in candidates:
                 transaction.restore()
                 model.train()
                 inner_norm, inner_factor = virtual_step(transaction, gradients, alpha,
@@ -124,11 +146,17 @@ def calibrate(model, optimizer, task_factory, cfg, progress=None):
                 progress(index + 1, 12, copy.deepcopy(report))
         if report['task_count'] != 12 or kinds != Counter(noise=4, rtc=4, joint=4):
             raise ValueError('Calibration requires exactly four tasks per condition type')
-        selected, summaries = choose_alpha(records)
+        selected, summaries = choose_alpha(records, candidates)
         report.update(selected_alpha=selected, summaries=summaries,
                       status='complete' if selected is not None else 'failed')
         if selected is None:
-            raise CalibrationError('No inner-step candidate passed the fixed Train calibration gates', report)
+            smallest = summaries[0]
+            median = smallest['median_relative_drop']
+            drop = 'unavailable' if median is None else f'{median:.2%}'
+            raise CalibrationError('No inner-step candidate passed the fixed Train calibration gates; '
+                f'smallest alpha={smallest["alpha"]:g}, median drop={drop}, '
+                f'nonincrease={smallest["nonincrease_tasks"]}/12, '
+                'reasons=' + ','.join(smallest['rejection_reasons']), report)
         return report
     except CalibrationError:
         raise

@@ -4,7 +4,7 @@ import unittest
 
 import torch
 
-from .calibration import CANDIDATES, CalibrationError, calibrate, choose_alpha
+from .calibration import CANDIDATES, LEGACY_CANDIDATES, CalibrationError, calibrate, choose_alpha, candidate_grid
 from .meta import rng_state
 from .test_meta import Toy, assert_state_equal, fixture, optimizer
 
@@ -26,13 +26,13 @@ class CalibrationTests(unittest.TestCase):
     def test_selection_is_smallest_candidate_with_exact_gates(self):
         rows = []
         drops = (.001, .004, .01, .03, .08)
-        for alpha, drop in zip(CANDIDATES, drops):
+        for alpha, drop in zip(LEGACY_CANDIDATES, drops):
             rows.extend(dict(alpha=alpha, relative_drop=drop, finite=True) for _ in range(12))
-        selected, report = choose_alpha(rows)
+        selected, report = choose_alpha(rows, LEGACY_CANDIDATES)
         self.assertEqual(selected, .01)
         self.assertEqual([item['accepted'] for item in report], [False, False, True, True, False])
         rows[24]['relative_drop'] = -.21
-        self.assertEqual(choose_alpha(rows)[0], .03)
+        self.assertEqual(choose_alpha(rows, LEGACY_CANDIDATES)[0], .03)
         for row in rows:
             row['finite'] = False
         self.assertIsNone(choose_alpha(rows)[0])
@@ -54,8 +54,8 @@ class CalibrationTests(unittest.TestCase):
         assert_state_equal(self, moments, opt.state_dict())
         assert_state_equal(self, initial_rng, rng_state())
         self.assertEqual(result['task_counts'], dict(noise=4, rtc=4, joint=4))
-        self.assertEqual(len(result['records']), 60)
-        self.assertEqual(result['encoded_views'], 12 * 8 * 6)
+        self.assertEqual(len(result['records']), 12 * len(CANDIDATES))
+        self.assertEqual(result['encoded_views'], 12 * 8 * (1 + len(CANDIDATES)))
         self.assertEqual(calls, [(i, 12) for i in range(1, 13)])
         json.dumps(result, allow_nan=False)
 
@@ -114,12 +114,42 @@ class CalibrationTests(unittest.TestCase):
         self.assertEqual(report['task_count'], 12)
         self.assertEqual(len(report['gradient_retries']), 1)
         self.assertEqual(report['final_calibration_scale'], 64.)
-        self.assertEqual(report['encoded_views'], 12 * 8 * 6 + 8)
+        self.assertEqual(report['encoded_views'], 12 * 8 * (1 + len(CANDIDATES)) + 8)
         self.assertEqual(identities[0], identities[1])
         assert_state_equal(self, scaler_before, opt._v31810_scaler.state_dict())
         assert_state_equal(self, model_before, model.state_dict())
         assert_state_equal(self, initial_rng, rng_state())
         self.assertFalse(opt.state)
+
+    def test_smaller_steps_resolve_lower_bound_gap_without_relaxing_gates(self):
+        rows = []
+        drops = (.001, .004, .01, .03, .0893, .22, -.94, -10., -11.)
+        for alpha, drop in zip(CANDIDATES, drops):
+            rows.extend(dict(alpha=alpha, relative_drop=drop, finite=True) for _ in range(12))
+        self.assertIsNone(choose_alpha(rows, LEGACY_CANDIDATES)[0])
+        selected, summaries = choose_alpha(rows)
+        self.assertEqual(selected, .0001)
+        self.assertEqual(summaries[4]['nonincrease_tasks'], 12)
+        self.assertEqual(summaries[4]['rejection_reasons'], ['median_drop_above_5_percent'])
+        self.assertFalse(summaries[0]['accepted'])  # not an almost-zero fallback
+
+    def test_saved_candidate_grid_is_used_instead_of_current_default(self):
+        cfg, _ = fixture(copies=1)
+        cfg['inner_candidates'] = [.0003]
+        model = Toy()
+        try:
+            report = calibrate(model, optimizer(model), tasks, cfg)
+        except CalibrationError as exc:
+            report = exc.report
+        self.assertEqual(report['candidates'], [.0003])
+        self.assertEqual(len(report['records']), 12)
+        self.assertEqual(report['encoded_views'], 12 * 8 * 2)
+        self.assertEqual([r['alpha'] for r in report['summaries']], [.0003])
+
+    def test_invalid_candidate_grids_fail_before_model_work(self):
+        for values in ([], [0.], [-.1], [float('nan')], [float('inf')], [.1, .01], [.01, .01]):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                candidate_grid(values)
 
     def test_persistent_calibration_gradient_overflow_fails_after_three_retries(self):
         cfg, _ = fixture(copies=1)
