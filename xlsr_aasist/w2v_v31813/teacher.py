@@ -3,10 +3,10 @@ from pathlib import Path
 import numpy as np
 import torch
 from w2v_v31810.common import digest, atomic_json, read_json
+from .espnet_runtime import ESPNET_REVISION,load_ssl_task
 
 MODEL_ID='espnet/xeus'
 REVISION='b651261280bf792df4632ccb2d1ba4eeaabeaee2'
-ESPNET_REVISION='7d395a8bb223f6bddd479d4d1dd6feddf49f82f4'  # official v.202506
 FILES=('model/config.yaml','model/xeus_checkpoint_new.pth')
 
 
@@ -36,7 +36,7 @@ class _ReachedLayer(Exception):
 
 class Teacher:
     def __init__(self, paths, device='cuda:0'):
-        from espnet2.tasks.ssl import SSLTask
+        SSLTask=load_ssl_task()
         self.device=torch.device(device)
         self.model,_=SSLTask.build_model_from_file(str(paths[0]),str(paths[1]),str(self.device))
         self.model.float().eval().requires_grad_(False)

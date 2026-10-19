@@ -71,7 +71,7 @@ def runtime_check(private,torch_version):
             ' or a.get("hash")=='+repr('sha256='+ESPNET_SHA256)+')); '
             'assert git or archive, "ESPnet source does not match the pinned official revision"; '
             'assert m.version("espnet")=="202506"; '
-            'from espnet2.tasks.ssl import SSLTask; import sklearn,torch; '
+            'from w2v_v31813.espnet_runtime import load_ssl_task; SSLTask=load_ssl_task(); import sklearn,torch; '
             'assert m.version("torch")=='+repr(torch_version)+'; '
             'assert m.version("numpy")=="1.23.5" and m.version("scikit-learn")=="1.3.2"; '
             'print("XEUS runtime imports and revision verified")')

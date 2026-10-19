@@ -89,6 +89,8 @@ ESPnet 安装使用该提交的官方源码归档并校验固定 SHA-256，不�
 
 若在准备阶段退出，此时还没有开始检测器训练。更新本分支后重新执行原启动命令，不能用尚不存在的 V3.18.13 checkpoint 做 `--resume`。四类准备日志保存在 `/home/ubuntu/LXT/v318-runtime/xeus-prep-cache/`：`dependency_install.log`、`build_tools_install.log`、`espnet_install.log`、`runtime_check.log`。失败会显示对应日志路径及子进程最后的原始输出；重试追加日志，保留上次失败记录。仅看到 `CalledProcessError` 不能判断是下载还是构建失败。
 
+若旧启动停在 `[nltk_data] Downloading package averaged_perceptron_tagger_eng`，那是 ESPnet 的英文文字转音素组件在导入时自动下载词性标注资源，尚未进入训练。XEUS 波形特征提取不调用该组件。本版在专用环境内将其 `g2p_en` 导入移到实际文字转换调用处，真正使用转换器时仍正常加载；不伪造 NLTK 资源或屏蔽下载结果。修改严格校验官方原文件及修改后 SHA-256，保存原文件与 `v31813_text_import_patch.json`，拒绝改动全局环境、未知版本或其他源码。模型计算、权重和官方配对 PCL 不受该导入调整影响。已经运行的旧进程需要 Ctrl+C 退出后更新并重启才能生效。`Failed to import Flash Attention, using ESPnet default` 是使用默认注意力的提示，本版无需为此安装 FlashAttention。
+
 ## 停止、恢复、日志和提交
 
 安全停止，在完成当前优化器更新后保存：

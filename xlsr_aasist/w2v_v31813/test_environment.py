@@ -44,6 +44,7 @@ class EnvironmentTests(unittest.TestCase):
             stack.enter_context(patch.object(sys,'prefix',str(root)))
             ssl=ModuleType('espnet2.tasks.ssl');ssl.SSLTask=object
             stack.enter_context(patch.dict(sys.modules,{'espnet2.tasks.ssl':ssl,'sklearn':ModuleType('sklearn')}))
+            stack.enter_context(patch('w2v_v31813.espnet_runtime.load_ssl_task',return_value=object))
             code=prep.runtime_check(root,'test')
             origin.update(url=prep.ESPNET_ARCHIVE,archive_info={'hashes':{'sha256':prep.ESPNET_SHA256}})
             exec(code,{})
