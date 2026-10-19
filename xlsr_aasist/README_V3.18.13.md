@@ -85,6 +85,10 @@ python -m w2v_v31813.prepare_teacher
 
 XEUS 固定为 `espnet/xeus@b651261280bf792df4632ccb2d1ba4eeaabeaee2` 的 `model/xeus_checkpoint_new.pth` 与配套配置。代码使用官方 ESPnet `v.202506` 的固定提交 `7d395a8bb223f6bddd479d4d1dd6feddf49f82f4`，调用未掩码的 `inference_encode`。模型卡旧 fork 的 `encode` API 与这份新版配置不兼容，本版不混用它们。独立环境固定 NumPy/Scipy 等兼容依赖，继承已有 Torch/CUDA；启动前核对导入、Torch 版本及环境归属。训练环境不做 pip 升级。
 
+ESPnet 安装使用该提交的官方源码归档并校验固定 SHA-256，不再通过 `pip git+https` 克隆仓库。构建工具在专用环境内固定为 setuptools 73.0.1、wheel 0.45.1、pytest-runner 6.0.1；关闭另建临时构建环境，以免它绕过版本约束。已成功安装的同提交 Git 版本仍可复用；此前安装失败的专用环境可直接重试，无需删除环境、模型或音素缓存。
+
+若在准备阶段退出，此时还没有开始检测器训练。更新本分支后重新执行原启动命令，不能用尚不存在的 V3.18.13 checkpoint 做 `--resume`。四类准备日志保存在 `/home/ubuntu/LXT/v318-runtime/xeus-prep-cache/`：`dependency_install.log`、`build_tools_install.log`、`espnet_install.log`、`runtime_check.log`。失败会显示对应日志路径及子进程最后的原始输出；重试追加日志，保留上次失败记录。仅看到 `CalledProcessError` 不能判断是下载还是构建失败。
+
 ## 停止、恢复、日志和提交
 
 安全停止，在完成当前优化器更新后保存：
