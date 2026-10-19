@@ -1,11 +1,8 @@
 """Eight-cell CE, coupled XEUS margins, and official-original phoneme MSE."""
 from collections import Counter,defaultdict
-import math
-import numpy as np
 import torch
 from torch.nn import functional as F
 from w2v_v31810.precision import scaler_for,unscale_and_clip,commit
-from w2v_v31810.common import capture_rng,restore_rng
 from .objectives import paired_margin,phoneme_mse,ramp,frame_count
 
 
@@ -90,36 +87,4 @@ def train_step(model,optimizer,units,cfg,weights,epoch,step,steps):
                 xeus_pairs=sum(bool(r.get('xeus_pair')) for u in units for r in u)//2)
 
 
-def calibrate(model,tasks,cfg):
-    """Train only. Gradient scale on the shared fusion, with no optimizer step."""
-    rng=capture_rng();modes=[(m,m.training) for m in model.modules()];model.eval()
-    parameters=[p for p in model.fusion.parameters() if p.requires_grad]
-    norms=defaultdict(list)
-    try:
-        for index,units in enumerate(tasks):
-            for component in ('ce','prior','pcl'):
-                if component=='prior' and cfg['mode']=='baseline':continue
-                accum=[torch.zeros_like(p) for p in parameters];seen=False
-                for _,loss in components(model,units,cfg,component):
-                    gradients=torch.autograd.grad(loss,parameters,allow_unused=True)
-                    for target,g in zip(accum,gradients):
-                        if g is not None:target.add_(g.detach())
-                    seen=True
-                if seen:
-                    norm=math.sqrt(sum(float(x.double().square().sum()) for x in accum))
-                    if not math.isfinite(norm):raise FloatingPointError('Nonfinite auxiliary calibration gradient')
-                    norms[component].append(norm)
-            print(f'Auxiliary Train calibration {index+1}',flush=True)
-    finally:
-        for m,mode in modes:m.training=mode
-        restore_rng(rng)
-    ce=float(np.median(norms['ce']));weights={};medians={k:float(np.median(v)) for k,v in norms.items()}
-    if not math.isfinite(ce) or ce<=1e-12:raise ValueError('No valid Train CE calibration gradient')
-    for name,target,cap in (('prior',.10,.10),('pcl',.05,.01)):
-        if name=='prior' and cfg['mode']=='baseline':weights[name]=0.;continue
-        value=medians.get(name,0.)
-        if value<=1e-12:raise ValueError('No usable '+name+' calibration gradient; inspect Train pair coverage')
-        weights[name]=min(cap,target*ce/value)
-    return dict(weights=weights,median_gradient_norms=medians,tasks=len(norms['ce']),
-                fit_data='Train only',gradient_parameters='shared fusion',optimizer_updates=0,
-                requested_gradient_ratios=dict(prior=.10,pcl=.05),coefficient_caps=dict(prior=.10,pcl=.01))
+from .calibration import calibrate
