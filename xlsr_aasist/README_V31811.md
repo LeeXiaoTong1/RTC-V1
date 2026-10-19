@@ -28,7 +28,7 @@ If only a downloaded V3.18.10 report ZIP is available, use:
 bash run_diagnose_v31811.sh --report-zip /path/to/v31810_report.zip --mode scores --out /tmp/v31811_report
 ```
 
-Outputs: `score_summary.json`, `epoch_metrics.csv`, `epoch_flips.json`, `paired_summary.json`, `paired_sources.csv`, and `en_online_margins.png`. Margins are **fake logit minus real logit**; `margin >= 0` is Fake. AUC is computed on both classes, never Real-only. No Dev threshold is optimized or deployed.
+Outputs: `score_summary.json`, `epoch_metrics.csv`, `epoch_flips.json`, `paired_summary.json`, `paired_sources.csv`, `audit/paired_summary.json`, and `en_online_margins.png`. Margins are **fake logit minus real logit**; `margin >= 0` is Fake. AUC is computed on both classes, never Real-only. No Dev threshold is optimized or deployed.
 
 ## Step 2: GPU frozen-feature probe
 
@@ -69,7 +69,7 @@ When interpreting Select vs Audit, keep them distinct and report exact denominat
 ## CPU verification
 
 ```bash
-python -m unittest w2v_v31811.test_scores -v
+python -m unittest w2v_v31811.test_scores w2v_v31811.test_probes -v
 ```
 
 Production 3B, native RTC synthesis, AMP, and GPU memory/throughput require separate server validation. The diagnostic does **not** train or change V3.18.10 parameters.

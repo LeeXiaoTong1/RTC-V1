@@ -224,13 +224,15 @@ def analyze(path, out):
     trends,flips=epoch_drift(epochs,out)
     sel=epochs[-1][2]
     pairs=paired_conditions(sel,out)
+    audit_pairs=None
     metrics_by_group={name:metrics(sel,m) for name,m in _groups(sel)}
     if audit is not None:
         metrics_by_group.update({'audit:'+name:metrics(audit,m) for name,m in _groups(audit)})
-        paired_conditions(audit,out/'audit') if False else None
+        audit_dir=out/'audit';audit_dir.mkdir(exist_ok=True)
+        audit_pairs=paired_conditions(audit,audit_dir)
     _json(out/'score_summary.json',dict(
         input=str(path),epochs=[e for e,_,_ in epochs],last_select=metrics_by_group,
-        paired_source_summary=pairs,
+        paired_source_summary=pairs,audit_paired_source_summary=audit_pairs,
         interpretation='Descriptive analysis only. No test labels, no Dev-fitted calibration, and no model updates.',
         caveats=['AUC/EER are not fixed-threshold F1','Historical Dev/Audit has been seen during development',
                  'Epoch drift needs no epoch checkpoints; feature-level epoch drift does require saved epoch weights']))
