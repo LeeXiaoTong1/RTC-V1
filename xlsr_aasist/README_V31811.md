@@ -73,3 +73,10 @@ python -m unittest w2v_v31811.test_scores w2v_v31811.test_probes -v
 ```
 
 Production 3B, native RTC synthesis, AMP, and GPU memory/throughput require separate server validation. The diagnostic does **not** train or change V3.18.10 parameters.
+
+
+## Hotfix: source-index repair and temp.sh exports
+
+The feature-probe Train ticket indexing and class/language-stratified holdout are corrected. Old failed `train_features.npz` outputs were not source-aligned and must be recomputed; the diagnostic uploader excludes unverified old NPZ files. The new `--upload-temp` option posts a ZIP of saved diagnostics to temp.sh, without checkpoint or WAV files.
+
+**See [README_V31811_HOTFIX.md](README_V31811_HOTFIX.md) for the exact pull, rerun, upload/retry instructions.**

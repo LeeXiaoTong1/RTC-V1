@@ -118,6 +118,40 @@ def _extract(model, waves):
     return dict(ssl_last=np.stack(captured_last),fused=np.stack(fused),preclassifier=np.stack(captured_head),logits=logits)
 
 
+def bind_rows_to_tickets(rows, tickets, stage):
+    """Bind each requested waveform to its original row before local reindexing.
+
+    Train tickets contain indices into the COMPLETE training manifest. Select and
+    Audit tickets arrive alongside an already-subsetted row list. Treating both
+    forms as consecutive local indices silently loads the wrong Train audio.
+    """
+    if stage not in ('train', 'select', 'audit'):
+        raise ValueError('Unsupported diagnostic split')
+    if stage != 'train' and len(rows) != len(tickets):
+        raise ValueError('Validation tickets and subset rows have different lengths')
+    subset, rebound = [], []
+    for i, ticket in enumerate(tickets):
+        source_idx = ticket.get('index')
+        if not isinstance(source_idx, int) or source_idx < 0:
+            raise ValueError('Missing original manifest row index in diagnostic ticket')
+        if stage == 'train':
+            if source_idx >= len(rows):
+                raise ValueError('Diagnostic Train source index exceeds manifest')
+            row = rows[source_idx]
+            if str(row.get('canonical_source')) != str(ticket.get('canonical_source')):
+                raise ValueError('Train ticket and actual waveform source identity differ')
+        else:
+            row = rows[i]
+        expected_condition = 'online' if ticket['kind'] == 'online' else 'offline'
+        if ticket['kind'] not in ('online', 'offline') or row.get('condition', row.get('domain')) != expected_condition:
+            raise ValueError('Diagnostic ticket is not bound to the intended Online/Offline audio')
+        subset.append(row)
+        rebound.append(dict(ticket, index=i))
+    if not subset:
+        raise ValueError('Diagnostic selection is empty')
+    return subset, rebound
+
+
 def _collect(model, cfg, rows, tickets, stage):
     from w2v_v31810.data import Waves
     from w2v_v31810.validation_data import FixedWaves
@@ -126,12 +160,8 @@ def _collect(model, cfg, rows, tickets, stage):
     if stage!='train':
         assert stage in ('select','audit')
         local_cfg['scene_noise_records']={'dev':cfg['_probe_scene_noise'][stage]}
-    dataset = Waves(rows,local_cfg,'train') if stage=='train' else FixedWaves(rows,local_cfg,'dev')
-    # Tickets refer to the subset's own row indices, never the full protocol.
-    ordered=[]
-    for i,ticket in enumerate(tickets):
-        t=dict(ticket,index=i)
-        ordered.append(t)
+    bound_rows, ordered = bind_rows_to_tickets(rows, tickets, stage)
+    dataset = Waves(bound_rows,local_cfg,'train') if stage=='train' else FixedWaves(bound_rows,local_cfg,'dev')
     chunks=[ordered[i:i+int(cfg['eval_batch'])] for i in range(0,len(ordered),int(cfg['eval_batch']))]
     batches=loader(dataset,local_cfg,batch_sampler=chunks)
     result={key:[] for key in ('ssl_last','fused','preclassifier','logits')};meta=[]
@@ -153,13 +183,43 @@ def _collect(model, cfg, rows, tickets, stage):
     result.update({k:np.asarray([r[k] for r in meta]) for k in ('id','canonical_source','language','label','panel')})
     for k in ('ssl_last','fused','preclassifier','logits'):
         if not np.isfinite(result[k]).all():raise ValueError('Nonfinite diagnostic features')
+    # Every extracted identity must be one of the ticketed identities, and all
+    # requested (source, condition) views must be present exactly once.
+    from collections import Counter
+    expected=Counter((str(row['canonical_source']), 'official_online' if ticket['kind']=='online' else 'regular_noisy')
+                     for row,ticket in zip(bound_rows,ordered)) if stage=='train' else None
+    if expected is not None:
+        observed=Counter(zip(map(str,result['canonical_source']),map(str,result['panel'])))
+        if observed!=expected:
+            raise ValueError('Extracted Train source/condition coverage differs from ticket manifest')
     return result
 
 
-def _group_holdout(groups,seed,fraction=.2):
-    # Source-stratified split: multiple views of a source never cross boundary.
-    s=sorted(set(groups),key=lambda g:(_stable(seed,'train_holdout',g),g))
-    hold=set(s[:max(1,round(len(s)*fraction))]);mask=np.asarray([g not in hold for g in groups],bool)
+def _group_holdout(groups, labels, languages, seed, fraction=.2):
+    """Deterministic label/language stratification at the ORIGINAL source level.
+
+    Different views of the same source are never allowed on both sides. A
+    global hash-only split can put all held-out sources in the same class.
+    """
+    if not 0 < fraction < 1:
+        raise ValueError('Train holdout fraction must be in (0,1)')
+    by_source={}
+    for group,label,language in zip(groups,labels,languages):
+        key=str(group);stratum=(str(language),int(label))
+        if key in by_source and by_source[key]!=stratum:
+            raise ValueError('One Train source has conflicting language or class metadata')
+        by_source[key]=stratum
+    strata=defaultdict(list)
+    for group,stratum in by_source.items():
+        strata[stratum].append(group)
+    held=set()
+    for stratum, items in sorted(strata.items()):
+        if len(items)<2:
+            raise ValueError('Train source holdout requires two distinct sources per language/class stratum: '+str(stratum))
+        ordered=sorted(items,key=lambda group:(_stable(seed,'train_holdout_'+str(stratum),group),group))
+        k=max(1,min(len(ordered)-1,round(len(ordered)*fraction)))
+        held.update(ordered[:k])
+    mask=np.asarray([str(g) not in held for g in groups],bool)
     return mask
 
 
@@ -191,10 +251,10 @@ def _report_group(data,bias=0.):
 
 def _calibration(train, select, audit, seed):
     data=_to_score_dataset(train);sel=_to_score_dataset(select)
-    masks=_group_holdout(data['canonical_source'],seed)
+    masks=_group_holdout(data['canonical_source'],data['label'],data['language'],seed)
     for target in (0,1):
         if not any(data['label'][masks]==target) or not any(data['label'][~masks]==target):
-            raise ValueError('Train source holdout is not label-stratified; cannot calibrate')
+            raise ValueError('Train source stratification failed to retain both classes')
     margin=data['logits'][:,0]-data['logits'][:,1]
     bias=_balanced_intercept(margin,data['label'],data['language'],data['panel'],masks)
     train_held={k:v[~masks] for k,v in data.items()}
@@ -246,6 +306,11 @@ def run(run, out, max_train_per_class=64, max_dev_per_class=64, workers=2,
     from w2v_v31810.config import verify_inputs
     from w2v_v31810.model import load_model
     run=Path(run).resolve(); out=Path(out);out.mkdir(parents=True,exist_ok=True)
+    # Earlier V3.18.11 builds could write misindexed Train embeddings before
+    # failing calibration. They must never be reused or shipped as valid data.
+    for old_name in ('train_features.npz','select_features.npz','audit_features.npz',
+                     'feature_probe_summary.json','feature_manifest.json'):
+        (out/old_name).unlink(missing_ok=True)
     if not run.is_dir():raise ValueError('Feature probes require original server run, not report ZIP')
     if max_train_per_class<3 or max_dev_per_class<3:
         raise ValueError('Each group must have at least 3 requested sources')
@@ -287,6 +352,17 @@ def run(run, out, max_train_per_class=64, max_dev_per_class=64, workers=2,
         print('V31811_PROBE_FIT='+name,flush=True)
         report['probes'][name]=_fit_one(name,train_data,select_data,audit_data,cfg['seed'])
     _json(out/'feature_probe_summary.json',report)
-    return dict(artifacts=['train_features.npz','select_features.npz','feature_probe_summary.json']+
-        (['audit_features.npz'] if include_audit else []),checkpoint=identity['selected'],
+    names=['train_features.npz','select_features.npz','feature_probe_summary.json']+(
+        ['audit_features.npz'] if include_audit else [])
+    def checksum(path):
+        digest=hashlib.sha256()
+        with path.open('rb') as f:
+            for buf in iter(lambda: f.read(1024*1024),b''):digest.update(buf)
+        return digest.hexdigest()
+    _json(out/'feature_manifest.json',dict(schema='v31811_source_bound_features_v2',
+        checkpoint=identity['selected'],checkpoint_sha256=digest(run/'last.pt'),
+        source_run=str(run),train_examples=len(train_data['id']),
+        select_examples=len(select_data['id']),
+        files={name:checksum(out/name) for name in names}))
+    return dict(artifacts=names+['feature_manifest.json'],checkpoint=identity['selected'],
         result=str(out/'feature_probe_summary.json'))

@@ -63,7 +63,7 @@ class DiagnosticsTests(unittest.TestCase):
         bias=_balanced_intercept(x,label,language,panel,np.ones(8,bool))
         self.assertTrue(np.isfinite(bias))
         groups=np.array(['a','a','b','b','c','c','d','d'])
-        mask=_group_holdout(groups,42)
+        mask=_group_holdout(groups,label,language,42)
         for s in set(groups):self.assertEqual(len(set(mask[groups==s])),1)
 
     def test_source_based_subset(self):
