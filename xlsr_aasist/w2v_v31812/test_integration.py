@@ -177,7 +177,7 @@ class PipelineTests(unittest.TestCase):
             with stack,patch('w2v_v31812.workflow.review_global',return_value=False):execute(root,cfg)
             self.assertEqual([call.args[0] for call in fitter.call_args_list],['global','local'])
             summary=read_json(root/'summary.json')
-            self.assertEqual(summary['decision'],'stop_global_hypothesis_not_supported')
+            self.assertEqual(summary['decision'],'stop_feature_review_screen')
             self.assertFalse((root/'residual.pt').exists());self.assertTrue((root/'report.zip').exists())
 
     def test_stage2_three_seeds_train_only_choice_and_selected_audit(self):

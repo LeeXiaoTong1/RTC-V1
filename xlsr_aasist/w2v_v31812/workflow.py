@@ -17,7 +17,8 @@ from w2v_v31810.identity import verify_registry
 from w2v_v31810.model import load_model
 from w2v_v31810.validation import _panels
 from . import VERSION, SCHEMA
-from .cache import extract, concatenate, save_npz
+from .cache import extract, concatenate, save_npz, read_complete
+from .continuation import prepare_continuation, load_classifier, inherited_review
 from .partition import split_sources, full_sweep
 from .training import fit, predict
 from .metrics import report, guard, paired_changes, bootstrap
@@ -41,6 +42,8 @@ def parent_run(value=None):
 def parser():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--parent-run');p.add_argument('--run');p.add_argument('--resume')
+    p.add_argument('--continue-from',help='Continue the released v1 feature review in a new run, reusing all completed caches and probes')
+    p.add_argument('--upload-report',action='store_true',help='Upload the completed lightweight report to temp.sh')
     p.add_argument('--device',default='cuda:0');p.add_argument('--train-device',default='cuda:0')
     p.add_argument('--workers',type=int,default=4);p.add_argument('--microbatch',type=int,default=2)
     p.add_argument('--frame-budget',type=int,default=4000)
@@ -56,6 +59,8 @@ def code_identity():
 
 
 def prepare(args):
+    if args.resume and args.continue_from:
+        raise ValueError('Choose --resume for this revision or --continue-from for the released v1 review')
     if args.resume:
         run=Path(args.resume).resolve();cfg=read_json(run/'config.json')
         if cfg['schema']!=SCHEMA or cfg['code']!=code_identity():raise ValueError('Resume code/schema changed')
@@ -65,6 +70,8 @@ def prepare(args):
         raise ValueError('Worker/count/budget arguments are invalid')
     if args.batch_size<16 or args.batch_size%8 or not 0<args.lr<=.1 or args.weight_decay<0:
         raise ValueError('Expected batch multiple of eight and positive small learning rate')
+    if args.continue_from:
+        return prepare_continuation(args,code_identity())
     from w2v_v31810.evaluate import selected
     source=parent_run(args.parent_run);original,weights,meta=selected(source,'best')
     if original.get('omni_arch')!='3b' or not original.get('temporal_stats',True):
@@ -88,6 +95,7 @@ def prepare(args):
         parent_tag=meta['selected'],device=args.device,train_device=args.train_device,workers=args.workers,
         microbatch=args.microbatch,frame_budget=args.frame_budget,cache_views=args.cache_views,
         epochs=args.epochs,patience=args.patience,batch_size=args.batch_size,lr=args.lr,weight_decay=args.weight_decay,
+        upload_report=args.upload_report,
         label_smoothing=original.get('label_smoothing',.02),backend_precision=original.get('backend_precision','fp32'),
         source_draws_per_stream=original['source_draws_per_stream'],seeds=[3181201,3181202,3181203],
         artifacts=artifacts,code=code_identity(),split_hash=split['hash'],
@@ -98,6 +106,12 @@ def prepare(args):
     return run,cfg
 
 
+def runtime_config(run,cfg):
+    original=read_json(run/'parent_config.json')
+    return dict(original,device=cfg['device'],workers=cfg['workers'],eval_workers=cfg['workers'],
+                microbatch=cfg['microbatch'],frame_budget=cfg['frame_budget'],prefetch_factor=1)
+
+
 def load_parent(run,cfg):
     original=read_json(run/'parent_config.json')
     verify_files({str(run/'parent.pt'):cfg['artifacts']['parent.pt']})
@@ -106,8 +120,7 @@ def load_parent(run,cfg):
     if verification_key not in _VERIFIED_INPUTS:
         verify_inputs(original)
         _VERIFIED_INPUTS.add(verification_key)
-    live=dict(original,device=cfg['device'],workers=cfg['workers'],eval_workers=cfg['workers'],
-              microbatch=cfg['microbatch'],frame_budget=cfg['frame_budget'],prefetch_factor=1)
+    live=runtime_config(run,cfg)
     parent=load_model(live)
     apply_partial(parent,torch.load(run/'parent.pt',map_location='cpu',weights_only=True))
     parent.set_phase(False);parent.requires_grad_(False).eval()
@@ -116,6 +129,10 @@ def load_parent(run,cfg):
 
 def fixed_cache(parent,part,base_cfg,run,cfg,name,identity,stop):
     local=dict(base_cfg,scene_noise_records={'dev':part['scene_noise_records']})
+    if cfg.get('continued_from') and name!='dev_audit':
+        origin=cfg['continued_from']
+        return read_complete(part['rows'],part['tickets'],local,Path(origin['run'])/'cache'/name,
+                             origin['identity'],fixed=True,stop=stop)
     return extract(parent,part['rows'],part['tickets'],local,run/'cache'/name,identity,fixed=True,stop=stop)
 
 
@@ -129,11 +146,22 @@ def save_scores(path,data,logits):
         panel=np.asarray([r['validation_panel'] for r in rows],dtype=np.str_))
 
 
-def review_global(baseline,probe):
+def review_global(baseline,probe,*,scope='external'):
     a=baseline['groups']['official_online/en'];b=probe['groups']['official_online/en']
     # A recall gain alone could simply shift decisions toward Real. Require the
     # full ROC ordering to remain comparable; this is a predeclared screening rule.
-    return b['real_false_positive']<a['real_false_positive'] and b['auc']>=a['auc']-.01
+    if scope not in ('inner','external'):raise ValueError('Unknown feature-review scope')
+    recall_ok=(b['real_false_positive']<=a['real_false_positive']+1e-12 if scope=='inner'
+               else b['real_false_positive']<a['real_false_positive']-1e-12)
+    return recall_ok and b['auc']>=a['auc']-.01
+
+
+def print_metrics(label,metrics):
+    print(f'{label} | SelectS={100*metrics["score"]:.2f} | fixed threshold=0.5',flush=True)
+    print('Group                 FakeR   RealR      F1     AUC',flush=True)
+    for key,m in metrics['groups'].items():
+        print(f'{key:22s} {100*m["fake_recall"]:6.2f} {100*m["real_recall"]:7.2f} '
+              f'{100*m["macro_f1"]:7.2f} {100*m["auc"]:7.2f}',flush=True)
 
 
 def execute(run,cfg,stop=lambda:False):
@@ -150,20 +178,27 @@ def execute(run,cfg,stop=lambda:False):
     if external&(held|fit_sources):raise ValueError('Parent Train/Dev source overlap')
     if set(protocol['select']['speech_sources'])&set(protocol['audit']['speech_sources']):
         raise ValueError('Parent Select/Audit source overlap')
-    parent,live=load_parent(run,cfg)
+    if cfg.get('continued_from'):
+        parent=None;live=runtime_config(run,cfg);classifier=load_classifier(run,cfg)
+        print('Residual continuation: no Omni/AASIST loading for completed Train/Select evidence',flush=True)
+    else:parent,live=load_parent(run,cfg)
     from w2v_v31810.sampling import Plan
     plan=Plan(train_rows,cfg=live,seed=live['seed'])
     # Parent sampler supplies exact existing variant definitions and RTC controls.
     train_parts=[]
     for view in range(cfg['cache_views']):
         tickets=[t for t in full_sweep(train_rows,plan,view) if t['canonical_source'] in fit_sources]
-        train_parts.append(extract(parent,train_rows,tickets,live,run/'cache'/f'train_{view}',identity,stop=stop))
+        if cfg.get('continued_from'):
+            origin=cfg['continued_from']
+            part=read_complete(train_rows,tickets,live,Path(origin['run'])/'cache'/f'train_{view}',origin['identity'],stop=stop)
+        else:part=extract(parent,train_rows,tickets,live,run/'cache'/f'train_{view}',identity,stop=stop)
+        train_parts.append(part)
     train=concatenate(train_parts);del train_parts
     inner_rows=[dict(r,domain=r['condition']) for r in train_rows if r['canonical_source'] in held]
     inner=_panels(inner_rows,'select');inner['scene_noise_records']=live['scene_noise_records']['train']
     validation=fixed_cache(parent,inner,live,run,cfg,'train_inner',identity,stop)
     selection=fixed_cache(parent,protocol['select'],live,run,cfg,'dev_select',identity,stop)
-    classifier=copy.deepcopy(parent.head.aasist.out_layer).cpu()
+    if parent is not None:classifier=copy.deepcopy(parent.head.aasist.out_layer).cpu()
     # Extraction ended. Release the 3B parent during all cheap feature training.
     del parent
     if torch.cuda.is_available():torch.cuda.empty_cache()
@@ -173,23 +208,35 @@ def execute(run,cfg,stop=lambda:False):
                       select_sources=len(protocol['select']['speech_sources']),all_fit_sources=set(r['canonical_source'] for r in train['rows'])==fit_sources),
         split_interpretation=split['interpretation'])
     if not stage1['coverage']['all_fit_sources']:raise ValueError('Full-source review omitted a Train source')
-    for kind in ('global','local'):
-        model,best=fit(kind,train,validation,classifier,cfg,run/('probe_'+kind),3181201,identity,stop)
-        zi=predict(model,validation,cfg['train_device']);zs=predict(model,selection,cfg['train_device'])
-        stage1['probes'][kind]=dict(inner=report(validation['rows'],zi),select=report(selection['rows'],zs),epoch=best['epoch'])
-        save_scores(run/f'probe_{kind}_select.npz',selection,zs)
-        del model
-    stage1['supported']=bool(review_global(base_inner,stage1['probes']['global']['inner']) and review_global(base_select,stage1['probes']['global']['select']))
-    stage1['screening_rule']='Global EN-real FPR strictly lower, EN AUC at most 0.01 lower than parent, on both Train-inner and Dev Select; diagnostic, not proof.'
+    if cfg.get('continued_from'):
+        previous=inherited_review(run,cfg,validation,selection,report)
+        stage1['probes']=previous['probes'];stage1['inherited_from']=cfg['continued_from']
+        print('Both completed probes reused; starting no additional probe epochs',flush=True)
+    else:
+        for kind in ('global','local'):
+            model,best=fit(kind,train,validation,classifier,cfg,run/('probe_'+kind),3181201,identity,stop)
+            zi=predict(model,validation,cfg['train_device']);zs=predict(model,selection,cfg['train_device'])
+            stage1['probes'][kind]=dict(inner=report(validation['rows'],zi),select=report(selection['rows'],zs),epoch=best['epoch'])
+            save_scores(run/f'probe_{kind}_select.npz',selection,zs)
+            del model
+    stage1['checks']={scope:bool(review_global(base,stage1['probes']['global'][scope],scope='inner' if scope=='inner' else 'external'))
+                      for scope,base in (('inner',base_inner),('select',base_select))}
+    stage1['supported']=all(stage1['checks'].values())
+    stage1['screening_rule']='Train-inner EN-real FPR must not increase (zero errors may remain zero); Select EN-real FPR must decrease; EN AUC at most 0.01 lower on each split. Diagnostic screen only.'
+    for label,m in [('Original',base_select)]+[(kind,stage1['probes'][kind]['select']) for kind in ('global','local')]:
+        print_metrics('Dev Select '+label,m)
+    print('Feature-review checks: '+str(stage1['checks']),flush=True)
     atomic_json(run/'feature_review.json',stage1)
     if not stage1['supported']:
-        finish(run,identity,dict(stage='feature_review',decision='stop_global_hypothesis_not_supported',
+        finish(run,identity,dict(stage='feature_review',decision='stop_feature_review_screen',
             joint_eligible=False,feature_review=stage1));return
     results=[];chosen=None
     for seed in cfg['seeds']:
         model,best=fit('residual',train,validation,classifier,cfg,run/f'residual_{seed}',seed,identity,stop)
         zs=predict(model,selection,cfg['train_device']);metrics=report(selection['rows'],zs)
         decision=guard(base_select,metrics)
+        print_metrics(f'Dev Select residual seed={seed}',metrics)
+        print('External checks: '+str(decision['checks']),flush=True)
         item=dict(seed=seed,epoch=best['epoch'],inner=best['metrics'],inner_guard=best['guard'],select=metrics,
                   select_guard=decision,paired_cohorts=paired_changes(selection['rows'],selection['logits'],zs))
         results.append(item);save_scores(run/f'residual_{seed}_select.npz',selection,zs)
@@ -241,6 +288,14 @@ def finish(run,identity,summary):
         for path in sorted(run.glob('*.npz')):archive.write(path,path.name)
     print('V3.18.12 decision: '+summary['decision'],flush=True)
     print('REPORT='+str(run/'report.zip'),flush=True)
+    if (run/'config.json').is_file() and read_json(run/'config.json').get('upload_report'):
+        try:
+            from w2v_aasist.launch import upload_archive
+            url=upload_archive(run/'report.zip')
+            (run/'report_url.txt').write_text(url+'\n',encoding='ascii')
+            print('REPORT_URL='+url,flush=True)
+        except Exception as exc:
+            print('Report is saved; upload failed: '+str(exc),flush=True)
 
 
 class Tee:

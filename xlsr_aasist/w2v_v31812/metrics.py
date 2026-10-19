@@ -18,15 +18,26 @@ def report(rows, logits):
         score=.3*panels['official_online']['macro_f1']+.35*panels['regular_noisy']['macro_f1']+.35*panels['heldout_noisy']['macro_f1'])
 
 
-def guard(baseline, candidate):
-    checks = {'en_real_improves':candidate['groups']['official_online/en']['real_false_positive'] < baseline['groups']['official_online/en']['real_false_positive']}
-    for panel in PANELS[1:]:
+def guard(baseline, candidate, *, scope='external'):
+    """Inner selects a non-degrading fit; unseen sources must show a real gain.
+
+    The frozen parent already saw old Train. Requiring a strict inner recall
+    gain would make a zero-error baseline impossible to pass. External checks
+    remain strict and also protect Online Fake, not only the noisy panels.
+    """
+    if scope not in ('inner', 'external'):
+        raise ValueError('Unknown guard scope')
+    a=baseline['groups']['official_online/en']['real_false_positive']
+    b=candidate['groups']['official_online/en']['real_false_positive']
+    checks = {('en_real_preserved' if scope=='inner' else 'en_real_improves'):
+              b <= a+1e-12 if scope=='inner' else b < a-1e-12}
+    for panel in PANELS:
         checks[panel+'_macro_preserved'] = candidate['panels'][panel]['macro_f1'] >= baseline['panels'][panel]['macro_f1']-1e-12
         for lang in ('en','zh'):
             key = panel+'/'+lang
             checks[key+'_fake_preserved'] = candidate['groups'][key]['fake_false_negative'] <= baseline['groups'][key]['fake_false_negative']+1e-12
             checks[key+'_real_preserved'] = candidate['groups'][key]['real_false_positive'] <= baseline['groups'][key]['real_false_positive']+1e-12
-    return dict(passed=all(checks.values()),checks=checks)
+    return dict(passed=all(checks.values()),checks=checks,scope=scope)
 
 
 def paired_changes(rows, before, after):
@@ -83,7 +94,7 @@ def bootstrap(rows, before, after, iterations=500, seed=31812):
         for key in a:changes[key].append(float(b[key]-a[key]))
     intervals={k:dict(low=float(np.quantile(v,.025)),high=float(np.quantile(v,.975))) for k,v in changes.items()}
     supported=intervals['official_online/en_real_fpr_delta']['high']<0
-    for panel in PANELS[1:]:
+    for panel in PANELS:
         supported &= intervals[panel+'_macro_delta']['low']>=-1e-12
         for lang in ('en','zh'):
             for metric in ('fake_fnr','real_fpr'):

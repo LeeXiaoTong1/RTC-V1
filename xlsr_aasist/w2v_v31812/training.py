@@ -125,7 +125,7 @@ def fit(kind, train, validation, classifier, cfg, directory, seed, identity, sto
                 print(f'{kind} seed={seed} | epoch {epoch+1}/{cfg["epochs"]} | {steps}/{expected_steps} | loss={total/steps:.5f}',flush=True)
         if skipped==steps:raise FloatingPointError('Every residual update overflowed')
         z=predict(model,validation,device);metrics=report(validation['rows'],z)
-        protected=guard(baseline,metrics);eligible=protected['passed'] if kind=='residual' else True
+        protected=guard(baseline,metrics,scope='inner');eligible=protected['passed'] if kind=='residual' else True
         # An eligible checkpoint always ranks above a non-eligible diagnostic one.
         rank=(int(eligible),metrics['score'])
         improved=best is None or rank>tuple(best['rank'])
@@ -144,7 +144,9 @@ def fit(kind, train, validation, classifier, cfg, directory, seed, identity, sto
         print(f'{kind} seed={seed} | epoch {epoch+1}/{cfg["epochs"]} | loss={event["loss"]:.5f} | '
               f'Inner EN-real recall={100*en["real_recall"]:.2f} | '
               f'Regular={100*metrics["panels"]["regular_noisy"]["macro_f1"]:.2f} | '
-              f'Heldout={100*metrics["panels"]["heldout_noisy"]["macro_f1"]:.2f} | guard={eligible}',flush=True)
+              f'Heldout={100*metrics["panels"]["heldout_noisy"]["macro_f1"]:.2f} | '
+              f'Inner EN-fake recall={100*en["fake_recall"]:.2f} | '
+              f'inner_guard={protected["passed"]} | mode={kind}',flush=True)
     if best is None:raise ValueError('No completed residual/probe epoch')
     model.load_state_dict(best['model']);model.eval()
     atomic_json(directory/'selected.json',dict(kind=kind,seed=seed,epoch=best['epoch'],

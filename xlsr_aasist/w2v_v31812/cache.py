@@ -40,6 +40,37 @@ def concatenate(parts):
                 **{k: np.concatenate([p[k] for p in parts]) for k in ('global','local','logits')})
 
 
+def read_complete(rows, tickets, cfg, directory, identity, *, fixed=False, stop=None):
+    """Read verified completed evidence without loading a model or decoding audio.
+
+    A continuation never silently re-extracts missing/changed evidence. The
+    original checkpoint/config identity, recipes, ticket order and every shard
+    hash must match, so an interrupted or corrupted cache fails explicitly.
+    """
+    directory=Path(directory)
+    bound=dict(identity=identity,rows=fingerprint(rows),tickets=fingerprint(tickets),
+               recipe=fingerprint(cfg),fixed=fixed,dtype='float32',shard_size=64)
+    if not (directory/'manifest.json').is_file() or read_json(directory/'manifest.json')!=bound:
+        raise ValueError('Completed cache configuration is missing or changed: '+str(directory))
+    parts=[]
+    for i in range((len(tickets)+63)//64):
+        if stop and stop():raise InterruptedError('Stopped while verifying completed features')
+        path=directory/f'{i:05d}.npz'
+        if not path.is_file() or not path.with_suffix('.json').is_file():
+            raise ValueError('Completed cache shard is missing; no re-encoding was started: '+str(path))
+        part=read_shard(path,fingerprint([bound,i]))
+        if len(part['rows'])!=len(tickets[i*64:(i+1)*64]):
+            raise ValueError('Completed cache shard row count changed')
+        for row,ticket in zip(part['rows'],tickets[i*64:(i+1)*64]):
+            original=rows[ticket['index']]
+            for key in ('id','canonical_source','language','label'):
+                if row[key]!=original[key]:raise ValueError('Completed cache row metadata changed: '+key)
+        parts.append(part)
+    result=concatenate(parts)
+    print(f'Reused cache {directory.name}: {len(result["rows"])} verified views; no encoder pass',flush=True)
+    return result
+
+
 def extract(parent, rows, tickets, cfg, directory, identity, *, fixed=False, stop=None):
     """FP32 prevents quantization moving fixed-.5 decisions near the boundary.
 
