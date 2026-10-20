@@ -1,0 +1,252 @@
+"""CPU numerical and state-isolation tests, without audio/model downloads."""
+import copy
+import json
+import random
+from types import SimpleNamespace
+import unittest
+
+import numpy as np
+import torch
+from torch import nn
+from torch.nn import functional as F
+
+from .meta import CELLS, rng_state
+from .step import select_candidates, train_step
+
+
+class Detector(nn.Module):
+    def __init__(self, dropout=0.):
+        super().__init__()
+        self.fusion = nn.Linear(4, 5)
+        self.head = nn.Sequential(nn.Dropout(dropout), nn.Linear(5, 2))
+        self.register_buffer('counter', torch.tensor(0))
+        self.joint = True
+        self.encode_counts = []
+
+    def encode(self, waves):
+        self.counter += 1
+        self.encode_counts.append((self.training, len(waves)))
+        # Exercise all random streams even when the stochastic head is off.
+        if not self.training:
+            random.random()
+            np.random.random()
+            torch.rand(1)
+        return [self.fusion(torch.as_tensor(wave[:4])).repeat(12, 1) for wave in waves]
+
+    def classify_sequences(self, sequences):
+        return self.head(torch.stack([sequence.mean(0) for sequence in sequences]))
+
+    def set_phase(self, joint):
+        self.joint = joint
+
+
+def fixture(copies=3):
+    rng = np.random.default_rng(41)
+    units = []
+    for side in ('A', 'B'):
+        for role, language, label in CELLS:
+            for j in range(copies):
+                identity = f'{side}-{role}-{language}-{label}-{j}'
+                wave = np.tile(rng.normal(size=4).astype(np.float32), 1000)
+                row = dict(id=identity, source_id=identity, group_id=identity,
+                           canonical_source=identity, meta_side=side, role=role,
+                           language=language, label=label, split='train', wave=wave,
+                           batch_group_quotas=(copies,)*4)
+                if role == 'noisy':
+                    candidates = []
+                    for k, mechanism in enumerate(('legacy', 'm1', 'm2', 'm3')):
+                        candidate = dict(row, wave=wave*(1+k*.45)+k*.15,
+                                         robust_mechanism=mechanism,
+                                         robust_quality=dict(passed=True, reasons=[]))
+                        candidate['pcl_refs'] = {'clean': dict(row, wave=wave*.7,
+                                                               role='clean_ref')}
+                        candidates.append([candidate])
+                    row = dict(candidates[0][0], robust_candidates=candidates)
+                units.append([row])
+    cfg = dict(device='cpu', backend_precision='fp32', microbatch=8,
+               frame_budget=9000, label_smoothing=.02, max_grad_norm=1.,
+               group_quotas=(copies,)*4, consistency='none', seed=3191,
+               robust_arm='baseline', robust_hard_fraction=.5, current_update=3)
+    return cfg, units
+
+
+def optimizer(model):
+    return torch.optim.AdamW([dict(params=model.parameters(), name='detector', lr=.002)],
+                             weight_decay=.001)
+
+
+def direct_loss(model, units, smoothing=.02):
+    cells = {}
+    for key in CELLS:
+        values = []
+        for unit in units:
+            row = unit[0]
+            if (row['role'], row['language'], row['label']) != key:
+                continue
+            rows = [row] if row['role'] == 'online' else [row, row['pcl_refs']['clean']]
+            logits = model.classify_sequences(model.encode([r['wave'] for r in rows]))
+            values.append(F.cross_entropy(logits, torch.full((len(rows),), row['label']),
+                                          label_smoothing=smoothing))
+        cells[key] = torch.stack(values).mean()
+    return sum(cells.values()) / 8
+
+
+def assert_rng_equal(test, a, b):
+    test.assertEqual(a['python'], b['python'])
+    test.assertEqual(a['numpy'][0], b['numpy'][0])
+    np.testing.assert_array_equal(a['numpy'][1], b['numpy'][1])
+    test.assertEqual(a['numpy'][2:], b['numpy'][2:])
+    torch.testing.assert_close(a['torch'], b['torch'], rtol=0, atol=0)
+
+
+class StepTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        torch.set_num_threads(1)
+
+    def setUp(self):
+        torch.manual_seed(19)
+        random.seed(33)
+        np.random.seed(46)
+
+    def test_paired_balanced_accumulation_matches_explicit_objective(self):
+        cfg, units = fixture()
+        one, two = Detector(), Detector()
+        two.load_state_dict(one.state_dict())
+        a, b = optimizer(one), optimizer(two)
+        result = train_step(one, a, units, cfg)
+        loss_a = direct_loss(two, [u for u in units if u[0]['meta_side'] == 'A'])
+        loss_b = direct_loss(two, [u for u in units if u[0]['meta_side'] == 'B'])
+        loss = (loss_a + loss_b)/2
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(two.parameters(), 1.)
+        b.step()
+        for p, q in zip(one.parameters(), two.parameters()):
+            torch.testing.assert_close(p, q, rtol=3e-6, atol=2e-7)
+        self.assertAlmostEqual(result['loss'], float(loss.detach()), places=6)
+        self.assertEqual(result['classification_source_views'], len(units))
+        self.assertEqual(result['views'], len(units)*3//2)
+        self.assertEqual(result['training_encoded_views'], result['views'])
+        json.dumps(result, allow_nan=False)
+
+    def test_microbatch_changes_do_not_change_source_weights(self):
+        cfg, units = fixture()
+        one, two = Detector(), Detector()
+        two.load_state_dict(one.state_dict())
+        train_step(one, optimizer(one), units, dict(cfg, microbatch=2))
+        train_step(two, optimizer(two), units, dict(cfg, microbatch=16))
+        for p, q in zip(one.parameters(), two.parameters()):
+            torch.testing.assert_close(p, q, rtol=3e-6, atol=2e-7)
+        self.assertTrue(all(count <= 2 for _, count in one.encode_counts))
+
+    def test_clean_reference_is_encoded_once_for_ce_and_pcl(self):
+        cfg, units = fixture()
+        model = Detector()
+        model.pcl_scale = SimpleNamespace(is_frozen=True, scale=torch.ones(5))
+        for unit in units:
+            for candidate in unit[0].get('robust_candidates', []):
+                candidate[0]['pcl_noisy_index'] = 0
+                candidate[0]['pcl_pairs'] = {'noise': [[0, 2000, 0, 2000]]}
+        result = train_step(model, optimizer(model), units,
+                            dict(cfg, consistency='dual', pcl_variance_weight=0.))
+        self.assertEqual(result['training_encoded_views'], 72)
+        self.assertEqual(result['paired_classification_views'], 24)
+        self.assertEqual(result['auxiliary_reference_views'], 0)
+        self.assertEqual(sum(v['valid_sources'] for k, v in result['pcl_coverage'].items()
+                             if k.startswith('noise/')), 12)
+        self.assertGreater(result['pcl_losses']['noise']['weighted_loss'], 0.)
+
+    def test_scoring_restores_buffers_partial_modes_rng_and_gradients(self):
+        cfg, units = fixture()
+        model = Detector(.5)
+        model.train()
+        model.head[0].eval()
+        for p in model.parameters():
+            p.grad = torch.ones_like(p)
+        modes = [m.training for m in model.modules()]
+        before = rng_state()
+        counter = model.counter.clone()
+        a, _ = select_candidates(model, units, dict(cfg, robust_arm='hard'))
+        assert_rng_equal(self, before, rng_state())
+        self.assertEqual(modes, [m.training for m in model.modules()])
+        self.assertTrue(torch.equal(counter, model.counter))
+        self.assertTrue(all(torch.equal(p.grad, torch.ones_like(p)) for p in model.parameters()))
+        b, _ = select_candidates(model, units, dict(cfg, robust_arm='hard'))
+        self.assertEqual([u[0].get('robust_mechanism') for u in a],
+                         [u[0].get('robust_mechanism') for u in b])
+
+    def test_all_arms_have_equal_scoring_and_training_budget(self):
+        cfg, units = fixture()
+        state = Detector().state_dict()
+        results = []
+        for arm in ('baseline', 'expanded', 'hard'):
+            model = Detector()
+            model.load_state_dict(state)
+            results.append(train_step(model, optimizer(model), units, dict(cfg, robust_arm=arm)))
+        self.assertEqual(len({r['encoded_views'] for r in results}), 1)
+        self.assertEqual(len({r['training_encoded_views'] for r in results}), 1)
+        self.assertEqual(len({r['selection']['scoring_batches'] for r in results}), 1)
+        self.assertEqual(results[0]['selection']['scoring_encoded_views'], 24*4*2)
+
+    def test_hard_assignment_preserves_real_fake_mechanism_budget(self):
+        cfg, units = fixture()
+        model = Detector()
+        _, uniform = select_candidates(model, units, dict(cfg, robust_arm='expanded'))
+        _, hard = select_candidates(model, units, dict(cfg, robust_arm='hard'))
+        self.assertEqual(hard['class_mechanism_imbalance'], {})
+        self.assertEqual(uniform['selected_mechanism_by_class'], hard['selected_mechanism_by_class'])
+        self.assertLessEqual(hard['mean_selected_margin'], uniform['mean_selected_margin']+1e-7)
+        self.assertEqual(hard['counts']['hard_sources'], 12)
+
+    def test_rejected_candidates_keep_legacy_source_and_do_not_reduce_budget(self):
+        cfg, units = fixture()
+        for unit in units:
+            for candidate in unit[0].get('robust_candidates', [])[1:]:
+                candidate[0]['robust_quality'] = dict(passed=False, reasons=['too_short'])
+        selected, info = select_candidates(Detector(), units, dict(cfg, robust_arm='hard'))
+        self.assertEqual(len(selected), len(units))
+        self.assertTrue(all(u[0]['robust_mechanism'] == 'legacy' for u in selected if u[0]['role'] == 'noisy'))
+        self.assertEqual(info['counts']['all_expanded_rejected_fallback'], 24)
+        self.assertEqual(info['counts']['quality_rejected_expanded'], 72)
+        self.assertEqual(info['class_mechanism_imbalance'], {})
+
+    def test_source_or_label_change_is_rejected(self):
+        cfg, units = fixture()
+        noisy = next(u for u in units if u[0]['role'] == 'noisy')
+        noisy[0]['robust_candidates'][1][0]['label'] ^= 1
+        with self.assertRaisesRegex(ValueError, 'identity'):
+            select_candidates(Detector(), units, cfg)
+
+    def test_error_restores_rng_buffers_parameters_and_adam_state(self):
+        cfg, units = fixture()
+        model = Detector()
+        opt = optimizer(model)
+        state = copy.deepcopy(model.state_dict())
+        before = rng_state()
+        handle = model.head[1].weight.register_hook(lambda g: g * float('nan'))
+        with self.assertRaises(FloatingPointError):
+            train_step(model, opt, units, cfg)
+        handle.remove()
+        for name, value in model.state_dict().items():
+            torch.testing.assert_close(value, state[name], rtol=0, atol=0)
+        self.assertEqual(len(opt.state), 0)
+        self.assertTrue(all(p.grad is None for p in model.parameters()))
+        assert_rng_equal(self, before, rng_state())
+
+    def test_scoring_failure_restores_state(self):
+        cfg, units = fixture()
+        model = Detector()
+        model.head[0].eval()
+        modes = [m.training for m in model.modules()]
+        before = rng_state()
+        original = model.classify_sequences
+        model.classify_sequences = lambda z: original(z)*float('nan')
+        with self.assertRaises(FloatingPointError):
+            select_candidates(model, units, cfg)
+        self.assertEqual(modes, [m.training for m in model.modules()])
+        self.assertEqual(int(model.counter), 0)
+        assert_rng_equal(self, before, rng_state())
+
+
+if __name__ == '__main__':
+    unittest.main()

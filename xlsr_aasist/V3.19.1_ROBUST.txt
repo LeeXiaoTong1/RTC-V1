@@ -1,0 +1,200 @@
+V3.19.1 — 处理机制扩展与困难条件训练的匹配对照
+================================================
+
+目的
+----
+从 V3.18.9 的已验证 best 出发，检验“训练未充分覆盖会破坏真假证据的
+处理机制，且普通采样没有充分学习其中的困难来源”这一假设。
+
+这是待验证的训练实验。实现正确、内部验证改善，都不等于 Progress Noisy
+必然提升，更不能解释为“95% 概率超过当前最好成绩”。
+
+入口与默认预算
+--------------
+在 Linux 训练服务器更新。当前训练应先正常结束或保存暂停。
+以下分支从 v3.19-parent-best-metadg 分出，保留旧版本入口。
+
+  cd /home/ubuntu/LXT/RTC-w2v-improved
+  git fetch origin
+  git switch v3.19.1-robust-conditions
+
+  source "$(conda info --base)/etc/profile.d/conda.sh"
+  conda activate /home/ubuntu/LXT/v318-runtime/envs/sdd-v318
+  cd xlsr_aasist
+  bash run_w2v_v3191_suite.sh --upload-temp
+
+默认依次执行 baseline、expanded、hard，各 2 轮，共 6 轮。
+三组都独立从同一个父 best 开始；后一组不会继承前一组的训练结果。
+不重复头部预热，不自动推理/提交 Progress。
+
+默认父目录：
+  exp/w2v_v3189_20261016_183410_a437
+使用 last.pt 容器内部记录的 best_model，预期 best 为 epoch_6_step_1403。
+保留父目录和 last.pt，不要在实验过程中继续改写父实验。
+
+可在首次启动时指定 --parent-run /绝对路径、--epochs 2、--seed 319102、
+--workers N 等。--epochs 表示每组轮数。suite 锁定共同参数，恢复时不能改动。
+
+运行目录、查看与暂停
+--------------------
+启动后显示 V3191_SUITE=...；该目录保存 suite.json、各组日志和最终报告。
+关闭查看器 Ctrl+C 只退出查看，后台实验继续运行。
+
+重新查看：
+  tail -n 60 -F "$(cat exp/.latest_v3191_suite_log)"
+
+安全暂停整个三组实验：
+  python -m w2v_v3191.suite --stop-suite "$(cat exp/.latest_v3191_suite)"
+
+等待日志出现 PAUSED_RUN / SUITE_PAUSED，再关机或切换代码。
+请求在模型初始化或评估期间收到时，会在安全边界处理，可能需要等待。
+即使当前组刚好完成，暂停请求也会阻止下一组启动。
+
+恢复：
+  bash run_w2v_v3191_suite.sh --resume-suite "$(cat exp/.latest_v3191_suite)"
+
+恢复使用原目录、原参数、优化器、随机状态和下一更新位置。
+已经完成的组跳过；失败或暂停的组恢复；不会悄悄新建同组训练。
+有更新边界 checkpoint（每 200 步一次），安全暂停会立即另存边界。
+强制杀进程最多重放最近保存点之后的步骤。
+
+suite 使用独立的停止命令，不要用 stop_w2v_v3191.sh 操作 suite；
+后者只用于下文的单组启动入口。
+
+三组究竟比较什么
+----------------
+baseline：原有噪声/RTC机制，新增同源 Clean-RTC + Noisy-RTC 配对分类。
+expanded：同样的配对分类，均衡选择新增处理机制。
+hard：同样的机制集合、候选和训练预算，在一半 Noisy 来源上做困难选择；
+      其余保留普通选择。困难选择只重分配机制，保留普通选择的机制计数。
+
+重要：baseline 已使用新的配对分类方式，不等于完全复刻历史 V3.18.9。
+父 best 是第 0 轮参照；三组之间才用于区分新增机制和困难选择的贡献。
+“是否仅配对 CE 就有用”可由 baseline 相对父 best 的变化观察，
+但这也同时包含续训与选模协议变化，不能当作严格的单因素因果结论。
+
+三组都生成、无梯度评分相同的 4 组 Clean/Noisy 候选，随后仅将选中一组
+用于反向传播，避免困难组获得额外候选覆盖。Online 来源正常分类。
+每条 Noisy 来源的分类质量为：
+  0.5 * CE(Clean-RTC, label) + 0.5 * CE(Noisy-RTC, label)
+保持原八组均衡、完整来源去重；不会因多一条 Clean 视图而给该来源双倍权重。
+A/B 两侧分类等权；只在 A 侧保留继承的双 PCL。
+没有虚拟参数更新、MLDG、XEUS、新 KL 或新分类器。
+
+困难选择以真实类别的分数间隔为依据，评分使用 eval/no-grad，随后恢复
+随机状态、模块模式和缓冲区。每个语言/真假单元的处理机制配额一致，
+防止“Real 总是某种处理，Fake 总是另一种处理”的标签捷径。
+质量失败导致的配额偏差、普通→困难错误翻转和实际编码量都会记录。
+
+模型与优化器
+------------
+保留父 Omni 3B、多层融合 128 维、AASIST、窗口聚合与分类器。
+保留父模型所有 60 层已学 LoRA 的作用；前 44 层冻结，只更新末 16 层。
+冻结前层的 LoRA dropout 关闭。融合和后端继续更新。
+PCL 使用父模型冻结的 Train 标度，不重新在 Dev 上拟合。
+新 AdamW 不继承与旧 best 不对应的末轮动量；
+学习率从父 best 所在轮的实际终点接续，默认在本组 2 轮内余弦衰减到一半。
+每个逻辑任务只提交一次优化器更新；溢出会回滚并重试，不消耗成功更新预算。
+
+新增机制及其边界
+----------------
+训练候选是在原有 RTC 输出上追加的处理：
+  1. 频谱着色 FIR；
+  2. 短时包重复/衰减；
+  3. RNNoise 神经降噪。
+原有输出作为候选 0 和质量失败的回退。
+
+两条接收端视图共用处理参数、增益及包掩码，但独立初始化处理器状态。
+这些是机制扰动，不能宣称复现了某个平台完整的收发链。
+RNNoise 不是伪造检测教师，不参与推理，只处理允许的训练音频。
+它可能改变细微伪造证据；能量/静音/裁剪检查只能排除明显损坏，
+不能证明标签语义或全部伪造线索在处理后仍完整保留。
+
+RNNoise 固定公共权重，首次自动下载约 0.3 MB：
+  https://github.com/GregorR/rnnoise-models
+  revision: 3eee541a283fd3b8f81b85b1748e3b9ccbefa04d
+  file: somnolent-hogwash-2018-09-01/sh.rnnn
+  SHA256: 70bb6685eb0c2a1d18e2918dca3fbfbd39317010b1802eb1b6ea73a92f3fdec0
+
+FFmpeg 必须支持 arnndn。启动前验证权重、实际处理和延迟；不支持时明确报错，
+不会静默跳过 RNNoise。下载失败可将该精确文件复制到服务器，
+首次启动加 --rnnoise-model /绝对路径/sh.rnnn。
+默认缓存 assets/v3191。没有额外下载语音样本。
+
+PCL 排除包替换、强衰减、滤波边界、未验证对齐区间；
+RNNoise 使用启动验证的延迟补偿，无法验证单条对齐时不强行施加 PCL。
+
+验证与成功条件
+--------------
+使用共享 PCM 来源登记表，Train/Dev 和 Select/Audit 均按完整来源检查。
+同内容不同容器的 PCM 关系必须贯通。如果既有划分本身存在 PCM 交叉，
+会中止并给出原因，不自动改划分。
+
+固定每个 Dev 来源的一条历史合成 Noisy，再生成：
+  - 未在本轮训练中使用的 spectral_wiener 实现；
+  - 未在本轮训练中使用的着色 + 包重复组合。
+它们是处理实现/组合留出，不是官方未知 RTC 平台。
+随机种子独立于训练种子，且三组共享完全相同的波形、顺序和哈希。
+
+每轮只在 Select 来源推理。实际选模指标是各“机制×语言”Macro-F1 均值，
+不是历史 Select80。默认新 best 必须同时满足：
+  - 指标高于已选 best 至少 0.1 个百分点；
+  - 官方 Clean Macro-F1 相对父 best 最多退步 0.2 个百分点；
+  - 最差机制 Macro-F1 相对父 best 最多退步 0.2 个百分点；
+  - EN-real、EN-fake、ZH-real、ZH-fake 召回各最多退步 0.5 个百分点。
+最后三条相对固定父模型，不随每轮累积放宽；不过线则保留父 best。
+这些容许差不是显著性检验，也不是保证任何子组完全不退步。
+
+选择冻结后才评估最终 Audit，不能据 Audit 换 checkpoint 或调阈值。
+历史 calibration 子集在本版仅用于最终 Audit，不再拟合分数。
+V3.18.9 原报告的 best 校准是 identity（scale=1、bias=0）；
+本版固定使用原始 P(Fake) 和 0.5 阈值，与该父起点评分规则相同。
+两组分数被合并前，所有预算、父 checkpoint、处理波形都要匹配。
+
+报告给出 expanded-baseline、hard-baseline、hard-expanded 的四组召回、
+Macro-F1、错误翻转以及按完整来源聚类的 bootstrap 区间。
+这是历史 Dev：它以前参与过开发，不能称为全新盲测。
+95% 区间只反映这些固定来源下的统计不确定性，不代表未知测试集成功概率。
+默认单训练种子仅作短程筛查，不能据此宣称跨种子稳定收益。
+
+性能与报告
+----------
+候选评分增加前向计算，因此不要预期每轮快于原 V3.19。
+候选不同时保留反向图；Clean-RTC 的编码供 CE/PCL 复用；
+长度微批次、末 16 层激活重计算继续限制显存。
+PCL 有效区间不同会带来实际编码量差异，三组并非逐操作相同 FLOPs。
+worker 根据可用 CPU/RAM 和全部候选双视图的最坏队列大小配置，
+不能只靠增加 worker 保证提速。启动日志会显示选择值和内存估计。
+
+每组保留 last.pt（含 best_model）、steps.jsonl、来源覆盖和验证数据。
+结束生成 suite/comparison.json、suite/report.zip。
+传 --upload-temp 时打印 SUITE_REPORT_URL / REPORT_URL。
+报告包含配置、来源与指标，不包含录音和模型权重。
+上传失败可用同一 --resume-suite 重试，不重复已完成训练。
+
+默认不替用户选择某组提交，也不使用 Progress 反馈调参。
+应先看 hard-expanded 是否支持困难选择，expanded-baseline 是否支持新机制，
+以及 Real 改善是否伴随 Fake 回落，而不是只看一个综合分数。
+
+单组入口（已有明确对照计划时使用）
+----------------------------------
+  bash run_w2v_v3191.sh --arm hard --epochs 2 --upload-temp
+  bash watch_w2v_v3191.sh
+  bash stop_w2v_v3191.sh
+  bash run_w2v_v3191.sh --resume /绝对路径/单组运行目录
+
+单组完成后手动导出指定 best（不会训练）：
+  python -m w2v_v3191.evaluate --run /绝对路径/单组运行目录 \
+    --protocol /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/progress.txt \
+    --audio-root /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/wav/progress \
+    --upload-temp
+
+本地验证覆盖
+------------
+包括配对分类数值梯度、物理微批次等价、冻结 LoRA 前缀、候选质量/配额、
+评分 RNG/缓冲区恢复、失败回滚、PCM 来源隔离、实际 WAV 处理与读取、
+完整来源 bootstrap、暂停/恢复、父 best 回退、选中模型最终 Audit、
+固定阈值导出、suite 暂停/失败恢复及报告文件排除。
+另有真实 FFmpeg + 固定 RNNoise 权重的处理测试。
+CPU 小模型测试不能替代服务器 3B 模型的显存、吞吐和最终指标实验。
+发布前本地验证：64 项 CPU 测试通过；8 个启动/操作脚本通过 Bash 语法检查。
