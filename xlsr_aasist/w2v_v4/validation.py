@@ -15,4 +15,6 @@ def language_balanced(result):
 def evaluate_protocol(model,protocol,cfg,*args,**kwargs):
     # Changing the training random seed must not regenerate the retained Dev.
     fixed=dict(cfg,seed=protocol.get('synthesis_seed',protocol['seed']))
+    from .validation_data import infer_fixed
+    kwargs.setdefault('infer_fn',infer_fixed)
     return language_balanced(base_evaluate(model,protocol,fixed,*args,**kwargs))

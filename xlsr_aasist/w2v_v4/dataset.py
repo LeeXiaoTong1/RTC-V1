@@ -7,10 +7,8 @@ import soundfile as sf
 from w2v_aasist.data import read_protocol
 from w2v_v31810.identity import build_registry, registry_config, verify_registry, read_official_pairs
 from w2v_v31810.validation import _AudioIdentity, _digest
-from w2v_v31813.config import verify as verify_parent
-from w2v_v31813.evaluate import selected
 from .common import read_json, atomic_json, fingerprint, digest
-from .source import resolve_parent, resolve_data_run
+from .source import resolve_parent, resolve_data_run, verify_source
 
 
 def choose_sources(dev, protocol, fraction, seed):
@@ -103,7 +101,7 @@ def official_rows(cfg, registry):
         old=known[r['id']];info=identity.audio(r['audio'],old['audio_sha256'])
         if info['decoded_pcm_sha256']!=old['decoded_pcm_sha256']:raise ValueError('Official Dev PCM changed')
         audio=sf.info(r['audio'])
-        if audio.samplerate!=16000 or audio.channels!=1:raise ValueError('Original PCL/XEUS requires official 16 kHz mono')
+        if audio.samplerate!=16000 or audio.channels!=1:raise ValueError('Original PCL requires official 16 kHz mono')
         rows.append(dict(r,canonical_source=old['canonical_source'],condition=r['domain'],split='dev',
             audio_sha256=info['sha256'],decoded_pcm_sha256=info['decoded_pcm_sha256'],
             audio_size=info['size'],audio_mtime_ns=info['mtime_ns'],output_samples=int(audio.frames),full_length=True))
@@ -131,8 +129,9 @@ def official_rows(cfg, registry):
 
 def prepare(args):
     parent=resolve_parent(args.parent_run)
-    old=verify_parent(parent);_,_,done=selected(parent)
-    owner=dict(parent=str(parent),parent_config=digest(parent/'config.json'),parent_checkpoint=done['checkpoint_sha256'],
+    old=verify_source(parent)
+    owner=dict(parent=str(parent),parent_config=digest(parent/'config.json'),schema='v4_data_only_v2',
+        source_files={name:digest(parent/name) for name in ('train_rows.json','source_registry.json','validation_protocol.json')},
         fraction=args.dev_real_train_fraction,split_seed=args.split_seed)
     root=Path(args.assets_root).resolve()/fingerprint(owner)[:16]
     if (root/'config.json').is_file():
@@ -146,7 +145,7 @@ def prepare(args):
     root.mkdir(parents=True,exist_ok=True)
     files=dict(zip(('train_rows.json','dev_rows.json','validation_protocol.json','source_registry.json','source_transfer.json'),result))
     for name,value in files.items():atomic_json(root/name,value)
-    cfg=dict(old,data_recipe='v4_source_transfer_v1',data_owner=owner,source_registry=registry_config(registry),
+    cfg=dict(old,data_recipe='v4_source_transfer_v2',data_owner=owner,source_registry=registry_config(registry),
         validation_protocol_hash=fingerprint(protocol),validation_input_files=protocol['input_files'],
         prepared_files={name:digest(root/name) for name in files})
     atomic_json(root/'config.json',cfg)

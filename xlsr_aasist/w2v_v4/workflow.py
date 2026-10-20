@@ -43,6 +43,13 @@ def main():
             run=ROOT/'exp'/('w2v_v4_'+datetime.now().strftime('%Y%m%d_%H%M%S')+'_'+secrets.token_hex(3))
             cfg,rows,protocol=initialize(args,run,prepared)
         (ROOT/'exp/.latest_v4_run').write_text(str(run)+'\n',encoding='utf-8');print('V4_RUN='+str(run),flush=True)
+        if args.preflight_only:
+            from .model import load_model,adapter_inventory
+            model=load_model(cfg)
+            model.set_phase(True)
+            atomic_json(run/'preflight.json',adapter_inventory(model))
+            print('V4_PREFLIGHT_OK; resume this run to train: '+str(run),flush=True)
+            return
         request=run/'submission_request.json'
         if args.submit_best:
             planned=dict(protocol=str(Path(args.submission_protocol).resolve()),protocol_sha256=digest(args.submission_protocol),

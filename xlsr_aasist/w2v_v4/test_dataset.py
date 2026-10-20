@@ -86,14 +86,14 @@ class DatasetTests(unittest.TestCase):
 
     def test_real_sampler_consumes_migrated_registry_without_changing_exposures(self):
         from collections import Counter
-        from w2v_v31813.pairing import Plan
+        from .sampling import Plan
         with tempfile.TemporaryDirectory() as tmp:
             cfg,train,dev,protocol,registry=prepared_fixture(tmp,extra_train=6)
             rows,_,protocol,registry,report=transfer(train,dev,protocol,registry,cfg)
             cfg.update(source_registry=registry_config(registry),source_draws_per_stream=[32]*4,
                 stream_sources=8,group_quotas=[2]*4,view_factors=[1,5,1,5],refresh_base_variants=True,
                 source_epoch_offset=0,mode='baseline',experiment='E0',warm_epochs=1,consistency='none')
-            plan=Plan(rows,cfg,{},{});counts=Counter();seen=set()
+            plan=Plan(rows,cfg,dict(official={},noise={}));counts=Counter();seen=set()
             for batch in plan.epoch_batches(0):
                 self.assertEqual(len(batch),16);self.assertEqual(len({t['canonical_source'] for t in batch}),16)
                 for ticket in batch:

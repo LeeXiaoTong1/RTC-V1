@@ -17,9 +17,9 @@ from . import VERSION,SCHEMA
 
 
 class FixturePlan:
-    def __init__(self,rows,cfg,neighbors,phones):self.steps=2;self.audit13={}
+    def __init__(self,rows,cfg,phones):self.steps=2;self.audit={}
     def epoch_batches(self,epoch):
-        return [[dict(row=i,epoch=epoch,official_pcl=True,xeus_pair=True) for i in range(8)] for _ in range(2)]
+        return [[dict(row=i,epoch=epoch,pcl_official=True,pcl_noise=True) for i in range(8)] for _ in range(2)]
 
 
 class FixtureWaves:
@@ -27,7 +27,7 @@ class FixtureWaves:
     def __getitem__(self,t):
         unit=copy.deepcopy(self.units[t['row']])
         if t['epoch']==0:
-            unit[0].pop('xeus_pair');unit[0].pop('original_pcl',None)
+            unit[0].pop('pcl',None)
         return unit
 
 
@@ -63,7 +63,7 @@ class LifecycleTests(unittest.TestCase):
         stack.enter_context(redirect_stdout(io.StringIO()))
     def make(self,root,name,settings):
         run=root/name;run.mkdir();atomic_json(run/'config.json',settings)
-        atomic_json(run/'xeus_neighbors.json',{});atomic_json(run/'original_phone_pairs.json',dict(pairs={}))
+        atomic_json(run/'pcl_pairs.json',dict(official={},noise={}))
         seed_all(42);atomic_save(run/'init.pt',partial_state(Tiny()));return run
     def test_full_pause_resume_and_best_audit_are_exact(self):
         settings=cfg(version=VERSION,recipe=SCHEMA,epochs=3,warm_epochs=1,lr_floor=.1,lr_warmup_updates=2,free_reserve_bytes=0)
@@ -87,12 +87,19 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(aev.calls,bev.calls);self.assertEqual(aev.calls[-1],('audit','epoch_1'))
             _,weights,done=selected(resume);self.assertEqual(done['best_tag'],'epoch_1')
             assert_state_equal(self,weights,b['best_model'])
-    def test_parent_is_retained_if_no_new_epoch_improves(self):
+    def test_untrained_model_is_never_exported_as_parent_best(self):
         settings=cfg(version=VERSION,recipe=SCHEMA,epochs=1,warm_epochs=1,lr_floor=.1,free_reserve_bytes=0)
         with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
             self.patches(stack);run=self.make(Path(directory),'run',settings);ev=Evaluator(self,run,True)
             done=run_experiment(settings,run,[],{},model_factory=Tiny,optimizer_factory=optimizer,evaluator=ev)
-            self.assertTrue(done['baseline_retained']);self.assertEqual(done['best_tag'],'parent')
-            _,weights,_=selected(run);assert_state_equal(self,weights,torch.load(run/'init.pt',weights_only=True))
+            self.assertEqual(done['best_tag'],'epoch_1');self.assertNotIn(('select','parent'),ev.calls)
+    def test_pause_before_any_epoch_has_no_exportable_best(self):
+        settings=cfg(version=VERSION,recipe=SCHEMA,epochs=2,free_reserve_bytes=0)
+        with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
+            self.patches(stack);run=self.make(Path(directory),'run',settings)
+            atomic_json(run/'stop_requested.json',dict(test=True))
+            done=run_experiment(settings,run,[],{},model_factory=Tiny,optimizer_factory=optimizer,evaluator=Evaluator(self,run))
+            self.assertEqual(done['status'],'paused')
+            with self.assertRaisesRegex(ValueError,'No trained epoch'):selected(run)
 
 if __name__=='__main__':unittest.main()

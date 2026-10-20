@@ -20,7 +20,7 @@ def parser():
     p.add_argument('--output-dir',required=True,
         help='V4 metadata inventory; immutable parent records can be reused')
     p.add_argument('--model-cache',default='/home/ubuntu/LXT/v318-runtime/hf-phonemes')
-    p.add_argument('--environment-root',default='/home/ubuntu/LXT/v318-runtime/phoneme-env-v3186')
+    p.add_argument('--environment-root',default='/home/ubuntu/LXT/v318-runtime/phoneme-env-v4')
     p.add_argument('--cache-root',default='/home/ubuntu/LXT/v318-runtime/phoneme-prep-cache')
     p.add_argument('--reuse-manifest')
     p.add_argument('--device',default='cuda:0')

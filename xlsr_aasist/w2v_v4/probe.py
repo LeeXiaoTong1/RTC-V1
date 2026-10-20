@@ -2,8 +2,12 @@
 from collections import Counter
 import torch
 from torch.nn import functional as F
-from w2v_v31813.data import Waves
-from w2v_v31813.step import packs
+from .data import Waves
+from .pcl import expand,pack
+
+def packs(rows,cfg):
+    for items in pack([expand(r,False) for r in rows],cfg['microbatch'],cfg['frame_budget']):
+        yield [x['rows'][0] for x in items]
 from w2v_v3189.data import prepared
 from .common import capture_rng, restore_rng
 from .gradients import coordinate

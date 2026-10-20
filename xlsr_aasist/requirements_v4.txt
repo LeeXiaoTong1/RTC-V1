@@ -1,0 +1,6 @@
+# Separate V4 venv shares the working server CUDA PyTorch/RTC dependencies.
+# Never upgrade the Omni environment or reinstall its CUDA wheel.
+transformers==4.38.2
+tokenizers==0.15.2
+huggingface-hub==0.24.7
+safetensors==0.4.5

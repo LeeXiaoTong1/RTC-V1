@@ -4,7 +4,7 @@ from pathlib import Path
 import torch
 from .common import ROOT,read_json,atomic_json,digest,apply_partial,fingerprint
 from .model import load_model
-from w2v_v31810.inference import infer
+from .inference import infer
 from w2v_aasist.data import read_protocol
 from w2v_aasist.evaluate import package_scores
 from w2v_aasist.launch import upload_archive,run_lock
@@ -22,6 +22,8 @@ def selected(run):
     state=torch.load(run/'last.pt',map_location='cpu',weights_only=True)
     if state['schema']!=SCHEMA or state['identity']!=fingerprint(cfg) or state['best_tag']!=done['best_tag']:
         raise ValueError('Checkpoint/config mismatch')
+    if not state.get('best_model') or not state.get('best_tag'):
+        raise ValueError('No trained epoch has completed evaluation; resume training before exporting')
     return cfg,state['best_model'],done
 
 

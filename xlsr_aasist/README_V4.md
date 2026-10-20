@@ -1,101 +1,93 @@
-# V4：Omni 多尺度适配、真实来源扩充与 Online/Noisy 梯度协调
+# V4：w2v-BERT 2.0、MHASP、双路 PCL 与 Online/Noisy 梯度协调
 
-从 **V3.18.13 已完成或安全暂停的 best** 新建实验，保留 Omni 3B、全层融合、重叠窗口、统计汇聚、AASIST、现有动态增强、单源单次 Noisy+RTC、XEUS 配对和官方原始 Offline↔Online PCL。
+本次修改完整采用已实现的 V3.20 检测结构。版本仍为 V4，checkpoint schema 更新为 `rtc_v4_bert_mhasp_dual_pcl_pcgrad_v2`。旧 Omni V4 实验不能在新架构下续训。
 
-## 默认配置
+## 模型与初始化
 
-| 项目 | V4 |
-| --- | --- |
-| 初始化 | V3.18.13 best；新 optimizer 和学习率调度 |
-| MultiConvAdapter | Omni 后 16 层 MHSA 输出处；瓶颈 64；核 3/7/15/23；混合卷积核 3；输出投影零初始化 |
-| 继承 LoRA | 保留其前向作用，全程冻结参数并关闭 LoRA dropout |
-| 可训练部分 | 新 Adapter、原融合、AASIST、汇聚与分类器 |
-| Dev EN-real | 按完整 canonical source 约 75% 并入 Train、25% 保留验证；固定 split seed 4001 |
-| 逻辑 batch | 沿用父配置，通常 24 Online＋24 Noisy 分类来源；不扩大 batch |
-| 微批次 | 4，帧预算 6000；只有累积完逻辑 batch 才协调与更新 |
-| 每轮曝光 | 沿用父配置 source_draws_per_stream；默认每流 EN-Fake 9668、EN-Real 8000、ZH-Fake 8000、ZH-Real 8000 |
-| 新增训练 | 10 轮，无早停；第 1 轮 CE＋PCGrad，第 2–3 轮逐渐加入 XEUS/PCL，第 4–10 轮完整权重 |
-| 学习率 | Adapter 1e-4；原融合及后端为父配置初始率的 0.5 倍；200 update 预热、余弦衰减到 0.1 倍 |
-| 精度 | 沿用父配置：通常 Omni BF16、AASIST FP16，主参数/梯度 FP32，GradScaler |
-| workers | Train 4、Dev 2；可用命令行调整 |
-| 部署 | 一个 detector、一个最终分类输出，P(fake) 固定阈值 0.5，无教师或 PCL 依赖 |
+16 kHz 完整录音 → 官方 SeamlessM4T 80 维 Mel 特征、相邻两帧堆叠为 160 维 → w2v-BERT 2.0 的 24 层 Conformer → 24 层融合（1024 维）→ 4-head MHASP（2048 维）→ MLP 2048→1536→1024→512→2。
 
-8000 是每轮来源曝光次数，不是独立录音数。新增来源进入既有轮换池；不是额外增加 8000 次曝光。实际来源数量、迁移清单和曝光预算写入 report。
+- 全部 24 层 Q/K/V/O 使用 LoRA，rank 16、alpha 32，共 96 个投影。官方基座冻结。
+- 各层无仿射 LayerNorm 后 softmax 加权；初始最后一层权重 0.5，其余层共享 0.5。
+- MHASP 为四个 256 维子空间分别做加权均值/标准差后拼接，这是原 V3.20 的明确实现选择。
+- 移除 Omni、AASIST、重叠特征窗口、MultiConvAdapter。V4 不再下载、准备或使用 XEUS，不再做近邻换样、真假配对间隔损失或教师校准。
+- **从官方 w2v-BERT 预训练权重新建检测器**。`--data-run`（兼容别名 `--parent-run`）只复用来源登记、噪声资产与音素元数据，不读取旧 detector checkpoint。不能将 Omni 权重移植到 w2v-BERT。
+- 推理只有一个模型、一个 P(fake) 输出，固定阈值 0.5，不需要音素识别器或参照音频。
 
-## 三项实现的边界
+这是采用 V3.20 中的 Teffic-Audio 风格结构，并非声称逐项复现原论文的所有未公开实现。
 
-**MultiConvAdapter** 在注意力后增加多尺度时间卷积残差，保持原 Q/K/V/O、LoRA 的 checkpoint 名称不变。每个时间卷积之间都屏蔽 padding，避免变长 batch 的填充污染有效帧。后 16 层仍使用 activation checkpointing；没有把早期冻结编码器加入反向传播。零初始化只保证初始推理等价，不保证训练后性能不下降。
+## 双路 PCL
 
-**来源扩充** 使用父实验已经按官方配对、字节 SHA256 与解码 PCM 合并的来源登记表，重新核验官方 Dev 原始音频。只迁移 EN-real 的完整来源及其 Offline/Online，Offline 进入原有动态增强→加噪→RTC；没有 Online 的官方 Offline 仍保留。剩余 Select/Audit 的来源归属、面板条件和噪声材料保持固定。迁移后持久化新的唯一登记表，采样器、PCL、XEUS 与验证全部绑定它。原始清单、录音和父实验不被覆盖。
+共享同一个前端和融合表示；分类使用官方 Online 和当前模拟 Noisy。PCL 位于 1024 维融合输出、MHASP 之前，匹配音素区间的均值做 MSE，**两端都有梯度**。
 
-25% 分别从父 Select/Audit 内按来源和有无 Online 分层保留，并保证非空，所以小组实际比例存在整数取整。划分只使用固定哈希顺序，不使用模型错误或分数。历史 Dev 仍不是全新的外部测试集。
+1. **官方分支**：原始 Offline ↔ 同源原始官方 Online。每次逻辑更新每种语言×真假至多选一个已抽中的 Online 来源，最多四对。增强后的 Online 不冒充原始 Online；分类输入本来就是原始 Online 时复用编码。
+2. **模拟分支**：原始 Offline ↔ 该来源本次已经生成的 Noisy＋RTC。每种语言×真假至多一对，最多四对。复用当前 Noisy 的波形和编码，仅增加原始 Offline 参照，不生成第二条噪声、不额外生成 clean RTC。
 
-由于剩余 EN-real 数量改变，V4 SelectS 先在各面板内对 EN/ZH 的 Macro-F1 等权，再使用 0.30 Online＋0.35 Regular＋0.35 Heldout。旧的合并语言分数仍保存为参考，**不能将 V4 SelectS 与旧 SelectS 直接比较**。父模型会在完全相同的 V4 留出来源上重新评估；没有新 epoch 提升时，best 保留该父模型（Adapter 仍为零输出）。
+模拟对齐先使用已记录的变速时间映射，再估计常数传输延迟；检查局部信号关联和能量，并剔除活动门控抹掉的区间。w2v-BERT 使用 **560 samples 支持范围、320 步长、280 中心**，静音屏蔽边界按 280 samples 扩展。镜像补长和 batch padding 不参与音素损失。无法可靠对齐的区间只取消 PCL，分类样本仍完整保留。
 
-**梯度协调** 分别累积完整逻辑 batch 的 Online、Noisy 八组均衡 CE 梯度；内积为负时，使用原始两侧梯度做对称 PCGrad，然后加入单独累积的 XEUS/PCL 梯度，最后统一 unscale、裁剪并做一次 AdamW 更新。没有恢复 MLDG 临时内层更新，也没有把特征强行做 Clean/Noisy MSE 对齐。
+没有官方 Online 的合法 Offline 仍能进入模拟分支。所有参照要求相同 canonical source、语言及真假标签，而且只能来自最终 Train 登记表。PCL 不使用检测分数筛选来源。
 
-Online 是官方 Online 流，不是“从未经过传输的原始 Offline”。两个训练流仍保持不同来源；因此这是两域目标协调，不是原论文的逐条同源双输入复现。启动时另做最多 8 条、语言/真假均衡的**同源 Train 梯度探针**，以官方 Online 对照同一 Offline 的模拟 Noisy；只记录结果，不更新参数或使用 Dev。
+每个分支先按来源和实际有有效音素的语言×真假组平均，缺失组明确记录。每次更新最多新增 12 个参照编码，分类来源曝光预算不变。分类与 PCL 共用本次特征图；参照不进入分类器。
 
-PCGrad 只协调 CE。辅助梯度和 AdamW 的预处理仍可能改变最终更新方向，因此报告不会承诺最终更新绝对无冲突，也不会用 Train loss 的下降代替未知 Noisy 泛化验证。
+第 1 轮只预热融合/后端，冻结 LoRA，不读取 PCL 参照。第 2 轮开始开放全部 24 层 LoRA，使用六个固定 Train 任务分别标定官方/模拟 PCL：各自共享 LoRA 梯度范数目标为 CE 的 5%，λ 上限 1，随后 300 次更新逐渐增加至所标定权重。记录实际达到的比例；这不是对后续 Adam 更新比例的保证。校准不更新参数、恢复随机状态，并用 FP32 后端与显式梯度缩放避免此前 FP16 校准问题。
 
-## 更新并启动
+## 数据和优化
 
-在 V3.18.13 完成或安全暂停后执行。不要终止正在写 checkpoint 的进程。
+保持既有 V4 配方：按完整 PCM/官方配对来源，将 Dev EN-real 约 75% 迁入 Train、25% 留出，固定 split seed 4001，并在父 Select/Audit 内按配对可用性分别分层。迁入的 Offline 参加动态增强→单次 Noisy→RTC，Online 进入官方流。来源清单和保留验证固定，不使用错误分数挑选。
+
+沿用现有噪声配方与两流曝光预算：通常每流 EN-fake/EN-real/ZH-fake/ZH-real 为 9668/8000/8000/8000，约每轮 1403 次逻辑更新；每次最多 24 Online＋24 Noisy 分类来源。8000 是来源访问次数，不是独立录音数。物理微批次默认 4、帧预算 9000，参考波形也计入预算；不扩大逻辑 batch。
+
+两流八组均衡 CE 梯度累积完一个逻辑 batch 后做对称 PCGrad，再加入独立的两路 PCL 梯度，统一裁剪并提交一次 AdamW 更新。保留条件轮换，不加入 MLDG 临时更新。
+
+默认训练 **10 轮（1 轮后端预热＋9 轮联合训练）**。LoRA 前/中/后各八层学习率 5e-6/1e-5/2e-5，新融合/MHASP/MLP 为 1e-4；LoRA 200 次 joint update 预热，联合阶段余弦衰减到 10%。基座 BF16，MHASP 统计与损失 FP32，MLP FP16，主参数和梯度 FP32。完整时序不裁剪，资源超限在启动前报告。
+
+选模保持 V4 定义：面板内 EN/ZH 等权，再按 0.30 Online＋0.35 Regular＋0.35 Heldout 加权。只从**完成评估的训练轮次**选择 best，随机初始化与旧 Omni 不参与竞争。结束后仅评估所选 best 的锁定 Audit。历史 Dev 已参与开发，不是全新盲测；Progress 不用于选模或损失校准。
+
+## 更新、环境和启动
 
 ```bash
 cd /home/ubuntu/LXT/RTC-w2v-improved
 git fetch origin
-git switch --track origin/v4-noisy-generalization
+git switch v4-noisy-generalization
+git pull --ff-only origin v4-noisy-generalization
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate /home/ubuntu/LXT/v318-runtime/envs/sdd-v318
 cd xlsr_aasist
+bash setup_w2v_v4.sh
+source /home/ubuntu/LXT/v318-runtime/envs/sdd-v4/bin/activate
 
 bash run_w2v_v4.sh \
-  --parent-run "$(cat exp/.latest_v31813_run)" \
+  --data-run "$(cat exp/.latest_v31813_run)" \
   --epochs 10 \
-  --submit-best \
-  --upload-submission \
-  --upload-temp
+  --submit-best --upload-submission --upload-temp
 ```
 
-默认 Progress protocol 和音频根目录与 V3.18.13 一致。其他路径通过 `--submission-protocol`、`--submission-audio-root` 指定。
+`setup_w2v_v4.sh` 创建隔离 venv，复用现有 CUDA PyTorch/RTC 库，固定 Transformers 4.38.2，不升级旧 Omni 环境；随后在服务器运行真实小型 HF 模型的 CUDA/FP16 双 PCL＋PCGrad 验收。默认官方模型存于 `/home/ubuntu/LXT/v318-runtime/hf-w2v-bert-2.0`，可用 `--bert-model-dir` 指向已有完整模型。音素缓存仍复用旧版本已经核验的记录，仅为新增来源识别；音素识别环境独立于检测器。
 
-准备过程复用现有私有 XEUS/音素环境和模型下载缓存。旧 Train 的音素记录通过哈希校验后复制；XEUS 保留旧 Train 码本并复用旧来源直方图，仅对新增来源运行教师，再重算扩充训练集的近邻。新缓存放在 `assets/v4/<identity>/`，不覆盖父缓存。相同命令重跑会复用完整缓存；中断的准备保留已完成记录/分片。可以先只准备：
-
-```bash
-bash run_w2v_v4.sh --parent-run "$(cat exp/.latest_v31813_run)" --prepare-only
-```
-
-训练中查看、停止、恢复：
+网络需要镜像时可加 `--hf-endpoint https://hf-mirror.com`。`--local-files-only` 禁止下载；资产校验失败会报错，不能静默换模型。`--prepare-only` 只准备数据/官方资产/音素；`--preflight-only` 创建新 run 并检查官方完整模型加载，之后通过该 run 的 `--resume` 开始训练。
 
 ```bash
+# 日志查看；退出查看不影响训练
 bash watch_w2v_v4.sh
+
+# 请求当前完整更新结束后保存并暂停
 bash stop_w2v_v4.sh
-# 等待训练终端打印 PAUSED_RUN，再执行恢复。
+
+# 等到 PAUSED_RUN 后恢复，配置不允许中途变更
 bash run_w2v_v4.sh --resume "$(cat exp/.latest_v4_run)" --upload-temp
 ```
 
-Ctrl+C 在训练阶段会请求完成当前 optimizer update 后保存。恢复采用原配置，不接受修改 epochs、数据划分、学习率或 batch 的参数。已记录的 submission 请求也会在续训完成后执行。
+旧 Omni V4 run 的 `--resume` 会明确拒绝；新架构需要新 run。尚未完成任何轮次评估就暂停时，不允许把随机检测器导出为 best。
 
-单独生成并上传 submission：
+## 对照、观测与验收
 
-```bash
-bash submit_w2v_v4.sh \
-  --run "$(cat exp/.latest_v4_run)" \
-  --protocol /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/progress.txt \
-  --audio-root /home/ubuntu/LXT/RTC/xlsr_aasist/dataset/wav/progress \
-  --upload-temp
-```
+- `--pcl none`：真正关闭两条 PCL 分支和音素准备；保留 CE/PCGrad。
+- `--pcl official`：只保留原始 Offline↔Online。
+- `--gradient-coordination none`：去掉 PCGrad，仍保留相同采样和所选 PCL。
+- `--dev-real-train-fraction 0`：关闭数据迁移。改变该比例会改变验证集合，不能跨划分直接比较 SelectS。
 
-## 日志与验证
+终端显示 `PCL-o`、`PCL-n` 和各分支有效配对数。`steps.jsonl` 另外保存实际加权损失、权重/ramp、全可训练参数上的两路 PCL 梯度范数、两流 CE 梯度及协调情况、时间映射/延迟/静音屏蔽覆盖率。`auxiliary_calibration.json` 保存六个 Train 任务的梯度观测与实际比例。`coverage_epoch_*.json` 保存采样次数；`resource_audit` 保存完整长度及参照预算。
 
-每一步保存 CE、XEUS margin、PCL、辅助权重 ramp、两侧 CE、梯度余弦/范数、PCGrad 是否触发、修正幅度、辅助梯度与协调后 CE 的夹角、GradScaler 状态和 CUDA 峰值分配量。终端每轮保留完整 Dev 表；`coverage_epoch_*.json` 保留配对覆盖率。
+本地检查使用真实小型 HF Conformer，不下载完整基座、不启动服务器正式训练；测试涵盖 24 层 LoRA、MHASP、双端 PCL、变速/传输延迟/静音排除、原始与模拟编码复用、来源隔离、预算、精确续训和单模型导出。完整模型显存、吞吐及未知 Noisy 泛化收益仍需服务器实测；安装脚本的 CUDA 验收也不是完整基座峰值显存测试。
 
-`paired_gradient_probe.json` 是小规模 Train 诊断；`parent_selection.json` 和 `selection_epoch_*.json` 用于同一来源上的父/新模型比较；`locked_audit.json` 只在完成后评估选定 best。每个分组保留 RealR、FakeR、F1、AUC 等指标以及预测文件；不要仅根据 EN-real recall 判断成功。
-
-可用 `--gradient-coordination none`、`--adapter-layers 0`、`--dev-real-train-fraction 0` 关闭对应变化做对照。所有 V4 模式均冻结继承 LoRA；`--mode baseline` 关闭 XEUS margin但保留 PCL，与 V3.18.13 的该选项一致。改变数据比例会改变验证集合，不能直接比较不同划分的 SelectS。
-
-本地测试覆盖真实 AASIST＋小编码器的初始等价、Adapter 反传、LoRA 冻结、checkpoint 重计算、padding 隔离、梯度公式与微批次等价、实际 WAV/PCM 来源隔离、实际采样曝光、新来源音素/XEUS 增量准备、暂停续训及单模型导出。没有在本地运行完整 Omni 3B GPU 训练；速度、峰值显存和泛化收益仍需要服务器实测。新增梯度缓冲与 Adapter 会增加开销，保持逻辑 batch 与微批次预算不扩大。
-
-方法参考：[MultiConvAdapter](https://arxiv.org/html/2510.24852v1)、[DPDA 梯度协调](https://arxiv.org/html/2509.20682v1)。本版是在现有 Omni RTC 检测器上的适配，并非对论文数据集和训练设置的原样复现。
+本次本地共 40 项 CPU 测试通过，Python 3.11 语法检查通过，新增安装脚本 Bash 语法检查通过。本地实际运行环境为 PyTorch 2.11.0+cpu、Transformers 5.8.0；服务器固定的 4.38.2/CUDA 组合由安装脚本做启动前验收，未声称已在本地完成该组合的 GPU 验证。

@@ -1,20 +1,20 @@
-"""V4 checkpoint tensors include adapters AND the inherited frozen LoRA."""
+"""Persist only w2v-BERT LoRA, fusion and MHASP/MLP detector tensors."""
 from w2v_v31810.common import *
 
 
 def detector_key(name):
-    return name.startswith(('head.', 'fusion.', 'adapters.')) or name.endswith(('.lora_a', '.lora_b'))
+    return name.startswith(('head.', 'fusion.')) or name.endswith(('.lora_a', '.lora_b'))
 
 
 def partial_state(model):
     return {k: v.detach().cpu().clone() for k, v in model.state_dict().items() if detector_key(k)}
 
 
-def apply_partial(model, values, *, parent=False):
+def apply_partial(model, values):
     target = {k: v for k, v in model.state_dict().items() if detector_key(k)}
-    expected = {k: v for k, v in target.items() if not (parent and k.startswith('adapters.'))}
+    expected = target
     if set(values) != set(expected):
-        raise ValueError('V4 checkpoint key mismatch; adapters may be absent only for parent initialization')
+        raise ValueError('V4 w2v-BERT checkpoint mismatch; old Omni/AASIST checkpoints cannot be loaded')
     for name, value in values.items():
         if value.shape != expected[name].shape or value.dtype != expected[name].dtype or not torch.isfinite(value).all():
             raise ValueError('Invalid V4 checkpoint tensor: ' + name)
