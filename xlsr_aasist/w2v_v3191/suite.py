@@ -199,7 +199,7 @@ def package_report(path, manifest, *, uploader=None):
     entries = [('suite.json', suite_bytes), ('comparison.json', path/'comparison.json')]
     names = ('config.json', 'training_history.json', 'robust_final.json', 'robust_panel.json',
              'robust_selection_locked.json', 'completed.json', 'initialization_audit.json',
-             'input_audit.json', 'source_registry.json', 'parent_baseline.json')
+             'input_audit.json', 'source_registry.json', 'parent_baseline.json', 'execution_policy.json')
     for arm in ARMS:
         run = Path(manifest['arms'][arm]['run']).resolve()
         candidates = [run/name for name in names]

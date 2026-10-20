@@ -266,7 +266,7 @@ class StepTests(unittest.TestCase):
         self.assertEqual([u[0].get('robust_mechanism') for u in a],
                          [u[0].get('robust_mechanism') for u in b])
 
-    def test_all_arms_have_equal_scoring_and_training_budget(self):
+    def test_same_training_budget_without_wasted_scoring(self):
         cfg, units = fixture()
         state = Detector().state_dict()
         results = []
@@ -274,16 +274,16 @@ class StepTests(unittest.TestCase):
             model = Detector()
             model.load_state_dict(state)
             results.append(train_step(model, optimizer(model), units, dict(cfg, robust_arm=arm)))
-        self.assertEqual(len({r['encoded_views'] for r in results}), 1)
         self.assertEqual(len({r['training_encoded_views'] for r in results}), 1)
-        self.assertEqual(len({r['selection']['scoring_batches'] for r in results}), 1)
-        self.assertEqual(results[0]['selection']['scoring_encoded_views'], 24*4*2)
+        self.assertEqual(results[0]['selection']['scoring_encoded_views'], 0)
+        self.assertEqual(results[1]['selection']['scoring_encoded_views'], 0)
+        self.assertEqual(results[2]['selection']['scoring_encoded_views'], 12*3)
 
     def test_hard_assignment_preserves_real_fake_mechanism_budget(self):
         cfg, units = fixture()
         model = Detector()
-        _, uniform = select_candidates(model, units, dict(cfg, robust_arm='expanded'))
-        _, hard = select_candidates(model, units, dict(cfg, robust_arm='hard'))
+        _, uniform = select_candidates(model, units, dict(cfg, robust_arm='expanded'), diagnostics=True)
+        _, hard = select_candidates(model, units, dict(cfg, robust_arm='hard'), diagnostics=True)
         self.assertEqual(hard['class_mechanism_imbalance'], {})
         self.assertEqual(uniform['selected_mechanism_by_class'], hard['selected_mechanism_by_class'])
         self.assertLessEqual(hard['mean_selected_margin'], uniform['mean_selected_margin']+1e-7)
@@ -333,7 +333,7 @@ class StepTests(unittest.TestCase):
         original = model.classify_sequences
         model.classify_sequences = lambda z: original(z)*float('nan')
         with self.assertRaises(FloatingPointError):
-            select_candidates(model, units, cfg)
+            select_candidates(model, units, cfg, diagnostics=True)
         self.assertEqual(modes, [m.training for m in model.modules()])
         self.assertEqual(int(model.counter), 0)
         assert_rng_equal(self, before, rng_state())

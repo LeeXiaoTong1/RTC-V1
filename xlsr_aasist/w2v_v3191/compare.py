@@ -14,8 +14,8 @@ from .robust_eval import (_read, _write, _hash, _file_hash, _verify_panel,
 
 def _identity(cfg, final, panel):
     origin = cfg["parent_init"]
-    # All arms generate and score the same candidates, and differ only in
-    # candidate use. Match actual training RNG independently of inherited seed.
+    # Match candidate recipes and actual training exposure, not deliberately
+    # wasted inference. Scoring cost is reported separately from update budget.
     fields = (
         "seed", "sampling_seed", "epochs", "stream_sources", "source_draws_per_stream",
         "source_epoch_offset", "group_quotas", "view_factors",
@@ -89,7 +89,7 @@ def compare_runs(runs, *, draws=2000, seed=3191001):
         schema="rtc_v3191_matched_arm_comparison_v1", reference_run=str(base_run),
         reference_arm=arms[0], protocol_hash=base_panel["hash"],
         matching_identity=expected, comparisons=[], limitation=LIMITATION,
-        scope="Equal source/outer-update budgets and candidate scoring protocol; runtime may still differ",
+        scope="Equal source/outer-update budgets and candidate recipes; unused scoring/DSP may be omitted; compare actual compute costs separately",
         selection="Already fixed on Select; this command never chooses a checkpoint or arm",
         confidence_note="Marginal source-cluster intervals; not a 95% benchmark-success probability")
     for run, cfg, final, panel in records[1:]:

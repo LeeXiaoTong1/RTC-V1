@@ -73,6 +73,8 @@ def code_inventory(root=ROOT):
                 for depth in range(1, len(parts)+1):
                     candidate = root.joinpath(*parts[:depth])
                     pending.extend((candidate.with_suffix(".py"), candidate / "__init__.py"))
+    from .execution import MANIFEST
+    seen[root / MANIFEST] = digest(root / MANIFEST)
     return {str(p): value for p, value in seen.items()}
 
 
@@ -168,7 +170,9 @@ def verify_inputs(cfg, *, training=True):
         classification_weights(cfg)
     schema_for(cfg)
     configured_spec(cfg)
-    verify_unique(cfg["code_fingerprints"], {cfg["omni_checkpoint"]: cfg["omni_sha256"]},
+    from .execution import verify_execution_code
+    verify_execution_code(cfg["code_fingerprints"])
+    verify_unique({cfg["omni_checkpoint"]: cfg["omni_sha256"]},
                   cfg["data_files"] if training else {},
                   cfg["augmentation_files"] if training else {},
                   {cfg["ffmpeg"]: cfg["ffmpeg_sha256"]} if training else {},

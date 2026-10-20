@@ -81,6 +81,23 @@ class CandidateDataTests(unittest.TestCase):
         self.assertNotIn('pcl_refs', result[0])
         np.testing.assert_array_equal(result[0]['wave'], self.wave)
 
+    def test_baseline_skips_unused_dsp_without_changing_training_wave_or_pcl(self):
+        self.dataset.cfg['robust_arm'] = 'baseline'
+        full = self.generate(dict(self.ticket, step=0))[0]
+        with patch('w2v_v3191.data.apply_pair', side_effect=AssertionError('unused DSP')):
+            compact = self.generate(dict(self.ticket, step=1))[0]
+        self.assertEqual(len(full['robust_candidates']), 3)
+        self.assertEqual(len(compact['robust_candidates']), 1)
+        a, b = full['robust_candidates'][0][0], compact['robust_candidates'][0][0]
+        np.testing.assert_array_equal(a['wave'], b['wave'])
+        self.assertEqual(a['pcl_pairs'], b['pcl_pairs'])
+        self.assertEqual(a['pcl_coverage'], b['pcl_coverage'])
+        self.assertEqual(set(a['pcl_refs']), set(b['pcl_refs']))
+        for name in a['pcl_refs']:
+            np.testing.assert_array_equal(a['pcl_refs'][name]['wave'], b['pcl_refs'][name]['wave'])
+        self.assertEqual(compact['robust_candidate_generation'],
+                         dict(requested=3, generated=1, omitted_for_baseline=True))
+
     def test_unpaired_dev_inference_is_still_a_single_row(self):
         row=dict(self.dataset.rows[0],wave=self.wave,role='noisy')
         self.assertEqual(len(list(microbatches([[row]],1,10000))),1)

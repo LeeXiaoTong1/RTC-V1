@@ -113,11 +113,16 @@ class LifecycleTests(unittest.TestCase):
                 return np.asarray([[-3., 3.] if r["label"] == 0 else [3., -3.]
                                    for r in rows], dtype=np.float32), rows
 
-            done = run_experiment(cfg, full, rows, dev, detector, infer_fn=scores)
+            def full_scoring_step(model, optimizer, units, runtime, *args, **kwargs):
+                return train_step(model, optimizer, units,
+                                  dict(runtime, _candidate_diagnostics=True), *args, **kwargs)
+
+            with patch("w2v_v3191.train.train_step", full_scoring_step):
+                done = run_experiment(cfg, full, rows, dev, detector, infer_fn=scores)
             self.assertTrue(done["baseline_fallback"])
 
             def stop_after_update(*args, **kwargs):
-                result = train_step(*args, **kwargs)
+                result = full_scoring_step(*args, **kwargs)
                 atomic_json(resumed/"stop_requested.json", dict(reason="test boundary"))
                 return result
 

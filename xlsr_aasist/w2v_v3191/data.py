@@ -10,6 +10,7 @@ from .activity import mask_pairs
 from w2v_v31810.data import make_recipe
 from w2v_v3184.common import seed_for
 from .augment import apply_pair, quality_check, mechanism_catalog, IMPLEMENTATIONS
+from .execution import diagnostic_step
 
 MIN_SAMPLES=3920
 
@@ -197,11 +198,12 @@ class Waves(BaseWaves):
         return self._receiver_candidates(main,t)
 
     def _receiver_candidates(self, main, ticket):
-        """Build every candidate in every arm, without consulting model/label.
+        """Generate candidates needed by selection or scheduled diagnostics.
 
         Candidate 0 is the exact inherited waveform. New candidates add a
         postprocessor to both receiver views. Only the chosen full unit is
-        encoded for training; candidate scoring is handled by the trainer.
+        encoded for training. A baseline always selects candidate 0, so its
+        unselected DSP is omitted outside deterministic diagnostic steps.
         """
         row=main[0]
         if row.get('role')!='noisy':
@@ -231,7 +233,8 @@ class Waves(BaseWaves):
             implementation=IMPLEMENTATIONS['baseline'],seed=base_seed,quality=control_quality)
         control['robust_candidate_id']='baseline'
         candidates=[[control]+list(main[1:])]
-        for index,mechanism in enumerate(selected,1):
+        full = self.cfg.get('robust_arm') != 'baseline' or diagnostic_step(int(ticket.get('step', 0)))
+        for index,mechanism in enumerate(selected if full else (),1):
             candidate_seed=seed_for(base_seed,mechanism,'receiver-parameters')
             clean_new,noisy_new,meta=apply_pair(clean,original,mechanism,candidate_seed,self.cfg)
             candidate=prepared(row,noisy_new,
@@ -267,7 +270,9 @@ class Waves(BaseWaves):
                     quality=meta['quality'],processing=meta))
             candidates.append([candidate]+list(main[1:]))
         # Never put a list inside its own first candidate: workers pickle units.
-        wrapper=dict(control,robust_candidates=candidates)
+        wrapper=dict(control,robust_candidates=candidates,
+            robust_candidate_generation=dict(requested=count, generated=len(candidates),
+                omitted_for_baseline=not full))
         return [wrapper]+list(main[1:])
 
     def _fixed_ticket(self,t):

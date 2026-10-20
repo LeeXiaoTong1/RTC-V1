@@ -1,5 +1,5 @@
 """Matched condition controls; persist only committed optimizer boundaries."""
-from collections import defaultdict
+from collections import defaultdict, deque
 from pathlib import Path
 import time
 import numpy as np
@@ -19,6 +19,7 @@ from w2v_v3184.records import dev_partition
 from w2v_v3184.recovery import trim_step_log
 from .robust_eval import prepare_panel, evaluate_panel, read_scores
 from .ce import classification_weights
+from .execution import diagnostic_step, record_execution
 
 
 def promotion_check(candidate, parent, best_score, old_metrics, parent_metrics, cfg):
@@ -133,6 +134,7 @@ def run_experiment(cfg, run, train, dev, model_factory=load_model, baseline_only
         optimizer_groups=[dict(name=g["name"], initial_lr=g["initial_lr"],
                                parameters=sum(p.numel() for p in g["params"])) for g in optimizer.param_groups]))
     trim_step_log(run / "steps.jsonl", state["cursor"])
+    record_execution(run, cfg, state)
     if baseline_only:
         print("INITIALIZATION_VERIFIED_RUN=" + str(run), flush=True)
         return dict(status="initialization_verified", version="3.19.1")
@@ -153,6 +155,7 @@ def run_experiment(cfg, run, train, dev, model_factory=load_model, baseline_only
             atomic_json(run / f"coverage_epoch_{epoch+1}.json", coverage)
             sampler.batches = list(plan.batches(epoch))[state["next_step"]:]
             totals = defaultdict(float, state.get("epoch_accumulator") or {})
+            recent_seconds = deque(maxlen=50)
             start = time.monotonic()
             if cfg["device"].startswith("cuda"):
                 torch.cuda.reset_peak_memory_stats(cfg["device"])
@@ -166,7 +169,8 @@ def run_experiment(cfg, run, train, dev, model_factory=load_model, baseline_only
                 retries = []
                 for attempt in range(4):
                     try:
-                        stats = train_step(model, optimizer, units, cfg, state["alpha"], beta, joint=True, audit=audit)
+                        runtime = dict(cfg, _candidate_diagnostics=diagnostic_step(step))
+                        stats = train_step(model, optimizer, units, runtime, state["alpha"], beta, joint=True, audit=audit)
                     except torch.OutOfMemoryError:
                         atomic_json(run / "oom_context.json", dict(epoch=epoch+1, step=step+1,
                                     last_saved_checkpoint=str(run / "last.pt"),
@@ -179,25 +183,34 @@ def run_experiment(cfg, run, train, dev, model_factory=load_model, baseline_only
                 else:
                     raise FloatingPointError("Repeated AMP overflow: the failed task did not consume the update budget")
                 seconds = time.monotonic() - began
+                recent_seconds.append(seconds + wait)
                 for key in ("loss", "classification_loss", "views", "encoded_views", "auxiliary_reference_views"):
                     totals[key] += stats.get(key, 0.)
                 totals["updates"] += 1
                 totals["compute_seconds"] += seconds
                 totals["wait_seconds"] += wait
                 totals["amp_retries"] += len(retries)
+                totals["profiled_updates"] += 1
+                totals["scoring_seconds"] += stats["selection"]["scoring_seconds"]
+                totals["scoring_encoded_views"] += stats["selection"]["scoring_encoded_views"]
+                totals["training_encoded_views"] += stats["training_encoded_views"]
                 state.update(cursor=state["cursor"]+1, next_step=step+1, epoch_accumulator=dict(totals))
                 append_json(run / "steps.jsonl", dict(update=state["cursor"], epoch=epoch+1, step=step+1,
                             **stats, compute_seconds=seconds, wait_seconds=wait, amp_retry_attempts=retries))
                 if audit or step+1 == plan.steps:
                     state["steps"].append(dict(update=state["cursor"], loss=stats["loss"],
                                                raw_ce=stats["raw_ce_sum"]/stats["views"]))
-                eta = (plan.steps-step-1) * (totals["compute_seconds"]+totals["wait_seconds"])/totals["updates"]
+                eta = (plan.steps-step-1) * sum(recent_seconds)/len(recent_seconds)
                 atomic_json(run / "progress.json", dict(status="training", phase="paired_condition", epoch=epoch+1,
                             epochs=cfg["epochs"], step=step+1, steps=plan.steps, loss=stats["loss"],
-                            alpha=state["alpha"], beta=beta, eta=eta))
+                            alpha=state["alpha"], beta=beta, eta=eta,
+                            eta_basis="last up to 50 updates in this session; epoch evaluation excluded"))
                 if step % 10 == 0 or step+1 == plan.steps:
                     print(f'Epoch {epoch+1}/{cfg["epochs"]} {step+1}/{plan.steps} | loss={stats["loss"]:.5f} '
-                          f'CE={stats["classification_loss"]:.5f} arm={cfg["robust_arm"]} ETA={eta/60:.1f}m', flush=True)
+                          f'CE={stats["classification_loss"]:.5f} arm={cfg["robust_arm"]} '
+                          f'score_views={stats["selection"]["scoring_encoded_views"]} '
+                          f'score={stats["selection"]["scoring_seconds"]:.2f}s '
+                          f'compute={seconds:.2f}s wait={wait:.2f}s ETA={eta/60:.1f}m', flush=True)
                 if request.is_file():
                     return pause(run, cfg, state, model, optimizer, dev, partition)
                 if state["cursor"] % cfg.get("checkpoint_interval", 200) == 0:
@@ -228,6 +241,13 @@ def run_experiment(cfg, run, train, dev, model_factory=load_model, baseline_only
                              best_metrics=selected, robust_best_select=robust)
             atomic_json(run/f"robust_select_{tag}.json", dict(robust, promotion=decision))
             training = {key: value/plan.steps for key, value in totals.items()}
+            observed = totals["profiled_updates"]
+            training["execution_profile"] = dict(
+                observed_updates=int(observed),
+                mean_scoring_seconds=totals["scoring_seconds"]/max(1, observed),
+                mean_scoring_views=totals["scoring_encoded_views"]/max(1, observed),
+                mean_training_views=totals["training_encoded_views"]/max(1, observed),
+                scope="Only updates recorded by the optimized executor; other epoch means may include pre-upgrade steps")
             training.update(alpha=state["alpha"], beta=beta, total_updates=plan.steps,
                             A_objective="paired balanced CE + inherited dual PCL",
                             B_objective="paired balanced CE only", robust_arm=cfg["robust_arm"])

@@ -1,7 +1,7 @@
 """Matched-condition classification with bounded, mechanism-balanced mining.
 
-All arms score the same candidates with the unadapted model. Candidate scoring
-cannot alter training modes, running buffers, gradients, or any RNG stream.
+Only decision-relevant Noisy candidates are scored on ordinary updates.
+Periodic full diagnostics cannot alter training modes, buffers or RNG streams.
 No teacher, virtual adaptation, KL objective, or independent detector is used.
 """
 from collections import Counter, defaultdict
@@ -10,6 +10,7 @@ import copy
 from functools import lru_cache
 import hashlib
 import math
+import time
 
 import torch
 
@@ -18,6 +19,7 @@ from .meta import (Transaction, NonfiniteGradient, rng_state, restore_rng,
 from .precision import scaler_for
 from .side import side_pass
 from .ce import classification_weights
+from .execution import EXECUTION_POLICY, diagnostic_step
 
 
 def _key(*values):
@@ -143,35 +145,55 @@ def _balanced_hard_assignment(indices, selected, candidates, margins):
     return dict(zip(indices, result[1])) if result is not None else {}
 
 
-def select_candidates(model, units, cfg):
-    """Return one unit per source plus auditable, JSON-safe selection telemetry."""
-    arm = cfg.get('robust_arm', 'baseline')
-    if arm not in ('baseline', 'expanded', 'hard'):
-        raise ValueError('Unknown robust arm: ' + str(arm))
-    fraction = float(cfg.get('robust_hard_fraction', .5))
-    if not math.isfinite(fraction) or not 0 <= fraction <= 1:
-        raise ValueError('Hard-source fraction must be finite and within [0, 1]')
-    candidates, rows = _candidate_sets(units)
+def _required_scores(indices, selected, candidates):
+    """Only alternatives feasible under this cell's fixed mechanism counts."""
+    mechanisms = {_mechanism(candidates[i][selected[i]]) for i in indices}
+    return {(i, j, 0) for i in indices for j, candidate in enumerate(candidates[i])
+            if _mechanism(candidate) in mechanisms and (j == 0 or _eligible(candidate))}
+
+
+def _score_candidates(model, candidates, keys, cfg):
+    """Score each requested view once; make one small device-to-host transfer."""
+    if not keys:
+        return {}, 0
+    rows = [(candidates[i][j][0] if view == 0
+             else candidates[i][j][0]['pcl_refs']['clean']) for i, j, view in keys]
     scores, batches = [], 0
     with scoring_state(model):
         for batch in _score_batches(rows, int(cfg.get('robust_score_microbatch', cfg['microbatch'])),
                                    int(cfg.get('robust_score_frame_budget', cfg['frame_budget']))):
             sequences = model.encode([row['wave'] for row in batch])
             logits = model.classify_sequences(sequences).detach().float()
-            if logits.shape != (len(batch), 2) or not bool(torch.isfinite(logits).all()):
+            if logits.shape != (len(batch), 2):
                 raise FloatingPointError('Candidate scorer produced invalid binary logits')
             labels = torch.tensor([row['label'] for row in batch], device=logits.device)
-            true_margin = logits.gather(1, labels[:, None]) - logits.gather(1, (1-labels)[:, None])
-            scores.extend(true_margin[:, 0].cpu().tolist())
+            margin = logits.gather(1, labels[:, None]) - logits.gather(1, (1-labels)[:, None])
+            scores.append(margin[:, 0])
             batches += 1
-    margins, offset = {}, 0
-    for i, values in candidates.items():
-        margins[i] = [(scores[offset+2*j], scores[offset+2*j+1]) for j in range(len(values))]
-        offset += 2*len(values)
+        values = torch.cat(scores).cpu().tolist()
+        if not all(math.isfinite(value) for value in values):
+            raise FloatingPointError('Candidate scorer produced nonfinite margins')
+    return dict(zip(keys, values)), batches
+
+
+def select_candidates(model, units, cfg, *, diagnostics=None):
+    """Return one unit per source plus auditable, JSON-safe selection telemetry."""
+    began = time.perf_counter()
+    arm = cfg.get('robust_arm', 'baseline')
+    if arm not in ('baseline', 'expanded', 'hard'):
+        raise ValueError('Unknown robust arm: ' + str(arm))
+    fraction = float(cfg.get('robust_hard_fraction', .5))
+    if not math.isfinite(fraction) or not 0 <= fraction <= 1:
+        raise ValueError('Hard-source fraction must be finite and within [0, 1]')
+    candidates, _ = _candidate_sets(units)
+    if diagnostics is None:
+        diagnostics = cfg.get('_candidate_diagnostics',
+            diagnostic_step(int(cfg.get('current_update', 1))-1))
     seed, update = int(cfg.get('sampling_seed', cfg.get('seed', 0))), int(cfg.get('current_update', 0))
     mechanisms = sorted({_mechanism(candidate) for values in candidates.values()
                          for candidate in values[1:]})
     selected, uniform, desired, hard_sources = {}, {}, {}, set()
+    hard_cells = []
     cells = defaultdict(list)
     for i in candidates:
         cells[units[i][0]['language'], units[i][0]['label']].append(i)
@@ -193,11 +215,24 @@ def select_candidates(model, units, cfg):
             count = min(len(members), int(math.floor(len(members)*fraction)))
             indices = members[:count]
             hard_sources.update(indices)
-            selected.update(_balanced_hard_assignment(indices, uniform, candidates, margins))
+            hard_cells.append(indices)
+    # Keep the original candidate ordering for full diagnostics. Normal steps
+    # omit Clean, unused mechanisms, rejected alternatives and non-hard sources.
+    required = set().union(*(_required_scores(indices, uniform, candidates)
+                             for indices in hard_cells)) if hard_cells else set()
+    keys = [(i, j, view) for i, values in candidates.items()
+            for j in range(len(values)) for view in (0, 1)
+            if diagnostics or (i, j, view) in required]
+    scores, batches = _score_candidates(model, candidates, keys, cfg)
+    margins = {i: [(scores.get((i, j, 0)), scores.get((i, j, 1)))
+                   for j in range(len(values))] for i, values in candidates.items()}
+    for indices in hard_cells:
+        selected.update(_balanced_hard_assignment(indices, uniform, candidates, margins))
     chosen = list(units)
     counts, rejected, by_class, by_side, transitions = Counter(), Counter(), Counter(), Counter(), Counter()
     shifted, clean_shift, legacy_margins, selected_margins = [], [], [], []
     details = []
+    observed = Counter()
     for i, values in candidates.items():
         j = selected[i]
         # Remove the candidate tree from the selected training unit. This does
@@ -212,19 +247,29 @@ def select_candidates(model, units, cfg):
         counts['candidate_views'] += len(values)
         counts['quality_passed_expanded'] += sum(_eligible(v) for v in values[1:])
         counts['quality_rejected_expanded'] += sum(not _eligible(v) for v in values[1:])
-        counts['all_expanded_rejected_fallback'] += int(j == 0 and not any(_eligible(v) for v in values[1:]))
+        generation = units[i][0].get('robust_candidate_generation', {})
+        omitted = bool(generation.get('omitted_for_baseline'))
+        counts['ungenerated_candidates'] += int(generation.get('requested', len(values)))-len(values)
+        counts['all_expanded_rejected_fallback'] += int(
+            not omitted and j == 0 and not any(_eligible(v) for v in values[1:]))
         counts['desired_mechanism_unavailable'] += int(arm != 'baseline' and _mechanism(values[uniform[i]]) != desired[i])
         counts['hard_sources'] += int(i in hard_sources)
         counts['hard_changed_from_uniform'] += int(i in hard_sources and j != uniform[i])
         by_class[f'{language}/{label}/{mechanism}'] += 1
         by_side[f'{row["meta_side"]}/{language}/{label}/{mechanism}'] += 1
         correct = lambda margin: margin >= 0 if label == 0 else margin > 0
-        transitions[f'{language}/{label}/legacy_correct_selected_wrong'] += int(correct(base) and not correct(actual))
-        transitions[f'{language}/{label}/clean_correct_noisy_wrong'] += int(correct(clean) and not correct(actual))
-        shifted.append(actual-base)
-        clean_shift.append(actual-clean)
-        legacy_margins.append(base)
-        selected_margins.append(actual)
+        if base is not None:
+            legacy_margins.append(base)
+        if actual is not None:
+            selected_margins.append(actual)
+        if base is not None and actual is not None:
+            transitions[f'{language}/{label}/legacy_correct_selected_wrong'] += int(correct(base) and not correct(actual))
+            observed['legacy_selected_pairs'] += 1
+            shifted.append(actual-base)
+        if clean is not None and actual is not None:
+            transitions[f'{language}/{label}/clean_correct_noisy_wrong'] += int(correct(clean) and not correct(actual))
+            observed['clean_noisy_pairs'] += 1
+            clean_shift.append(actual-clean)
         for candidate in values[1:]:
             quality = candidate[0].get('robust_quality', {})
             if not _eligible(candidate):
@@ -247,7 +292,12 @@ def select_candidates(model, units, cfg):
                        transitions=dict(transitions), mean_selected_minus_legacy_margin=average(shifted),
                        mean_noisy_minus_clean_margin=average(clean_shift),
                        mean_legacy_margin=average(legacy_margins), mean_selected_margin=average(selected_margins),
-                       scoring_encoded_views=len(rows), scoring_batches=batches,
+                       scoring_encoded_views=len(keys), scoring_batches=batches,
+                       scoring_seconds=time.perf_counter()-began,
+                       scoring_policy=EXECUTION_POLICY, full_diagnostics=bool(diagnostics),
+                       margin_observations=dict(observed,
+                           legacy=len(legacy_margins), selected=len(selected_margins)),
+                       margin_scope='all available candidates' if diagnostics else 'hard assignment only; missing scores are null, not zero',
                        hard_fraction=fraction, hard_budget_scope='language/class across both task sides',
                        policy='equal desired Real/Fake mechanism budgets; hard assignment preserves uniform multiset',
                        details=details)
