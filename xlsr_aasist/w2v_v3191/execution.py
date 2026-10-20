@@ -11,6 +11,7 @@ from pathlib import Path
 EXECUTION_POLICY = 'required_candidate_scores_v2'
 DIAGNOSTIC_INTERVAL = 200
 MANIFEST = 'w2v_v3191/execution_compat.json'
+PREVIOUS_MANIFESTS = ('6d02337e42599a1e1412a839752feaa332e0f2b5be7ed6e99cf5a0339c4c484c',)
 
 
 def diagnostic_step(step):
@@ -46,6 +47,11 @@ def verify_execution_code(saved, root=None):
         if not path.is_relative_to(root):
             raise ValueError('Changed code outside execution root: ' + str(path))
         relative = path.relative_to(root).as_posix()
+        # A manifest cannot include its own current hash. Accept only this
+        # pinned predecessor; replacement source bytes were verified above.
+        if relative == MANIFEST and expected in PREVIOUS_MANIFESTS:
+            upgraded[relative] = dict(previous=expected, current=actual)
+            continue
         if (expected not in spec.get('previous', {}).get(relative, [])
                 or actual != current.get(relative)):
             raise ValueError('Unregistered source change; refusing resume: ' + relative)

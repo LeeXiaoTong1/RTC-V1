@@ -3,10 +3,13 @@
     "w2v_v3191/compare.py": "fffa5eafd9369773fe0fddcf259cf0ba92d99e3c0cdd63005926a3374c87c2cf",
     "w2v_v3191/config.py": "0ccd5dc4e723c108d4d67a37f4b4a9f7937a3b7a9ce21c16fecf0f6a450595c4",
     "w2v_v3191/data.py": "5c5a7eb225b7581e817aa5c2380fdf9173204f779400c5694349b11407b1a455",
-    "w2v_v3191/execution.py": "edcaf99f8acebd308f15d2b72f59d9844bb254a900ad6a29f45728fe3e851e0f",
+    "w2v_v3191/execution.py": "542f28665bf379a472bcdd70bf3697a34cdec9ac1a8111d6e3197badf76999e6",
+    "w2v_v3191/report_upload.py": "67affb8a166442e5b30240cf8ae5a82d05a3232541a695e726e6544c7134a9d0",
+    "w2v_v3191/reports.py": "9352f2f8ed16e89a96f9a45c08a9d92ac8987603320ca062c4b90c0c378257ea",
     "w2v_v3191/step.py": "e24a6d8288bfdfb48ac1a5c020ea5a96cee7ccd4044d750367d09053049c8b67",
-    "w2v_v3191/suite.py": "9f1bdcb628e8cf926ffbed67e7f478369b81aefddedfea3be69969bf68ee84a0",
-    "w2v_v3191/train.py": "11fab4c8e48d60f60c1891dc74efb27ce5dfb22c3baad5b0a6460b23f0aaf0dd"
+    "w2v_v3191/suite.py": "39e44ee62121b09816fcf996a7c8c0d5d9ee31c66867489816c9c6f34ad18101",
+    "w2v_v3191/train.py": "11fab4c8e48d60f60c1891dc74efb27ce5dfb22c3baad5b0a6460b23f0aaf0dd",
+    "w2v_v3191/workflow.py": "9541954afc8a4fca9f10101e6d2b523b6159be132e2b986556817b9c8a36ecaa"
   },
   "execution_policy": "required_candidate_scores_v2",
   "predecessor": "fe56b05330e7e4bdbb5182704afd5453ac2bdffd",
@@ -20,15 +23,25 @@
     "w2v_v3191/data.py": [
       "2ad7f8d198cc989eb83caa3bbb4430551d6ecf20fd75e1644afcc63acc1da2a5"
     ],
+    "w2v_v3191/execution.py": [
+      "edcaf99f8acebd308f15d2b72f59d9844bb254a900ad6a29f45728fe3e851e0f"
+    ],
+    "w2v_v3191/reports.py": [
+      "e79bc847aa5d80e384f219bc06c422ddfb989aa27c5e6a1a2012228d66ee399a"
+    ],
     "w2v_v3191/step.py": [
       "84ec88293f9813ca276d40a9467acd59ffb9f37d58ce3a94494470054eb43f63"
     ],
     "w2v_v3191/suite.py": [
-      "cc198b189cfab7390d966fb3207a996bc7a0441a9b254b8e7f613e2887299551"
+      "cc198b189cfab7390d966fb3207a996bc7a0441a9b254b8e7f613e2887299551",
+      "9f1bdcb628e8cf926ffbed67e7f478369b81aefddedfea3be69969bf68ee84a0"
     ],
     "w2v_v3191/train.py": [
       "7af76afae9b792b108c5f83d2578f9eb662506bb2a7433a562a32471c8eb4813"
+    ],
+    "w2v_v3191/workflow.py": [
+      "fa031f9296192354b54852e991300fa3a434db010c393df7000996ab3cf4996b"
     ]
   },
-  "scope": "Only unused scoring/DSP and execution telemetry; saved training config identity is preserved"
+  "scope": "Required candidate scoring optimization plus nonfatal optional report upload; saved training identity, optimizer and RNG preserved"
 }

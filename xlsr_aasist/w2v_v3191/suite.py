@@ -15,6 +15,7 @@ import traceback
 from urllib.parse import urlparse
 import zipfile
 from .ce import CE_WEIGHTS, classification_weights
+from .report_upload import ReportUploadError, upload_report
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -245,7 +246,7 @@ def package_report(path, manifest, *, uploader=None):
                 from w2v_aasist.launch import upload_archive
                 uploader = upload_archive
             try:
-                url = uploader(archive)
+                url = upload_report(archive, uploader)
                 parsed = urlparse(url)
                 if parsed.scheme != 'https' or parsed.netloc != 'temp.sh' or parsed.path in ('', '/', '/upload'):
                     raise ValueError('Uploader returned an unexpected temporary download URL')
@@ -253,7 +254,8 @@ def package_report(path, manifest, *, uploader=None):
                     raise ValueError('Suite archive changed during upload')
             except Exception as exc:
                 write(status_file, dict(status, status='failed', error=str(exc)))
-                raise RuntimeError('Suite report upload failed; all completed arms are retained. '
+                error_type = ReportUploadError if isinstance(exc, ReportUploadError) else RuntimeError
+                raise error_type('Suite report upload failed; all completed arms are retained. '
                                    'Retry --resume-suite '+str(path)) from exc
         status.update(status='complete', uploaded=True, url=url)
         write(status_file, status)
@@ -359,7 +361,10 @@ def run_suite(path, *, executor=execute, comparer=None, stop=None):
         manifest.setdefault('completed_at', now())
         manifest.pop('last_error', None)
         persist()
-        package_report(path, manifest)
+        try:
+            package_report(path, manifest)
+        except ReportUploadError as exc:
+            print('SUITE_REPORT_UPLOAD_PENDING='+str(exc), flush=True)
         print('SUITE_COMPLETE='+str(path), flush=True)
         print('COMPARISON='+str(path/'comparison.json'), flush=True)
         return manifest

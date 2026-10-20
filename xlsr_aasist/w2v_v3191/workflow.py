@@ -12,7 +12,7 @@ from .config import parser,validate,validate_locked_cli,configuration,verify_inp
 from .train import run_experiment
 from .sampling import describe
 from .delivery import prepare_request,finish_request
-from .reports import report,prepare_request as prepare_report_request
+from .reports import automatic_report,prepare_request as prepare_report_request
 
 
 def main():
@@ -66,7 +66,7 @@ def main():
             # checkpoint, without a potentially long network upload. Manual
             # best submission remains available after an acknowledged pause.
             if already_failed or not outcome or outcome.get('status') not in ('paused','initialization_verified'):
-                try:report(run,report_request['destination'],report_request['upload'])
+                try:automatic_report(run,report_request['destination'],report_request['upload'])
                 except Exception as exc:
                     print('REPORT_EXPORT_FAILED='+str(exc),flush=True)
                     if not already_failed:raise

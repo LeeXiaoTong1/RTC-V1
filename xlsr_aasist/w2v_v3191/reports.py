@@ -5,6 +5,7 @@ import re
 import zipfile
 from w2v_aasist.launch import run_lock,upload_archive
 from .common import RECIPE,atomic_json,read_json,digest,fingerprint
+from .report_upload import ReportUploadError,upload_report
 
 EXCLUDED={'report_status.json','report_upload_receipt.json','report_temp_download_url.txt',
           'artifact_links.json','download_links.txt','REPORT_MANIFEST.json'}
@@ -92,7 +93,7 @@ def report(run,destination,upload=False,force=False):
                 if not force and previous.get('zip_sha256')==archive_hash and valid_url(previous.get('url','')):
                     url=previous['url']
                 else:
-                    url=upload_archive(archive)
+                    url=upload_report(archive,upload_archive)
                     if not valid_url(url):raise ValueError('Unexpected report upload URL')
                     if digest(archive)!=archive_hash:raise ValueError('Report changed during upload')
                     atomic_json(receipt,dict(url=url,zip_sha256=archive_hash,archive=str(archive),
@@ -107,8 +108,18 @@ def report(run,destination,upload=False,force=False):
             atomic_json(status,dict(previous,status='failed',url=None,error=str(exc),archive=str(archive)))
             update_links(run)
             import shlex
-            raise RuntimeError('Report delivery failed; saved training retained. Retry without training or inference: bash upload_w2v_v3191.sh --run '
+            error_type=ReportUploadError if isinstance(exc,ReportUploadError) else RuntimeError
+            raise error_type('Report delivery failed; saved training retained. Retry without training or inference: bash upload_w2v_v3191.sh --run '
                                +shlex.quote(str(run))+'; '+str(exc)) from exc
+
+
+def automatic_report(run,destination,upload=False):
+    """Training orchestration tolerates only optional report upload failures."""
+    try:
+        return report(run,destination,upload)
+    except ReportUploadError as exc:
+        print('REPORT_UPLOAD_PENDING='+str(exc),flush=True)
+        return None
 
 
 def retry_outputs(run,force=False):

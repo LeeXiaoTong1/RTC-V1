@@ -140,6 +140,20 @@ class EfficientScoringTests(unittest.TestCase):
 
 
 class ExecutionCompatibilityTests(unittest.TestCase):
+    def test_registered_manifest_upgrade_preserves_saved_inventory(self):
+        from .config import code_inventory
+        from .execution import PREVIOUS_MANIFESTS
+        root = Path(__file__).resolve().parents[1]
+        saved = code_inventory(root)
+        saved[str(root/MANIFEST)] = PREVIOUS_MANIFESTS[0]
+        before = copy.deepcopy(saved)
+        result = verify_execution_code(saved, root)
+        self.assertIn(MANIFEST, result['upgraded_files'])
+        self.assertEqual(saved, before)
+        saved[str(root/MANIFEST)] = 'unregistered manifest'
+        with self.assertRaisesRegex(ValueError, 'Unregistered source change'):
+            verify_execution_code(saved, root)
+
     def make(self, root):
         files = dict(changed=b'new implementation', stable=b'unchanged')
         old_hash = hashlib.sha256(b'old implementation').hexdigest()

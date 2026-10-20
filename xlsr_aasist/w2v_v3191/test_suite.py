@@ -233,6 +233,52 @@ class SuiteTests(unittest.TestCase):
         self.assertTrue((self.path/'report.zip').exists())
         self.assertTrue(all(s['status'] == 'complete' for s in read(self.path/'suite.json')['arms'].values()))
 
+    def test_child_report_outage_does_not_stop_following_arms(self):
+        from .common import RECIPE
+        from .reports import automatic_report
+        def executor(command, env, log, stopped):
+            code = self.fake_executor(command, env, log, stopped)
+            run = Path(read(env['V3191_SUITE_RUN_RECORD'])['run'])
+            cfg = read(run/'config.json')
+            write(run/'config.json', dict(cfg, recipe=RECIPE))
+            automatic_report(run, self.root/'downloads', True)
+            return code
+        with patch('w2v_v3191.reports.upload_archive', side_effect=OSError('HTTP 503')):
+            result = run_suite(self.path, executor=executor, comparer=self.compare)
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual(len(self.calls), 3)
+        self.assertTrue(all(read(Path(s['run'])/'report_status.json')['status']=='failed'
+                            for s in result['arms'].values()))
+
+    def test_final_suite_upload_outage_does_not_mark_training_failed(self):
+        manifest = read(self.path/'suite.json')
+        manifest['immutable']['upload_reports'] = True
+        manifest['immutable_sha256'] = signature(manifest['immutable'])
+        write(self.path/'suite.json', manifest)
+        with patch('w2v_aasist.launch.upload_archive', side_effect=OSError('HTTP 503')):
+            result = self.run_now()
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual(read(self.path/'suite.json')['status'], 'complete')
+        self.assertEqual(read(self.path/'report_status.json')['status'], 'failed')
+        self.assertTrue((self.path/'report.zip').exists())
+        self.assertEqual(len(self.calls), 3)
+        with patch('w2v_aasist.launch.upload_archive', return_value='https://temp.sh/example/report.zip'):
+            self.run_now()
+        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(read(self.path/'report_status.json')['status'], 'complete')
+
+    def test_legacy_completed_arm_with_failed_exit_is_skipped_on_resume(self):
+        def executor(command, env, log, stopped):
+            self.fake_executor(command, env, log, stopped)
+            return 1
+        result = run_suite(self.path, executor=executor, comparer=self.compare)
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(len(self.calls), 1)
+        result = self.run_now()
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(self.calls[1][self.calls[1].index('--arm')+1], 'expanded')
+
 
 if __name__ == '__main__':
     unittest.main()
