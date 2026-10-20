@@ -18,6 +18,7 @@ from .calibration import write_identity
 from w2v_v3184.records import dev_partition
 from w2v_v3184.recovery import trim_step_log
 from .robust_eval import prepare_panel, evaluate_panel, read_scores
+from .ce import classification_weights
 
 
 def promotion_check(candidate, parent, best_score, old_metrics, parent_metrics, cfg):
@@ -74,6 +75,9 @@ def pause(run, cfg, state, model, optimizer, dev, partition):
 
 
 def run_experiment(cfg, run, train, dev, model_factory=load_model, baseline_only=False, infer_fn=infer):
+    classification_weights(cfg)
+    print('[Objective] CE: Noisy=50%, official Online=25%, Clean-RTC=25%; '
+          'equal language/class groups within each view', flush=True)
     run = Path(run)
     seed_all(cfg.get("sampling_seed", cfg["seed"]))
     request, paused = run / "stop_requested.json", run / "paused.json"

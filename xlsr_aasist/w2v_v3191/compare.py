@@ -25,6 +25,7 @@ def _identity(cfg, final, panel):
         "lora_middle_lr", "classifier_lr", "evidence_lr", "pool_lr",
         "microbatch", "frame_budget", "eval_batch", "window_batch",
         "meta_beta", "paired_classification", "label_smoothing",
+        "classification_ce_weights", "classification_objective",
         "max_grad_norm", "platform_sources_per_group", "lr_warmup_updates",
         "checkpointing", "checkpoint_layers", "fusion_checkpointing",
     )

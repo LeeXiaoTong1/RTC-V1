@@ -11,6 +11,7 @@ from .robust_eval import (
     transitions, read_scores, infer_panel, _write, _file_hash, _hash,
 )
 from .compare import compare_runs
+from .ce import CE_WEIGHTS
 
 
 class ReceiverPanelTest(unittest.TestCase):
@@ -28,7 +29,8 @@ class ReceiverPanelTest(unittest.TestCase):
                              config_sha256="e" * 64, tag="epoch_6"),
             epochs=1, stream_sources=24, source_draws_per_stream=[8000] * 4,
             source_epoch_offset=6, lora_layers=16, retained_lora_layers=60,
-            consistency="dual", backend_precision="fp16")
+            consistency="dual", backend_precision="fp16",
+            classification_ce_weights=dict(CE_WEIGHTS))
         self.dev = []
         self.partition = dict(select=[], calibration=[], source_keys=[])
         # Two complete sources per stratum in each split. Every source has an
@@ -232,7 +234,9 @@ class ReceiverPanelTest(unittest.TestCase):
             compare_runs([baseline, hard], draws=100)
         for change in (dict(microbatch=4), dict(pcl_noise_weight=.2),
                        dict(robust_hard_fraction=.9), dict(robust_min_gain=.002),
-                       dict(robust_score_microbatch=8), dict(label_smoothing=.1)):
+                       dict(robust_score_microbatch=8), dict(label_smoothing=.1),
+                       dict(classification_ce_weights={'online': .5, 'clean_rtc': .25, 'noisy': .25}),
+                       dict(classification_ce_weights=None)):
             _write(hard / "config.json", dict(self.cfg, robust_arm="hard", **change))
             with self.assertRaisesRegex(ValueError, "not matched"):
                 compare_runs([baseline, hard], draws=100)

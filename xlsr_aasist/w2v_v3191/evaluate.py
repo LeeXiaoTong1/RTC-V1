@@ -67,6 +67,7 @@ def export(run,out,kind='best',device='cuda:0',workers=4,protocol=None,audio_roo
         refresh_base_variants=cfg['refresh_base_variants'],base_original_fraction=cfg['base_original_fraction'],
         run=str(run),initialization=cfg['initialization'],parent_init=cfg.get('parent_init'),frontend=cfg['omni_provenance'],
         noisy_views_per_source=1,classification_objective=cfg['classification_objective'],
+        classification_ce_weights=cfg.get('classification_ce_weights'),
         calibration=calibration,score='P(fake=0)',threshold=.5,count=len(rows),protocol_sha256=protocol_hash,
         id_order_sha256=fingerprint([r['id'] for r in rows]),
         input=f'full 16kHz waveform; whole-wave layer_norm; all encoder layers: {cfg["encoder_dim"]}-dim SSL, shared projection, SwiGLU, learned softmax layer mixture',

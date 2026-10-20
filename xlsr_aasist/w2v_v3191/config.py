@@ -9,6 +9,7 @@ from w2v_v318.config import runtime_versions
 from w2v_v3184.assets import configured_spec
 from w2v_v3185.config import verify_unique
 from .common import ROOT, RECIPE, schema_for, digest, read_json
+from .ce import CE_WEIGHTS, classification_weights
 
 
 def parser():
@@ -96,7 +97,8 @@ def training_configuration(old, origin, args):
                initialization=dict(mode="v3189_best", run=origin["run"], selected=origin["tag"],
                                    old_detector_loaded=True, checkpoint_loaded=True, old_optimizer_loaded=False,
                                    transfer="All parent LoRA/fusion/AASIST/classifier/PCL scale; freeze adapter prefix"),
-               classification_objective="paired_Clean_RTC_Noisy_CE_with_bounded_balanced_condition_selection",
+               classification_objective="online25_cleanRTC25_noisy50_CE_with_balanced_condition_selection",
+               classification_ce_weights=dict(CE_WEIGHTS),
                robust_arm=args.robust_arm, robust_candidate_count=4,
                robust_hard_fraction=args.robust_hard_fraction, robust_protocol_seed=3191001,
                robust_train_mechanisms=["spectral_color", "packet_repeat", "rnnoise"],
@@ -162,6 +164,8 @@ def configuration(args):
 
 
 def verify_inputs(cfg, *, training=True):
+    if training:
+        classification_weights(cfg)
     schema_for(cfg)
     configured_spec(cfg)
     verify_unique(cfg["code_fingerprints"], {cfg["omni_checkpoint"]: cfg["omni_sha256"]},

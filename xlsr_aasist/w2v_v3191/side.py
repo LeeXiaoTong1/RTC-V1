@@ -5,6 +5,7 @@ import torch
 from w2v_v3183r2.common import GROUPS, require_finite
 from .sampling import validate_units
 from .precision import scaler_for, unscale_and_clip, commit
+from .ce import classification_weights
 from .objective import (micro_losses, phoneme_loss, phoneme_features, phoneme_variance,
                         source_weight, auxiliary_weights, batch_quotas, confidence_regularization)
 
@@ -139,6 +140,7 @@ def _update_snapshot(optimizer, cap=1024):
 
 def _side_pass(model, units, cfg, scaler, *, backward, capture_logits=False, backward_factor=1.):
     coefficient=0.; audit=False
+    ce_weights = classification_weights(cfg)
     side=units[0][0]['meta_side']
     if side=='B':cfg=dict(cfg,consistency='none')
     from .data import microbatches
@@ -228,19 +230,22 @@ def _side_pass(model, units, cfg, scaler, *, backward, capture_logits=False, bac
             captured.append(logits.detach())
             captured_sources.extend(unit[0]['canonical_source'] for unit in micro)
         parts = micro_losses(logits, micro, quotas, coefficient, cfg['label_smoothing'])
-        # A Noisy source keeps exactly its previous .125/quota mass. Its
-        # clean/noisy classification terms each receive half of that mass.
+        # micro_losses gives each original stream 50% total CE mass.
+        # Rescale each view explicitly: Online 25%, Clean-RTC 25%, Noisy 50%.
+        # Each view still averages EN-fake/EN-real/ZH-fake/ZH-real equally.
+        clean_parts = []
         clean_position = 0
         for index, unit in enumerate(micro):
-            if unit[0]['role'] != 'noisy':
+            role = unit[0]['role']
+            objective, raw = parts[index]
+            parts[index] = (objective * (2 * ce_weights[role]), raw)
+            if role != 'noisy':
                 continue
             clean_part = micro_losses(clean_logits[clean_position:clean_position+1],
                                       [unit], quotas, coefficient, cfg['label_smoothing'])[0]
-            noisy_part = parts[index]
-            parts[index] = ((noisy_part[0] + clean_part[0]) * .5,
-                            torch.cat((noisy_part[1], clean_part[1])))
+            clean_parts.append((clean_part[0] * (2 * ce_weights['clean_rtc']), clean_part[1]))
             clean_position += 1
-        ce = torch.stack([part[0] for part in parts]).sum()
+        ce = torch.stack([part[0] for part in parts + clean_parts]).sum()
         regularizer, confidence_counts = confidence_regularization(logits, micro, quotas, runtime)
         confidence_telemetry.append(torch.cat((regularizer.detach().reshape(1), confidence_counts.detach())))
         branches, aux_items, offset = {}, [], 0
@@ -250,12 +255,18 @@ def _side_pass(model, units, cfg, scaler, *, backward, capture_logits=False, bac
             first = unit[0]
             z = logits[offset:offset + len(unit)]
             offset += len(unit)
+            observations = [(first['role'], objective, raw, z)]
             if first['role'] == 'noisy':
-                z = torch.cat((z, clean_logits[clean_position:clean_position+1]))
+                clean_objective, clean_raw = clean_parts[clean_position]
+                observations.append(('clean_rtc', clean_objective, clean_raw,
+                                     clean_logits[clean_position:clean_position+1]))
                 clean_position += 1
-            telemetry.append(torch.stack((objective.detach(), raw.detach().sum(), raw.detach().max(),
-                (z.argmax(1) == first['label']).sum(), (z.argmax(1) == 0).sum())).float())
-            metadata.append((f'{"online" if first["role"] == "online" else "noisy"}/{first["language"]}/{first["label"]}', len(z), first['label']))
+            for view, view_objective, view_raw, view_logits in observations:
+                telemetry.append(torch.stack((view_objective.detach(), view_raw.detach().sum(),
+                    view_raw.detach().max(), (view_logits.argmax(1) == first['label']).sum(),
+                    (view_logits.argmax(1) == 0).sum())).float())
+                metadata.append((f'{view}/{first["language"]}/{first["label"]}',
+                                 len(view_logits), first['label']))
             for kind in slots.get('scheduled', []):
                 matches = first['pcl_pairs'][kind]
                 if kind in slots:

@@ -10,6 +10,7 @@ import torch
 from . import assets
 from .config import parser, training_configuration, validate_locked_cli
 from .common import RECIPE, schema_for
+from .ce import CE_WEIGHTS
 from .resources import audit_training
 from .processes import is_suite_parent
 from w2v_v3189.test_training import fixture
@@ -32,6 +33,7 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(cfg["experiment"], "E0")
             self.assertEqual(cfg["warm_epochs"], 0)
             self.assertEqual(cfg["meta_beta"], 1.)
+            self.assertEqual(cfg["classification_ce_weights"], CE_WEIGHTS)
             self.assertEqual(cfg["recipe"], RECIPE)
             self.assertEqual(cfg["source_epoch_offset"], old.get("source_epoch_offset", 0)+6)
             self.assertTrue(all(cfg[k]>0 for k in ("lora_lr", "head_lr", "fusion_lr")))

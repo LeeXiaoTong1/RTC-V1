@@ -14,6 +14,7 @@ from w2v_v318.test_core import TinyFrontend, TinyEncoder, TinyLayer, TinyLayout
 from w2v_v31810.test_meta import assert_state_equal
 from w2v_v319_meta.test_lifecycle import fixture as parent_fixture
 from .common import RECIPE, atomic_json, read_json, digest
+from .ce import CE_WEIGHTS
 from .model import Detector
 from .test_step import fixture as task_fixture
 from .train import run_experiment, train_step, promotion_check
@@ -66,7 +67,7 @@ def fixture(root):
     cfg.update(version="3.19.1", recipe=RECIPE, experiment="E0",
                robust_arm="baseline", robust_candidate_count=4, robust_hard_fraction=.5,
                paired_classification=True, consistency="none", sampling_seed=cfg["seed"],
-               meta_beta=1., lr_floor=.5)
+               meta_beta=1., lr_floor=.5, classification_ce_weights=dict(CE_WEIGHTS))
     return cfg, rows, dev
 
 

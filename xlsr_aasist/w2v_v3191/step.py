@@ -17,6 +17,7 @@ from .meta import (Transaction, NonfiniteGradient, rng_state, restore_rng,
                    validate_units, module_norms, _update_norms, _summary)
 from .precision import scaler_for
 from .side import side_pass
+from .ce import classification_weights
 
 
 def _key(*values):
@@ -253,7 +254,8 @@ def select_candidates(model, units, cfg):
 
 
 def train_step(model, optimizer, units, cfg, alpha=0., beta=1., joint=True, audit=False):
-    """One source-balanced paired-classification AdamW update, no adaptation."""
+    """One view-weighted, class-balanced AdamW update, no adaptation."""
+    ce_weights = classification_weights(cfg)
     if float(alpha) != 0. or not joint:
         raise ValueError('V3.19.1 uses joint classification without virtual adaptation or head warmup')
     beta = float(beta)
@@ -295,6 +297,7 @@ def train_step(model, optimizer, units, cfg, alpha=0., beta=1., joint=True, audi
             raise
         scaler.update(new_scale=scale*float(scaler.get_backoff_factor()))
         return dict(loss=None, classification_loss=None, encoded_views=encoded, views=len(units),
+                    classification_ce_weights=ce_weights,
                     classification_source_views=len(units), unique_original_sources=len(units),
                     auxiliary_reference_views=0, cells={}, raw_ce_sum=None, max_example_ce=None,
                     predicted_fake_by_true_class={'fake': [0, 0], 'real': [0, 0]}, grad_norm=None,
@@ -315,6 +318,7 @@ def train_step(model, optimizer, units, cfg, alpha=0., beta=1., joint=True, audi
     optimizer.zero_grad(set_to_none=True)
     result = _summary(selected, a, b, beta)
     result.update(views=a['views']+b['views'], classification_source_views=len(units),
+                  classification_ce_weights=ce_weights,
                   paired_classification_views=a['paired_classification_views']+b['paired_classification_views'],
                   auxiliary_reference_views=a['auxiliary_reference_views']+b['auxiliary_reference_views'],
                   encoded_views=encoded, training_encoded_views=a['encoded_views']+b['encoded_views'],

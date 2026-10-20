@@ -12,6 +12,7 @@ from torch.nn import functional as F
 
 from .meta import CELLS, rng_state
 from .step import select_candidates, train_step
+from .ce import CE_WEIGHTS
 
 
 class Detector(nn.Module):
@@ -66,7 +67,8 @@ def fixture(copies=3):
     cfg = dict(device='cpu', backend_precision='fp32', microbatch=8,
                frame_budget=9000, label_smoothing=.02, max_grad_norm=1.,
                group_quotas=(copies,)*4, consistency='none', seed=3191,
-               robust_arm='baseline', robust_hard_fraction=.5, current_update=3)
+               robust_arm='baseline', robust_hard_fraction=.5, current_update=3,
+               classification_ce_weights=dict(CE_WEIGHTS))
     return cfg, units
 
 
@@ -76,19 +78,25 @@ def optimizer(model):
 
 
 def direct_loss(model, units, smoothing=.02):
-    cells = {}
-    for key in CELLS:
-        values = []
-        for unit in units:
-            row = unit[0]
-            if (row['role'], row['language'], row['label']) != key:
-                continue
-            rows = [row] if row['role'] == 'online' else [row, row['pcl_refs']['clean']]
-            logits = model.classify_sequences(model.encode([r['wave'] for r in rows]))
-            values.append(F.cross_entropy(logits, torch.full((len(rows),), row['label']),
-                                          label_smoothing=smoothing))
-        cells[key] = torch.stack(values).mean()
-    return sum(cells.values()) / 8
+    # Independent definition: three separate four-class macro means.
+    means = {}
+    for view in ('online', 'clean_rtc', 'noisy'):
+        groups = []
+        for language in ('en', 'zh'):
+            for label in (0, 1):
+                values = []
+                for unit in units:
+                    row = unit[0]
+                    role = 'online' if view == 'online' else 'noisy'
+                    if (row['role'], row['language'], row['label']) != (role, language, label):
+                        continue
+                    example = row['pcl_refs']['clean'] if view == 'clean_rtc' else row
+                    logits = model.classify_sequences(model.encode([example['wave']]))
+                    values.append(F.cross_entropy(logits, torch.tensor([label]),
+                                                  label_smoothing=smoothing))
+                groups.append(torch.stack(values).mean())
+        means[view] = torch.stack(groups).mean()
+    return .25*means['online'] + .25*means['clean_rtc'] + .5*means['noisy']
 
 
 def assert_rng_equal(test, a, b):
@@ -138,6 +146,89 @@ class StepTests(unittest.TestCase):
         for p, q in zip(one.parameters(), two.parameters()):
             torch.testing.assert_close(p, q, rtol=3e-6, atol=2e-7)
         self.assertTrue(all(count <= 2 for _, count in one.encode_counts))
+
+    def test_unequal_group_counts_match_explicit_weighted_sgd_update(self):
+        cfg, units = fixture()
+        quotas = (1, 2, 3, 1)
+        groups = [('en', 0), ('en', 1), ('zh', 0), ('zh', 1)]
+        units = [u for u in units if int(u[0]['id'].rsplit('-', 1)[1]) <
+                 quotas[groups.index((u[0]['language'], u[0]['label']))]]
+        for unit in units:
+            unit[0]['batch_group_quotas'] = quotas
+            for candidate in unit[0].get('robust_candidates', []):
+                candidate[0]['batch_group_quotas'] = quotas
+        cfg.update(group_quotas=quotas, max_grad_norm=1e6, microbatch=3)
+        one, two = Detector(), Detector()
+        two.load_state_dict(one.state_dict())
+        a = torch.optim.SGD([dict(params=one.parameters(), name='detector')], lr=.03)
+        b = torch.optim.SGD(two.parameters(), lr=.03)
+        result = train_step(one, a, units, cfg)
+        loss = direct_loss(two, units)
+        loss.backward()
+        b.step()
+        self.assertAlmostEqual(result['loss'], float(loss.detach()), places=6)
+        for p, q in zip(one.parameters(), two.parameters()):
+            torch.testing.assert_close(p, q, rtol=2e-6, atol=2e-8)
+
+    def test_exact_view_mass_and_separate_clean_noisy_statistics(self):
+        class ViewDetector(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.logits = nn.Parameter(torch.tensor([
+                    [1., -1.], [-1., 1.],       # Online correct
+                    [2., -2.], [-2., 2.],       # Clean-RTC correct
+                    [-3., 3.], [3., -3.]]))     # Noisy wrong
+
+            def encode(self, waves):
+                return [self.logits[int(w[0])].unsqueeze(0) for w in waves]
+
+            def classify_sequences(self, sequences):
+                return torch.stack([s.mean(0) for s in sequences])
+
+        cfg, units = fixture(copies=1)
+        cfg.update(max_grad_norm=1e6, microbatch=3)
+        for unit in units:
+            row = unit[0]
+            if row['role'] == 'online':
+                row['wave'] = np.full(4000, row['label'], dtype=np.float32)
+            else:
+                for candidate in row['robust_candidates']:
+                    candidate[0]['wave'] = np.full(4000, 4+row['label'], dtype=np.float32)
+                    candidate[0]['pcl_refs']['clean']['wave'] = np.full(
+                        4000, 2+row['label'], dtype=np.float32)
+        model = ViewDetector()
+        expected = model.logits.detach().clone().requires_grad_()
+        labels = torch.tensor([0, 1])
+        losses = [F.cross_entropy(expected[i:i+2], labels, label_smoothing=.02)
+                  for i in (0, 2, 4)]
+        loss = .25*losses[0] + .25*losses[1] + .5*losses[2]
+        loss.backward()
+        opt = torch.optim.SGD([dict(params=model.parameters(), name='detector')], lr=.1)
+        result = train_step(model, opt, units, cfg)
+        torch.testing.assert_close(model.logits, expected.detach()-.1*expected.grad,
+                                   rtol=1e-6, atol=1e-7)
+        self.assertAlmostEqual(result['classification_loss'], float(loss.detach()), places=6)
+        self.assertEqual(result['classification_ce_weights'],
+                         {'online': .25, 'clean_rtc': .25, 'noisy': .5})
+        for i, (view, weight) in enumerate((('online', .25), ('clean_rtc', .25), ('noisy', .5))):
+            cells = [v for k, v in result['cells'].items() if k.startswith(view+'/')]
+            self.assertEqual(sum(c['views'] for c in cells), 8)
+            self.assertEqual(sum(c['correct'] for c in cells), 0 if view == 'noisy' else 8)
+            self.assertAlmostEqual(sum(c['objective'] for c in cells),
+                                   weight*float(losses[i].detach()), places=6)
+
+    def test_missing_or_old_weights_fail_before_model_update(self):
+        cfg, units = fixture()
+        for weights in (None, {'online': .5, 'clean_rtc': .25, 'noisy': .25}):
+            model = Detector()
+            opt = optimizer(model)
+            before = copy.deepcopy(model.state_dict())
+            with self.assertRaisesRegex(ValueError, 'start a new run'):
+                train_step(model, opt, units, dict(cfg, classification_ce_weights=weights))
+            self.assertFalse(model.encode_counts)
+            self.assertFalse(opt.state)
+            for key, value in before.items():
+                torch.testing.assert_close(model.state_dict()[key], value, rtol=0, atol=0)
 
     def test_clean_reference_is_encoded_once_for_ce_and_pcl(self):
         cfg, units = fixture()

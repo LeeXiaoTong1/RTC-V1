@@ -7,7 +7,8 @@ from unittest.mock import patch
 import zipfile
 
 from .suite import (ARMS, StopState, prepare_manifest, read, write, run_suite,
-                    validate_manifest, request_stop, main, package_report)
+                    validate_manifest, request_stop, main, package_report, signature)
+from .ce import CE_WEIGHTS
 
 
 class SuiteTests(unittest.TestCase):
@@ -40,6 +41,7 @@ class SuiteTests(unittest.TestCase):
             run = self.root/('run_'+arm)
             run.mkdir(exist_ok=False)
             write(run/'config.json', dict(version='3.19.1', robust_arm=arm, epochs=2,
+                classification_ce_weights=dict(CE_WEIGHTS),
                 sampling_seed=77, parent_init=dict(run=str(self.parent),
                     checkpoint_sha256=self.manifest['immutable']['parent_files'][str(self.parent/'last.pt')])))
         write(record, {'run': str(run)})
@@ -155,6 +157,33 @@ class SuiteTests(unittest.TestCase):
     def test_explicit_resume_rejects_training_overrides(self):
         with self.assertRaisesRegex(ValueError, 'no training overrides'):
             main(['--resume-suite', str(self.path), '--epochs', '5'])
+
+    def test_old_objective_cannot_resume_but_can_still_be_stopped(self):
+        manifest = read(self.path/'suite.json')
+        manifest['immutable'].pop('classification_ce_weights')
+        manifest['immutable_sha256'] = signature(manifest['immutable'])
+        write(self.path/'suite.json', manifest)
+        request_stop(self.path)
+        self.assertTrue((self.path/'stop_requested.json').exists())
+        with self.assertRaisesRegex(ValueError, 'start a new run'):
+            self.run_now()
+        with self.assertRaisesRegex(ValueError, 'start a new run'):
+            main(['--resume-suite', str(self.path)])
+        self.assertTrue((self.path/'stop_requested.json').exists())
+        self.assertFalse(self.calls)
+
+    def test_child_ce_allocation_must_match_suite(self):
+        self.outcomes['baseline'] = 'fail'
+        self.run_now()
+        path = self.root/'run_baseline'/'config.json'
+        cfg = read(path)
+        cfg['classification_ce_weights'] = {'online': .5, 'clean_rtc': .25, 'noisy': .25}
+        write(path, cfg)
+        self.outcomes.clear()
+        self.calls.clear()
+        with self.assertRaisesRegex(ValueError, 'Child CE allocation'):
+            self.run_now()
+        self.assertFalse(self.calls)
 
     def test_signal_stop_is_durable_and_stop_command_uses_no_training(self):
         state = StopState(self.path)

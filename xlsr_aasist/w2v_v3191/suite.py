@@ -14,6 +14,7 @@ import time
 import traceback
 from urllib.parse import urlparse
 import zipfile
+from .ce import CE_WEIGHTS, classification_weights
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +67,7 @@ def prepare_manifest(path, parent, common_args, epochs, seed, *, upload_reports=
     origin = {str(parent/name): checksum(parent/name) for name in files}
     immutable = dict(parent=str(parent), parent_files=origin, common_args=list(common_args),
                      epochs=int(epochs), sampling_seed=int(seed), arms=list(ARMS),
+                     classification_ce_weights=dict(CE_WEIGHTS),
                      upload_reports=bool(upload_reports))
     path.mkdir(parents=True)
     manifest = dict(schema=SCHEMA, created_at=now(), updated_at=now(),
@@ -97,6 +99,8 @@ def validate_child(run, arm, manifest):
             or cfg.get('epochs') != expected['epochs']
             or cfg.get('sampling_seed', cfg.get('seed')) != expected['sampling_seed']):
         raise ValueError('Child arm/version/epoch/seed differs from the immutable suite')
+    if cfg.get('classification_ce_weights') != expected.get('classification_ce_weights'):
+        raise ValueError('Child CE allocation differs from the immutable suite')
     origin = cfg.get('parent_init', {})
     parent = expected['parent']
     if (str(Path(origin.get('run', '')).resolve()) != parent
@@ -264,6 +268,7 @@ def run_suite(path, *, executor=execute, comparer=None, stop=None):
     path = Path(path).resolve()
     manifest = read(path/'suite.json')
     validate_manifest(manifest)
+    classification_weights(manifest['immutable'])
     stop = stop or StopState(path)
     manifest['status'] = 'running'
 
@@ -387,7 +392,9 @@ def main(argv=None):
         if shared or arguments.suite_root:
             raise ValueError('Resume uses immutable saved arguments; no training overrides are permitted')
         path = Path(arguments.resume_suite).expanduser().resolve()
-        validate_manifest(read(path/'suite.json'))
+        manifest = read(path/'suite.json')
+        validate_manifest(manifest)
+        classification_weights(manifest['immutable'])
         # Explicit resume authorizes clearing only this suite's old stop request.
         (path/'stop_requested.json').unlink(missing_ok=True)
     else:
