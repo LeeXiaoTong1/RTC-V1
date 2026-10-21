@@ -10,7 +10,7 @@ from .sampling import Plan
 from w2v_v5.weights import average_states, invariant_keys
 from w2v_v5.selection import plan_tail_updates
 from w2v_v3191.model import load_model, optimizer_for, adapter_inventory
-from w2v_v3191.parent import load as load_parent
+from .parent import load as load_parent
 from w2v_v3191.schedule import schedule
 from .step import train_step
 from .contrastive import bank_for, validate_bank

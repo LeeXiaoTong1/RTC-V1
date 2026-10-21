@@ -41,7 +41,7 @@ class ConfigurationTests(unittest.TestCase):
         validate(parser().parse_args(valid), valid)
         for bad in (["--resume", "run", "--epochs", "2"],
                     ["--resume", "run", "--context-seconds", "0"],
-                    ["--phase", "final"], ["--upload-submission"],
+                    ["--upload-submission"],
                     ["--context-seconds", "nan"], ["--microbatch", "1"]):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 validate(parser().parse_args(bad), bad)

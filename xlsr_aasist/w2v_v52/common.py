@@ -11,6 +11,9 @@ def schema_for(cfg):
         raise ValueError("Expected a V5.2 run; older runs are initialization only")
     if cfg.get("v5_stage") not in ("screen", "final"):
         raise ValueError("Unknown V5.2 data stage")
+    if (cfg.get("parent_init", {}).get("kind") == "v5_submitted_final"
+            and cfg.get("v5_stage") != "final"):
+        raise ValueError("Submitted V5 parent already trained on Dev; no new screening stage")
     if cfg.get("lora_layers") != 16 or cfg["retained_lora_layers"] < 16:
         raise ValueError("Retain parent adapters and train the final 16 layers")
     if cfg.get("experiment") != "E0" or cfg.get("robust_arm") != "baseline":

@@ -1,4 +1,4 @@
-"""One screen continuation, then one fixed Train+Dev refit from V3.18.9 best."""
+"""Submitted V5 continuation, with the legacy V3.18.9 screening route preserved."""
 import copy
 from datetime import datetime
 import gc
@@ -20,7 +20,7 @@ from w2v_v5.weights import average_states, invariant_keys
 from .train import run_stage, initialize, make_plan
 from .resources import audit_training
 from w2v_v3191.model import load_model
-from w2v_v3191.parent import metadata, load as load_parent
+from .parent import metadata, load as load_parent, is_final_parent, locked_weights
 from w2v_v3184.records import dev_partition
 from w2v_aasist.launch import run_lock
 from w2v_v3191.processes import ensure_idle
@@ -50,6 +50,8 @@ def read_stage(run):
 
 def checked_eval(model, rows, cfg, root, name, checkpoint_identity):
     """Restartable evaluation bound to actual checkpoint and input policy."""
+    if is_final_parent(cfg):
+        raise ValueError("Dev already trained by submitted parent; cannot evaluate it for selection")
     folder = root / "evaluations"
     folder.mkdir(exist_ok=True)
     path = folder / (name + ".json")
@@ -165,6 +167,8 @@ def locked_audit(root, cfg, stage_cfg, model, state, dev, partition):
 
 
 def screen(root, cfg, rows, dev, registry):
+    if is_final_parent(cfg):
+        raise ValueError("Submitted V5 parent cannot re-enter Dev screening")
     partition = dev_partition(dev, cfg["dev_pairs"], cfg["seed"], cfg["calibration_fraction"])
     if partition != read_json(Path(cfg["parent_init"]["run"]) / "dev_partition.json"):
         raise ValueError("The source-isolated parent Dev partition changed")
@@ -225,11 +229,35 @@ def screen(root, cfg, rows, dev, registry):
     return complete
 
 
+def continuation_lock(root, cfg):
+    """Fix export rules before training; the anchor is this submitted parent."""
+    origin = cfg["parent_init"]
+    inherited = origin["locked_recipe"]
+    lock = dict(version="5.2", recipe=RECIPE, base_config=fingerprint(cfg),
+        parent_checkpoint=origin["checkpoint_sha256"], parent_recipe=origin["recipe_sha256"],
+        input=copy.deepcopy(inherited["input"]), epochs=cfg["epochs"],
+        context_seconds=cfg["v5_context_seconds"], weights=locked_weights(inherited),
+        selection=None, candidates=[],
+        final_policy="Continue exact submitted V5 final; inherited weight rule anchored to that final; no Dev selection",
+        evidence="Parent trained on all Train+Dev; continuation quality remains unmeasured")
+    if cfg["v5_input"] != lock["input"]:
+        raise ValueError("Continuation must retain the submitted parent's input policy")
+    path = root / "recipe_lock.json"
+    if path.exists():
+        if read_json(path) != lock:
+            raise ValueError("Inherited continuation recipe changed")
+    else:
+        atomic_json(path, lock)
+    return lock
+
+
 def final_fit(root, cfg):
+    if is_final_parent(cfg):
+        continuation_lock(root, cfg)
     lock = read_json(root / "recipe_lock.json")
     if lock["base_config"] != fingerprint(cfg):
         raise ValueError("Final recipe belongs to another run")
-    if digest(root / "screen" / "last.pt") != lock["screen_checkpoint"]:
+    if not is_final_parent(cfg) and digest(root / "screen" / "last.pt") != lock["screen_checkpoint"]:
         raise ValueError("Screen checkpoint changed after recipe lock")
     stage = root / "final"
     if not (stage / "config.json").exists():
@@ -239,8 +267,16 @@ def final_fit(root, cfg):
         final_cfg = copy.deepcopy(cfg)
         final_cfg.update(v5_stage="final", v5_input=lock["input"],
                          v5_recipe_lock_sha256=digest(root/"recipe_lock.json"))
-        print("[V5.2 final] preparing ALL official Train+Dev; Dev will no longer be used to select", flush=True)
-        train, evaluation, registry, audit = prepare_manifests(final_cfg, train, dev, phase="final")
+        if is_final_parent(cfg):
+            print("[V5.2 continuation] reusing submitted parent's ALL Train+Dev; no Dev selection", flush=True)
+            evaluation = dev
+            registry = read_json(origin["source_registry"])
+            audit = dict(mode="reuse_verified_parent_final", parent=origin["run"],
+                         training_rows=len(train), evaluation_rows=0,
+                         source_registry_hash=registry["registry_hash"])
+        else:
+            print("[V5.2 final] preparing ALL official Train+Dev; Dev will no longer be used to select", flush=True)
+            train, evaluation, registry, audit = prepare_manifests(final_cfg, train, dev, phase="final")
         if evaluation:
             raise ValueError("Final fitting cannot retain trained Dev as selection data")
         bind_parent_phonemes(final_cfg, train)
@@ -277,6 +313,19 @@ def final_fit(root, cfg):
     return True
 
 
+def run_training(root, cfg, train, dev, registry, phase):
+    if is_final_parent(cfg):
+        if phase == "screen":
+            raise ValueError("Submitted V5 parent already trained on Dev; use --phase all or final")
+        if dev:
+            raise ValueError("Submitted parent continuation cannot retain Dev for selection")
+        return final_fit(root, cfg)
+    if phase != "final" or not (root/"screen_completed.json").exists():
+        if not screen(root, cfg, train, dev, registry):
+            return False
+    return phase == "screen" or final_fit(root, cfg)
+
+
 def main():
     args = parser().parse_args()
     validate(args, sys.argv[1:])
@@ -290,13 +339,19 @@ def main():
             cfg, train = read_stage(root)
             dev = read_json(root/"dev_rows.json")
             registry = read_json(root/"source_registry.json")
-            if args.phase == "final" and not (root/"recipe_lock.json").is_file():
+            if args.phase == "final" and not is_final_parent(cfg) and not (root/"recipe_lock.json").is_file():
                 raise ValueError("Complete screening first; final cannot guess a recipe")
         else:
             old, origin, train, dev = metadata(args.parent_run)
             cfg = training_configuration(old, origin, args)
-            print("[V5.2 setup] verify real PCM source identities and inherited assets", flush=True)
-            train, dev, registry, audit = prepare_manifests(cfg, train, dev, phase="screen")
+            if is_final_parent(cfg):
+                registry = read_json(origin["source_registry"])
+                audit = dict(mode="reuse_verified_parent_final", parent=origin["run"],
+                    training_rows=len(train), evaluation_rows=0,
+                    source_registry_hash=registry["registry_hash"])
+            else:
+                print("[V5.2 setup] verify real PCM source identities and inherited assets", flush=True)
+                train, dev, registry, audit = prepare_manifests(cfg, train, dev, phase="screen")
             bind_parent_phonemes(cfg, train)
             cfg["window_resource_audit"] = audit_training(train, dev, cfg)
             cfg["code_fingerprints"] = code_inventory()
@@ -304,11 +359,17 @@ def main():
             root = ROOT/"exp"/("w2v_v52_"+datetime.now().strftime("%Y%m%d_%H%M%S")+"_"+secrets.token_hex(2))
             root.mkdir(parents=True, exist_ok=False)
             persist_stage(root, cfg, train, registry, dev)
-            atomic_json(root/"screen_data_audit.json", audit)
+            atomic_json(root/("continuation_data_audit.json" if is_final_parent(cfg) else "screen_data_audit.json"), audit)
         (ROOT/"exp"/".latest_v52_run").write_text(str(root)+"\n", encoding="utf-8")
         print("V5.2_RUN="+str(root), flush=True)
         print('[V5.2 objective] CE Online60/CleanRTC20/Noisy20; noise PCL x0.2; '
               'platform PCL unchanged; A-side official Online/Noisy contrast', flush=True)
+        if is_final_parent(cfg):
+            origin = cfg["parent_init"]
+            print(f'[V5.2 parent] {origin["checkpoint"]} | {origin["tag"]} | '
+                  f'sha256={origin["checkpoint_sha256"]}', flush=True)
+            print(f'[V5.2 continuation] {cfg["epochs"]} epoch(s) TOTAL; no input/weight screen; '
+                  f'export rule={locked_weights(origin["locked_recipe"])["name"]}', flush=True)
         (root/"STOP_REQUESTED").unlink(missing_ok=True)
         (root/"paused.json").unlink(missing_ok=True)
         def request_stop(signum, _frame):
@@ -317,14 +378,9 @@ def main():
         previous = {sig: signal.signal(sig, request_stop) for sig in (signal.SIGINT, signal.SIGTERM)}
         try:
             if not (root/"completed.json").is_file():
-                if args.phase != "final" or not (root/"screen_completed.json").exists():
-                    if not screen(root, cfg, train, dev, registry):
-                        interrupted(root)
-                        return
-                if args.phase != "screen":
-                    if not final_fit(root, cfg):
-                        interrupted(root)
-                        return
+                if not run_training(root, cfg, train, dev, registry, args.phase):
+                    interrupted(root)
+                    return
             from .delivery import finish, report
             if (root/"completed.json").is_file():
                 finish(root, args)

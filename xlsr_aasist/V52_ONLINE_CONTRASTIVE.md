@@ -1,6 +1,8 @@
 # V5.2：Online 为主的分类与同源跨处理对比
 
-V5.2 保留 V5 的 OmniASR、多层融合、窗口 AASIST 和 384 维分类表示，按本次确认调整训练目标。仍从 V3.18.9 的 verified best 初始化，保留所有已有 LoRA 权重，只训练最后 16 层 LoRA、融合与后端。不会载入旧优化器。
+V5.2 保留 V5 的 OmniASR、多层融合、窗口 AASIST 和 384 维分类表示，按本次确认调整训练目标。当前默认起点改为用户报告 Progress weighted **94.61** 的 V5.1 提交模型：`w2v_v5_20261021_075307_d991/final.pt`。V5.1 的文件仍使用 V5 的版本格式。该分数是用户提供的结果，程序不读取 Progress 标签或用其选择训练参数。
+
+初始化读取已经完成权重平均、实际供 submission 使用的 **final.pt**，核验完成记录、配置、输入规则、权重规则和校验和；不读取 `final/last.pt`、筛选 checkpoint 或 V3.18.9 祖先权重。保留所有已有 LoRA 权重，只训练最后 16 层 LoRA、融合与后端。优化器与对比队列重新建立；学习率从 V5 最终阶段的结束值继续，按本轮既定余弦规则衰减，不重启分类头预热。
 
 ## 已固定的变化
 
@@ -31,36 +33,47 @@ V5.2 保留 V5 的 OmniASR、多层融合、窗口 AASIST 和 384 维分类表�
 
 ## 训练流程与数据边界
 
-默认依旧是 **1 轮 Train 筛选训练 + 1 轮 Train+全部官方 Dev 最终拟合**，另有输入方案及权重方案的评估时间。两阶段均从相同 V3.18.9 best 开始，最终阶段采用已经锁定的输入与权重平均规则。不会先跑完筛选再连续追加一轮到筛选权重上。
+从这次 V5.1 提交模型开始，默认**总共只增量训练 1 轮**。父模型已经训练过全部官方 Train+Dev，因此直接复用已核验的最终训练清单、来源关系和全来源覆盖预算。不会重复加入 Dev，也不重新执行输入筛选、权重筛选或 Dev Audit。`--epochs 2` 表示直接增量训练两轮，不是两个阶段各两轮。
 
-筛选阶段保留未训练 Dev 用于选择及一次独立 Audit；最终阶段 Dev 加入 Train 后，不再用它选择 best。PCL 仍只使用父 Train 已验证的音素资产，新增 Dev 来源无需新音素标注即可参与对比。Progress/Eval 不进入训练、配对或负样本队列。
+继承父模型锁定的输入处理、RTC 上下文长度和最终权重规则，在训练前写入 `recipe_lock.json`。如果父规则是 `anchor_tail_50`，本轮最终模型为 **50% 这次 94.61 对应的 final.pt + 50% 本轮尾段平均权重**；不会再次回到 V3.18.9 做混合。如果父规则是 `tail_mean` 或 `last`，则按相应固定规则导出，不在已训练 Dev 上重新比较候选。
 
-初始化用 V3.18.9 best；`--resume` 只能传入本版 V5.2 run，不能用它接着训练旧 V5 目录。模型、优化器、随机状态、队列及尾部权重平均一同恢复；已完成的阶段不会重训。默认每 100 步保存，正常 Ctrl+C 会在完成当前更新后保存；强行杀进程只能恢复至最近保存点。
+PCL 仍只使用原始 Train 已验证的音素资产，Dev 来源无需新音素标注即可参与分类和对比。Progress/Eval 不进入训练、配对或负样本队列。已经训练过的 Dev 不能提供本轮独立泛化评估，因此不会打印一个用于选模的 Dev best。
+
+`--parent-run` 指向旧 V5/V5.1 的完整 run 目录；`--resume` 只能指向新建的 V5.2 run。断点恢复同时恢复模型、优化器、随机状态、队列及尾部平均，已完成的阶段不会重训。默认每 100 步保存，正常 Ctrl+C 会在完成当前更新后保存；强行杀进程只能恢复至最近保存点。
+
+兼容路线：如果**显式**传入 V3.18.9 的 run，才沿用原先的 1 轮 Train 筛选＋1 轮 Train+Dev 最终拟合；两阶段分别从该 verified best 初始化。V5.1 父模型禁止 `--phase screen`，可使用默认 `all` 或直接 `final`。
 
 ## 更新与启动
 
 ```bash
 cd /home/ubuntu/LXT/RTC-w2v-improved
-git fetch origin
-git switch v5.2-online-contrastive
+git fetch origin v5.2-online-contrastive
+if git show-ref --verify --quiet refs/heads/v5.2-online-contrastive; then
+  git switch v5.2-online-contrastive
+else
+  git switch -c v5.2-online-contrastive FETCH_HEAD
+fi
 git pull --ff-only origin v5.2-online-contrastive
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate /home/ubuntu/LXT/v318-runtime/envs/sdd-v318
 cd xlsr_aasist
 bash run_w2v_v52.sh \
-  --parent-run /home/ubuntu/LXT/RTC-w2v-improved/xlsr_aasist/exp/w2v_v3189_20261016_183410_a437 \
+  --parent-run /home/ubuntu/LXT/RTC-w2v-improved/xlsr_aasist/exp/w2v_v5_20261021_075307_d991 \
+  --epochs 1 \
   --submit-best --upload-submission
 ```
 
-此命令沿用父配置中的提交路径。若原实验未保存提交路径，添加 `--submission-protocol` 和 `--submission-audio-root`。不需要提交文件时可省略最后两个开关。
+默认提交路径仍是 `/home/ubuntu/LXT/RTC/xlsr_aasist/dataset/progress.txt` 与该数据集的 `wav/progress`，也可显式传入 `--submission-protocol` 和 `--submission-audio-root`。不需要提交文件时可省略最后两个开关。启动日志会打印父 checkpoint 的完整路径、tag、SHA256，以及总轮数和继承的导出规则。
 
-只想先完成筛选阶段，在新运行命令中加 `--phase screen`。之后用同一个 V5.2 run 执行 `--resume /absolute/path/to/w2v_v52_run --phase final`，开始既定最终拟合。断点继续默认 `--phase all`：
+断点继续使用本轮生成的 V5.2 run：
 
 ```bash
 bash run_w2v_v52.sh --resume /absolute/path/to/w2v_v52_run
 bash watch_w2v_v52.sh
 ```
+
+V5.1 截图中的 `artifact delivery incomplete` / `curl exit 22` 发生在上传阶段。只要 `completed.json`、`final.pt`、`final_config.json`、`recipe_lock.json` 和最终数据清单通过验证，即可作为父模型；上传失败不会要求重训。保留原目录，不把 submission.zip 当成 checkpoint。
 
 `--contrastive-weight 0` 可在**新运行**中关闭对比作为对照；其余分类/PCL设置不变。恢复运行不允许修改损失、温度、队列容量等训练参数。
 
@@ -70,7 +83,7 @@ bash watch_w2v_v52.sh
 
 首步队列为空且小批次没有合格负样本时，`CL=0` 可以出现；有合格历史负样本后应参与计算。`steps.jsonl` 同时记录原始对比损失、有效系数、队列数量、无负样本/无官方配对/无效处理对等跳过原因，以及间隔抽查的融合层梯度范数。不能只凭某个损失的小数位判断它是否有效。
 
-`screen/epoch_*.json` 与 `final/epoch_*.json` 保存整轮平均辅助损失、有效正对及负样本数量。最终是否提高 Noisy 指标，需要看相同评测条件下的结果，当前代码验证不能替代服务器完整训练和竞赛成绩。
+`final/epoch_*.json` 保存整轮平均辅助损失、有效正对及负样本数量；仅显式使用 V3.18.9 父模型时还会生成 `screen/epoch_*.json`。最终是否提高 Noisy 指标，需要看相同评测条件下的结果，当前代码验证不能替代服务器完整训练和竞赛成绩。
 
 ## 本地验证
 
@@ -78,4 +91,4 @@ bash watch_w2v_v52.sh
 python -m unittest discover -s w2v_v52 -t . -p 'test_*.py'
 ```
 
-覆盖独立公式对照的 CE 梯度、PCL 及方差分支缩放、双向对比及负样本筛选、实际 AASIST 384 维特征回传、来源隔离及缺失配对、无音素资产的 Dev 配对、重复编码计数、AMP 失败回滚、暂停/崩溃恢复、队列保存、最终 Dev 边界和单模型提交导出。使用 CPU 测试与微型编码器；尚未运行服务器 3B 模型完整训练。
+覆盖独立公式对照的 CE 梯度、PCL 及方差分支缩放、双向对比及负样本筛选、实际 AASIST 384 维特征回传、来源隔离及缺失配对、无音素资产的 Dev 配对、重复编码计数、AMP 失败回滚、暂停/崩溃恢复、队列保存、最终 Dev 边界和单模型提交导出。新增提交模型精确加载及预测不变、上传失败兼容、完整 LoRA 继承、最终学习率、原 Train 音素作用域、单阶段预算、继承权重规则与父文件变化拒绝等测试。使用 CPU 测试与微型编码器；尚未运行服务器 3B 模型完整训练。
