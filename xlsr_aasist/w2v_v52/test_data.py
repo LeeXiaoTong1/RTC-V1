@@ -1,18 +1,28 @@
 """Actual V5.2 source planning and data path, with only waveform RTC mocked."""
 import copy
+from collections import Counter
 from contextlib import ExitStack
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import numpy as np
+import torch
 from .sampling import Plan
 from .data import Waves, microbatches
 from .side import _layout
+from .step import train_step
+from .test_ce import fixture, optimizer
+from .test_contrastive import PairDetector
 from w2v_v5.sampling import Plan as ParentPlan
 from w2v_v5.test_integration import inventory, ticket, fake_augment, fake_matched
 from w2v_v31810.identity import build_registry, registry_config
 
 
 class DataTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        torch.set_num_threads(1)
+
     def plan(self, rows, cfg, cls=Plan):
         return cls(rows, cfg['stream_sources'], cfg['sampling_seed'],
                    cfg['group_quotas'], cfg['view_factors'], cfg=cfg)
@@ -86,6 +96,7 @@ class DataTests(unittest.TestCase):
         self.assertEqual(len(self.reads), 2)
         views, slots = _layout(unit, dict(noise=.03, platform=.045))
         self.assertEqual(len(views), 3)
+        self.assertEqual(slots['scheduled'], [])
         self.assertEqual(slots['contrastive'], (0, 2))
         self.assertTrue(all(len(v['wave']) == 48000 for v in views))
         with self.assertRaisesRegex(ValueError, 'exceeds'):
@@ -108,6 +119,83 @@ class DataTests(unittest.TestCase):
         self.assertEqual(len(views), 3)
         self.assertEqual(slots['contrastive'][1], slots['platform'][0])
         self.assertTrue(unit[0]['pcl_pairs']['platform'])
+
+    def test_contrastive_reference_does_not_schedule_unselected_train_platform_pcl(self):
+        rows, cfg = inventory()
+        data = self.data(rows, cfg)
+        data._phones = lambda row: [dict(instance=0, token=1, start_sample=800, end_sample=1600)]
+        t = dict(ticket(0, paired=True), contrastive_online_index=1, contrastive_group_budget=2)
+        t.pop('pcl_online_index')  # Train source selected for noise PCL only.
+        with self.patches():
+            unit = data[t]
+        views, slots = _layout(unit, dict(noise=.03, platform=.045))
+        self.assertEqual(slots['scheduled'], ['noise'])
+        self.assertIn('noise', slots)
+        self.assertIn('contrastive', slots)
+        self.assertEqual(len(views), 3)
+
+    def test_rejected_phone_matches_still_count_as_scheduled_pcl(self):
+        rows, cfg = inventory()
+        data = self.data(rows, cfg)
+        data._phones = lambda row: []
+        with self.patches():
+            unit = data[ticket(0, paired=True)]
+        views, slots = _layout(unit, dict(noise=.03, platform=.045))
+        self.assertEqual(slots['scheduled'], ['noise', 'platform'])
+        self.assertNotIn('noise', slots)
+        self.assertNotIn('platform', slots)
+        self.assertEqual(len(views), 2)  # Keep both CE views, skip unused Online.
+
+    def test_real_final_plan_runs_dual_pcl_and_contrast_on_mixed_train_dev_batches(self):
+        rows, data_cfg = inventory()
+        cfg, _ = fixture()
+        cfg.update(data_cfg, microbatch=48, frame_budget=9000,
+                   contrastive_weight=.01, contrastive_ramp_updates=1,
+                   pcl_noise_weight=.03, pcl_platform_weight=.045, pcl_ramp_updates=1,
+                   pcl_variance_weight=0.)
+        data = self.data(rows, cfg)
+        def phones(row):
+            self.assertEqual(row['v5_origin_split'], 'train')
+            return [dict(instance=0, token=1, start_sample=800, end_sample=1600)]
+        data._phones = phones
+        def matched(*args, **kwargs):
+            clean, noisy, meta = fake_matched(*args, **kwargs)
+            for name in ('clean_activity', 'rtc_activity'):
+                meta[name].update(profile='off', enabled=False, suppressed_samples=0,
+                                  samples=len(clean))
+            return clean, noisy, meta
+        model = PairDetector()
+        model.pcl_scale = SimpleNamespace(is_frozen=True, scale=torch.ones(5))
+        opt = optimizer(model)
+        dev_contrast = pcl_sources = active_contrast = 0
+        for tickets in self.plan(rows, cfg).batches(0):
+            with self.patches(), patch('w2v_v5.data.generate_matched_context', side_effect=matched):
+                units = [data[t] for t in tickets]
+            expected = Counter()
+            for t, unit in zip(tickets, units):
+                row = unit[0]
+                if row['v5_origin_split'] == 'dev' and row.get('contrastive_enabled'):
+                    self.assertEqual(row['pcl_platform_budget'], 0)
+                    dev_contrast += 1
+                if t.get('pcl_enabled'):
+                    for kind, scheduled in (('noise', t.get('pcl_noise')),
+                                            ('platform', 'pcl_online_index' in t)):
+                        if scheduled:
+                            expected[f'{kind}/{row["language"]}/{row["label"]}'] += 1
+            stats = train_step(model, opt, units, cfg, audit=True)
+            self.assertFalse(stats['amp']['skipped_update'])
+            self.assertEqual({k: v['scheduled_sources'] for k, v in stats['pcl_coverage'].items()},
+                             dict(expected))
+            self.assertEqual(stats['views'], len(tickets) + sum(t['kind'] == 'offline' for t in tickets))
+            self.assertEqual(stats['classification_source_views'], len(tickets))
+            self.assertAlmostEqual(stats['loss'], stats['classification_loss']
+                + sum(v['weighted_loss'] for v in stats['pcl_losses'].values())
+                + stats['contrastive']['weighted_loss'], places=6)
+            pcl_sources += sum(v['sources'] for v in stats['pcl_losses'].values())
+            active_contrast += stats['contrastive'].get('active_pairs', 0)
+        self.assertGreater(dev_contrast, 0)
+        self.assertGreater(pcl_sources, 0)
+        self.assertGreater(active_contrast, 0)
 
     def test_mismatched_pair_fails_and_invalid_receiver_pair_only_skips_contrast(self):
         rows, cfg = inventory()

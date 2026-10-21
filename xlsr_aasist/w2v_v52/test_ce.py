@@ -52,7 +52,7 @@ def fixture(copies=3):
                 row = dict(id=identity, source_id=identity, group_id=identity,
                            canonical_source=identity, meta_side=side, role=role,
                            language=language, label=label, split='train', wave=wave,
-                           batch_group_quotas=(copies,)*4)
+                           batch_group_quotas=(copies,)*4, pcl_scheduled=())
                 if role == 'noisy':
                     candidates = []
                     for k, mechanism in enumerate(('legacy', 'm1', 'm2', 'm3')):
@@ -237,6 +237,7 @@ class StepTests(unittest.TestCase):
         for unit in units:
             for candidate in [unit] if unit[0]['role'] == 'noisy' else []:
                 candidate[0]['pcl_noisy_index'] = 0
+                candidate[0]['pcl_scheduled'] = ('noise',)
                 candidate[0]['pcl_pairs'] = {'noise': [[0, 2000, 0, 2000]]}
         result = train_step(model, optimizer(model), units,
                             dict(cfg, consistency='dual', pcl_variance_weight=0.))

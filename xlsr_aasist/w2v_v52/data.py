@@ -7,6 +7,17 @@ from w2v_v5.processing import prepare_wave
 class Waves(ParentWaves):
     def __getitem__(self, ticket):
         units = super().__getitem__(ticket)
+        if isinstance(ticket, dict):
+            # Reference audio can be needed by CE or contrast without any CTC
+            # assets. Preserve the sampler's PCL schedule before adding refs.
+            scheduled = []
+            if ticket.get('pcl_enabled'):
+                if ticket.get('pcl_noise'):
+                    scheduled.append('noise')
+                if 'pcl_online_index' in ticket:
+                    scheduled.append('platform')
+            for row in units:
+                row['pcl_scheduled'] = tuple(scheduled)
         if not isinstance(ticket, dict) or 'contrastive_online_index' not in ticket:
             if isinstance(ticket, dict) and ticket.get('contrastive_status'):
                 units[0]['contrastive_skip'] = ticket['contrastive_status']
@@ -63,9 +74,10 @@ def microbatches(units,size,frame_budget,*,weights=None):
     for position,unit in enumerate(units):
         if not unit:raise ValueError('Empty source unit')
         refs=unit[0].get('pcl_refs',{});pairs=unit[0].get('pcl_pairs',{})
+        scheduled=unit[0].get('pcl_scheduled', ())
         needed=[]
-        noise=bool(pairs.get('noise')) and (weights is None or bool(weights.get('noise')))
-        platform=bool(pairs.get('platform')) and (weights is None or bool(weights.get('platform')))
+        noise='noise' in scheduled and bool(pairs.get('noise')) and (weights is None or bool(weights.get('noise')))
+        platform='platform' in scheduled and bool(pairs.get('platform')) and (weights is None or bool(weights.get('platform')))
         # Prepared training candidates always carry a clean CE reference;
         # ordinary Dev/submission rows are single-view inference inputs.
         if noise or platform or (unit[0].get('role')=='noisy' and 'clean' in refs):needed.append('clean')

@@ -234,6 +234,7 @@ class ContrastiveTests(unittest.TestCase):
             row = unit[0]
             if row['role'] == 'noisy':
                 row.update(contrastive_enabled=False, pcl_noisy_index=0, pcl_platform_budget=1,
+                    pcl_scheduled=('noise', 'platform'),
                     pcl_pairs=dict(noise=[[0, 2000, 0, 2000]], platform=[[0, 2000, 0, 2000]]))
         model = PairDetector()
         model.pcl_scale = SimpleNamespace(is_frozen=True, scale=torch.ones(5))

@@ -18,8 +18,16 @@ def _layout(unit, weights):
     first = unit[0]
     refs = first.get('pcl_refs', {})
     pairs = first.get('pcl_pairs', {})
-    noise = bool(weights['noise'])
-    platform = bool(weights['platform']) and 'official' in refs
+    declared = first.get('pcl_scheduled')
+    if not isinstance(declared, (tuple, list)) or any(kind not in ('noise', 'platform') for kind in declared):
+        raise ValueError('Missing or invalid explicit PCL source schedule')
+    # An official reference added for contrast is not a scheduled PCL source.
+    # Keep scheduled-but-rejected alignments visible without enrolling Dev or
+    # Train sources that were not selected for the platform branch.
+    noise = bool(weights['noise']) and 'noise' in declared
+    platform = bool(weights['platform']) and 'platform' in declared
+    if platform and 'official' not in refs:
+        raise ValueError('Scheduled platform PCL requires an official reference')
     contrast = bool(first.get('contrastive_enabled'))
     if contrast and ('official' not in refs or first.get('meta_side') != 'A'):
         raise ValueError('Contrastive training requires an official A-side reference')

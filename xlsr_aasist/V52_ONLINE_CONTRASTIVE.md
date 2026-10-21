@@ -39,6 +39,8 @@ V5.2 保留 V5 的 OmniASR、多层融合、窗口 AASIST 和 384 维分类表�
 
 PCL 仍只使用原始 Train 已验证的音素资产，Dev 来源无需新音素标注即可参与分类和对比。Progress/Eval 不进入训练、配对或负样本队列。已经训练过的 Dev 不能提供本轮独立泛化评估，因此不会打印一个用于选模的 Dev best。
 
+2026-10-21 修复：每个来源显式保留采样器安排的 PCL 分支，官方 Online 参照因对比学习加入后，不会被误当作平台 PCL 配对。旧实现会让没有音素资产的 Dev 来源进入平台 PCL，并在来源预算为 0 时触发 `Positive PCL source budget required`；未选入平台 PCL 的 Train 来源也会被错误计入其覆盖率。修复保留 Dev Offline 的 Clean-RTC／Noisy-RTC 分类与官方 Online 对比，不增加 Dev 音素依赖，不改变 60/20/20 分类权重及 PCL 系数。已安排但对齐失败的 PCL 来源仍记录零有效配对，不重新分配其损失权重。
+
 `--parent-run` 指向旧 V5/V5.1 的完整 run 目录；`--resume` 只能指向新建的 V5.2 run。断点恢复同时恢复模型、优化器、随机状态、队列及尾部平均，已完成的阶段不会重训。默认每 100 步保存，正常 Ctrl+C 会在完成当前更新后保存；强行杀进程只能恢复至最近保存点。
 
 兼容路线：如果**显式**传入 V3.18.9 的 run，才沿用原先的 1 轮 Train 筛选＋1 轮 Train+Dev 最终拟合；两阶段分别从该 verified best 初始化。V5.1 父模型禁止 `--phase screen`，可使用默认 `all` 或直接 `final`。
@@ -65,6 +67,8 @@ bash run_w2v_v52.sh \
 ```
 
 默认提交路径仍是 `/home/ubuntu/LXT/RTC/xlsr_aasist/dataset/progress.txt` 与该数据集的 `wav/progress`，也可显式传入 `--submission-protocol` 和 `--submission-audio-root`。不需要提交文件时可省略最后两个开关。启动日志会打印父 checkpoint 的完整路径、tag、SHA256，以及总轮数和继承的导出规则。
+
+对于首个训练更新就因上述零 PCL 预算错误退出的运行，更新代码后重新执行上面的启动指令，从同一个 V5.1 `final.pt` 新建 V5.2 run 即可，不用重训 V5.1。不要对这个旧失败目录直接使用 `--resume`：代码校验和已变化，恢复保护会拒绝；也不要手动改写旧配置的校验和。旧目录保留用于核查。
 
 断点继续使用本轮生成的 V5.2 run：
 
