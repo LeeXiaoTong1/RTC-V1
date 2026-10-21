@@ -11,7 +11,7 @@ import torch
 from . import config, parent, train, workflow, delivery
 from .common import atomic_json, digest, fingerprint, partial_state, apply_partial, read_json
 from .test_lifecycle import TinyDetector, initialize_tiny
-from w2v_v52.common import RECIPE as PARENT_RECIPE, schema_for as parent_schema
+from w2v_v5.common import RECIPE as PARENT_RECIPE, schema_for as parent_schema
 from w2v_v5.test_integration import inventory
 from w2v_v31810.identity import build_registry, registry_config
 
@@ -24,15 +24,12 @@ def fixture(root):
     (run / "final").mkdir(parents=True)
     rows, cfg = inventory()
     registry = build_registry(rows, [], {})
-    cfg.update(version="5.2", recipe=PARENT_RECIPE, v5_stage="final", epochs=1,
+    cfg.update(version="5", recipe=PARENT_RECIPE, v5_stage="final", epochs=1,
         lora_layers=16, retained_lora_layers=60, encoder_layers=60, robust_arm="baseline",
         source_registry=registry_config(registry), lr_floor=.37, source_epoch_offset=6,
         v5_tail_snapshots=4, v5_tail_start=.75, v5_context_seconds=1.5,
         data_files={}, runtime_versions={}, pcl_platform_weight=.045,
-        classification_ce_weights=dict(online=.6, clean_rtc=.2, noisy=.2),
-        v52_noise_pcl_scale=.2, v52_parent_pcl_weights=dict(noise=.15, platform=.045), pcl_noise_weight=.03,
-        contrastive_weight=.017, contrastive_temperature=.3, contrastive_ramp_updates=57,
-        contrastive_bank_per_group=24, contrastive_sources_per_group=2,
+        classification_ce_weights=dict(online=.25, clean_rtc=.25, noisy=.5), pcl_noise_weight=.15,
         **{key: (index + 1) * 1e-5 for index, key in enumerate(LR_KEYS)})
     lock = dict(input=cfg["v5_input"],
                 weights=dict(name="anchor_tail_50", source="tail", parent_weight=.5))
@@ -51,7 +48,7 @@ def fixture(root):
     tag = "final_anchor_tail_50"
     torch.save(dict(schema=parent_schema(cfg), identity=fingerprint(cfg),
                     model=weights, tag=tag, recipe=lock), run / "final.pt")
-    atomic_json(run / "completed.json", dict(status="complete", version="5.2", selected=tag,
+    atomic_json(run / "completed.json", dict(status="complete", version="5", selected=tag,
         checkpoint_sha256=digest(run / "final.pt"), final_config_sha256=digest(run / "final_config.json"),
         recipe_sha256=digest(run / "recipe_lock.json")))
     # These must never be used as parent weights or as a failure/completion gate.
@@ -100,25 +97,23 @@ class SubmittedParentTests(unittest.TestCase):
             self.assertEqual(child["source_epoch_offset"], 7)
             self.assertEqual(child["pcl_noise_weight"], old["pcl_noise_weight"])
             self.assertEqual(child["pcl_platform_weight"], .045)
-            self.assertEqual(child['v52_parent_pcl_weights'], old['v52_parent_pcl_weights'])
-            self.assertEqual(child['pcl_noise_weight'], .03)
-            for name in ('contrastive_weight', 'contrastive_temperature', 'contrastive_ramp_updates',
-                         'contrastive_bank_per_group', 'contrastive_sources_per_group'):
-                self.assertEqual(child[name], old[name])
-            self.assertEqual(child["classification_ce_weights"], dict(online=.6, clean_rtc=.2, noisy=.2))
+            self.assertEqual(child['v53_parent_pcl_weights'], dict(noise=.15, platform=.045))
+            self.assertEqual(child['pcl_noise_weight'], .15)
+            self.assertEqual(child['contrastive_weight'], 0.)
+            self.assertEqual(child["classification_ce_weights"], old['classification_ce_weights'])
             for key in LR_KEYS:
                 self.assertAlmostEqual(child[key], old[key] * .37, places=14)
             self.assertFalse(child["initialization"]["old_optimizer_loaded"])
             self.assertNotIn("v5_recipe_lock_sha256", child)
 
-    def test_default_points_to_marked_completed_v52_without_incomplete_fallback(self):
+    def test_default_pins_v51_without_latest_marker_or_incomplete_fallback(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).absolute().parent) as folder:
             root = Path(folder)
             (root / "exp").mkdir()
             run, *_ = fixture(root)
-            target = root / "exp" / 'completed_v52'
+            target = root / "exp" / parent.DEFAULT_PARENT
             run.rename(target)
-            (root/'exp'/parent.DEFAULT_MARKER).write_text(str(target), encoding='utf-8')
+            (root/'exp'/'.latest_v52_run').write_text('must-never-be-used', encoding='utf-8')
             # Fixture manifest hashes are relative; its empty data_files need no relocation.
             with patch.object(parent, "ROOT", root):
                 _, origin, _, _ = parent.metadata()
@@ -126,7 +121,7 @@ class SubmittedParentTests(unittest.TestCase):
             (target/'completed.json').unlink()
             with patch.object(parent, 'ROOT', root), self.assertRaises(FileNotFoundError):
                 parent.metadata()
-            (root/'exp'/parent.DEFAULT_MARKER).unlink()
+            target.rename(root/'moved_parent')
             with patch.object(parent, 'ROOT', root), self.assertRaisesRegex(FileNotFoundError, 'parent-run'):
                 parent.metadata()
 

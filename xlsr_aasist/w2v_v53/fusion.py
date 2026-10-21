@@ -76,7 +76,9 @@ class AdaptiveLayerFusion(LayerFusion):
             raise ValueError('Per-recording layer mixture shape differs from encoder batch')
         # Exactly the parent projection/checkpoint path, with one sample-wise multiply.
         if self.checkpointing and torch.is_grad_enabled():
-            value = checkpoint(self.transform, hidden, use_reentrant=False)
+            # LN/Linear/SwiGLU is deterministic. Encoder/LoRA checkpoints keep
+            # their own dropout RNG handling; only this reader skips the copy.
+            value = checkpoint(self.transform, hidden, use_reentrant=False, preserve_rng_state=False)
         else:
             value = self.transform(hidden)
         return value.float() * weights[:, index-1, None, None]

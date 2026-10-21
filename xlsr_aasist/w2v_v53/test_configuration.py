@@ -9,7 +9,7 @@ from w2v_v3189.test_training import fixture
 
 
 class ConfigurationTests(unittest.TestCase):
-    def test_legacy_parent_has_same_v52_recipe_and_fixed_dynamic_control_budget(self):
+    def test_legacy_parent_has_same_v51_recipe_and_fixed_dynamic_control_budget(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).absolute().parent) as folder:
             old, _, _ = fixture(Path(folder))
             old.update(encoder_layers=60, lora_layers=60, epochs=10)
@@ -19,11 +19,12 @@ class ConfigurationTests(unittest.TestCase):
             with patch('w2v_v53.config.runtime_versions', return_value={}):
                 dynamic = training_configuration(old, origin, args)
                 static = training_configuration(old, origin, parser().parse_args(['--workers', '0', '--fusion-mode', 'static']))
-            self.assertEqual(dynamic['pcl_noise_weight'], old['pcl_noise_weight']*.2)
-            self.assertEqual(dynamic['classification_ce_weights'], dict(online=.6, clean_rtc=.2, noisy=.2))
+            self.assertEqual(dynamic['pcl_noise_weight'], old['pcl_noise_weight'])
+            self.assertEqual(dynamic['classification_ce_weights'], dict(online=.25, clean_rtc=.25, noisy=.5))
             self.assertEqual(dynamic['adaptive_fusion_mode'], 'dynamic')
             self.assertEqual(dynamic['epochs'], 1)
-            self.assertEqual(dynamic['contrastive_weight'], .01)
+            self.assertEqual(dynamic['contrastive_weight'], 0.)
+            self.assertEqual(dynamic['training_recipe_base'], '5.1')
             for key in dynamic:
                 if key != 'adaptive_fusion_mode':
                     self.assertEqual(dynamic[key], static[key], key)
@@ -34,10 +35,10 @@ class ConfigurationTests(unittest.TestCase):
         argv = ['--resume', 'run', '--submit-best']
         validate(parser().parse_args(argv), argv)
         for override in (['--fusion-mode','static'], ['--fusion-width','64'], ['--epochs','2'],
-                         ['--contrastive-weight','.02'], ['--parent-run','parent']):
+                         ['--parent-run','parent']):
             with self.subTest(override=override), self.assertRaises(ValueError):
                 validate(parser().parse_args(argv+override), argv+override)
-        for bad in (['--fusion-width','0'], ['--contrastive-weight','nan']):
+        for bad in (['--fusion-width','0'],):
             with self.assertRaises(ValueError):
                 validate(parser().parse_args(bad))
 
@@ -45,9 +46,20 @@ class ConfigurationTests(unittest.TestCase):
         files = code_inventory()
         suffixes = {str(Path(name)).replace('\\','/') for name in files}
         for suffix in ('w2v_v53/fusion.py', 'w2v_v53/model.py', 'w2v_v53/step.py',
-                       'w2v_v52/side.py', 'w2v_v52/data.py', 'w2v_v52/contrastive.py'):
+                       'w2v_v3191/side.py', 'w2v_v5/data.py', 'w2v_v5/sampling.py'):
             self.assertTrue(any(name.endswith(suffix) for name in suffixes), suffix)
         self.assertFalse(any('/test_' in name for name in suffixes))
+        self.assertFalse(any('/w2v_v52/' in name for name in suffixes))
+
+    def test_old_v53_recipe_and_v52_parent_are_rejected(self):
+        from .test_lifecycle import configuration
+        cfg = configuration()
+        with self.assertRaisesRegex(ValueError, 'old V5.2-based'):
+            schema_for(dict(cfg, recipe='v53_input_adaptive_layer_fusion_v1'))
+        with self.assertRaisesRegex(ValueError, 'not V5.2'):
+            training_configuration(dict(version='5.2'), {}, parser().parse_args([]))
+        with self.assertRaisesRegex(ValueError, 'contrastive'):
+            schema_for(dict(cfg, contrastive_weight=.01))
 
 
 if __name__ == '__main__':

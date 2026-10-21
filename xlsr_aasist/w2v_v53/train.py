@@ -5,15 +5,14 @@ import time
 import torch
 from .common import (schema_for, fingerprint, seed_all, partial_state, apply_partial,
                      atomic_save, atomic_json, capture_rng, restore_rng, to_cpu, append_json)
-from w2v_v52.data import Waves, TicketSampler, loader, close
-from w2v_v52.sampling import Plan
+from w2v_v5.data import Waves, TicketSampler, loader, close
+from w2v_v5.sampling import Plan
 from w2v_v5.weights import average_states, invariant_keys
 from w2v_v5.selection import plan_tail_updates
 from .model import load_model, optimizer_for, adapter_inventory, parent_anchor
 from .parent import load as load_parent
 from w2v_v3191.schedule import schedule
 from .step import train_step
-from w2v_v52.contrastive import bank_for, validate_bank
 from w2v_v3191.precision import scaler_for
 from w2v_v3184.recovery import trim_step_log
 
@@ -34,8 +33,7 @@ def initialize(model, cfg):
 
 def save(path, cfg, state, model, optimizer):
     state.update(model=partial_state(model), optimizer=to_cpu(optimizer.state_dict()),
-                 grad_scaler=scaler_for(optimizer, cfg).state_dict(), rng=capture_rng(),
-                 contrastive_bank=bank_for(model, cfg))
+                 grad_scaler=scaler_for(optimizer, cfg).state_dict(), rng=capture_rng())
     atomic_save(path, state, cfg.get("free_reserve_bytes", 0) + cfg.get("disk_margin_bytes", 0))
 
 
@@ -65,7 +63,6 @@ def run_stage(cfg, run, rows, *, model_factory=load_model, step_fn=train_step,
         apply_partial(model, state["model"])
         optimizer.load_state_dict(state["optimizer"])
         scaler_for(optimizer, cfg).load_state_dict(state["grad_scaler"])
-        model._v52_contrastive_bank = validate_bank(state['contrastive_bank'], cfg)
         restore_rng(state["rng"])
         print(f'[Resume {cfg["v5_stage"]}] epoch={state["epoch"]} next_step={state["next_step"]}', flush=True)
     else:
@@ -112,12 +109,8 @@ def run_stage(cfg, run, rows, *, model_factory=load_model, step_fn=train_step,
                 began = now
                 totals["loss"] += stats["loss"]
                 totals["ce"] += stats["classification_loss"]
-                contrast = stats.get('contrastive', {})
                 pcl = stats.get('pcl_losses', {})
-                for key, value in dict(contrastive=contrast.get('weighted_loss', 0.),
-                    contrastive_pairs=contrast.get('active_pairs', 0),
-                    contrastive_negatives=contrast.get('negative_comparisons', 0),
-                    pcl_noise=pcl.get('noise', {}).get('weighted_loss', 0.),
+                for key, value in dict(pcl_noise=pcl.get('noise', {}).get('weighted_loss', 0.),
                     pcl_platform=pcl.get('platform', {}).get('weighted_loss', 0.)).items():
                     totals[key] += value
                 totals["updates"] += 1
@@ -140,18 +133,18 @@ def run_stage(cfg, run, rows, *, model_factory=load_model, step_fn=train_step,
                           f'delta={diagnostics.get("mean_absolute_change", 0.):.6g} '
                           f'gate_update={diagnostics["conditioner_update_norm"]:.6g}', flush=True)
                 eta = (plan.steps-step-1)*sum(times)/len(times)/60
-                atomic_json(root / "progress.json", dict(stage=cfg["v5_stage"], epoch=epoch+1,
-                    epochs=cfg["epochs"], step=step+1, steps=plan.steps,
-                    loss=stats["loss"], eta_minutes=eta, status="training", contrastive=contrast))
+                # The detailed append-only log still records every committed
+                # step. Refresh the small UI file with the console cadence.
                 if step % 10 == 0 or step+1 == plan.steps:
+                    atomic_json(root / "progress.json", dict(stage=cfg["v5_stage"], epoch=epoch+1,
+                        epochs=cfg["epochs"], step=step+1, steps=plan.steps,
+                        loss=stats["loss"], eta_minutes=eta, status="training"))
                     print(f'V5.3 {cfg["v5_stage"]} epoch {epoch+1}/{cfg["epochs"]} '
                           f'{step+1}/{plan.steps} loss={stats["loss"]:.5f} '
                           f'CE={stats["classification_loss"]:.5f} '
                           f'PCL-n={pcl.get("noise", {}).get("weighted_loss", 0.):.6f} '
                           f'PCL-p={pcl.get("platform", {}).get("weighted_loss", 0.):.6f} '
-                          f'CL={contrast.get("weighted_loss", 0.):.6f} '
-                          f'pairs={contrast.get("active_pairs", 0)}/{contrast.get("pairs", 0)} '
-                          f'neg={contrast.get("negative_comparisons", 0)} ETA={eta:.1f}m', flush=True)
+                          f'encoded={stats.get("encoded_views", 0)} ETA={eta:.1f}m', flush=True)
                 paused = (root / "STOP_REQUESTED").exists()
                 if paused or state["cursor"] % cfg["checkpoint_interval"] == 0:
                     state["status"] = "paused" if paused else "training"
@@ -161,9 +154,7 @@ def run_stage(cfg, run, rows, *, model_factory=load_model, step_fn=train_step,
             atomic_json(run / f"epoch_{epoch+1}.json", dict(epoch=epoch+1,
                 loss=totals["loss"]/totals["updates"], ce=totals["ce"]/totals["updates"],
                 updates=int(totals["updates"]),
-                contrastive=totals['contrastive']/totals['updates'],
-                contrastive_active_pairs=int(totals['contrastive_pairs']),
-                contrastive_negative_comparisons=int(totals['contrastive_negatives']),
+                training_recipe_base='5.1', contrastive_enabled=False,
                 pcl_noise=totals['pcl_noise']/totals['updates'], pcl_platform=totals['pcl_platform']/totals['updates'],
                 evaluation="None; final stage has no untrained Dev selection set"))
             state.update(epoch=epoch+1, next_step=0, totals={})

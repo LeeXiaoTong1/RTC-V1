@@ -1,20 +1,19 @@
-"""V5.2 recipe plus input-adaptive fusion; initialize from a completed final.pt."""
+"""V5.1 recipe plus input-adaptive fusion; continue the verified V5.1 final.pt."""
 import argparse
 import ast
 import copy
 import math
 from pathlib import Path
 from .common import ROOT, RECIPE, digest, read_json, schema_for
-from .parent import FINAL_KIND, DEFAULT_MARKER, continuation_rates, is_final_parent
+from .parent import FINAL_KIND, DEFAULT_PARENT, continuation_rates, is_final_parent
 from w2v_v318.config import runtime_versions
-from w2v_v52.ce import CE_WEIGHTS
-from w2v_v52.contrastive import configuration as contrastive_configuration
+from w2v_v3191.ce import CE_WEIGHTS
 
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--parent-run", help="Completed V5.2 (or explicit V5/V5.1) run: verified final.pt. "
-                   "Default: exp/" + DEFAULT_MARKER + "; explicit V3.18.9 uses best for controls")
+    p.add_argument("--parent-run", help="Completed V5/V5.1 run: verified final.pt. "
+                   "Default: exp/" + DEFAULT_PARENT + "; explicit V3.18.9 uses best for controls")
     p.add_argument("--resume", help="Existing V5.3 run; uses its recorded settings")
     p.add_argument("--phase", choices=("all", "screen", "final"), default="all",
                    help="V5 parent: all/final continue directly; legacy parent: screen then final")
@@ -32,13 +31,8 @@ def parser():
                    help="Inherit V5 parent receiver context; legacy default 2 seconds")
     p.add_argument("--screen-sources-per-group", type=int, default=64)
     p.add_argument("--checkpoint-interval", type=int, default=100)
-    p.add_argument("--contrastive-weight", type=float, default=None)
-    p.add_argument("--contrastive-temperature", type=float, default=None)
-    p.add_argument("--contrastive-ramp-updates", type=int, default=None)
-    p.add_argument("--contrastive-bank-per-group", type=int, default=None)
-    p.add_argument("--contrastive-sources-per-group", type=int, default=None)
     p.add_argument("--fusion-mode", choices=("dynamic", "static"), default="dynamic",
-                   help="Static is the matched V5.2 control; same data/loss/budget")
+                   help="Static is the matched V5.1 control; same data/loss/budget")
     p.add_argument("--fusion-width", type=int, default=128)
     p.add_argument("--seed", type=int, default=50001)
     p.add_argument("--submit-best", action="store_true", help="Export the final locked single model")
@@ -51,7 +45,6 @@ def parser():
 
 
 def validate(args, argv=None):
-    contrastive_configuration({k: v for k,v in vars(args).items() if v is not None})
     if args.fusion_width < 1:
         raise ValueError("Positive conditioner width required")
     if args.resume and args.parent_run:
@@ -104,7 +97,11 @@ def code_inventory(root=ROOT):
 
 
 def training_configuration(old, origin, args):
+    if old.get('version') not in ('5', '3.18.9'):
+        raise ValueError('Initialize this V5.3 from V5.1 final, not V5.2 or an earlier V5.3 recipe')
     final_parent = origin.get("kind") == FINAL_KIND
+    if final_parent and old.get('classification_ce_weights') != CE_WEIGHTS:
+        raise ValueError('V5.1 parent must use Online25/CleanRTC25/Noisy50; cannot silently change its objective')
     if final_parent and args.phase == "screen":
         raise ValueError("V5 final already trained on Dev; screening on trained Dev is forbidden")
     if not final_parent and args.phase == "final":
@@ -135,28 +132,18 @@ def training_configuration(old, origin, args):
         v5_tail_snapshots=4, v5_tail_start=.75,
         selection="0.3 Clean Macro-F1 + 0.7 pooled Noisy Macro-F1; fixed threshold 0.5",
         runtime_versions=runtime_versions())
-    if old.get('version') == '5.2':
-        from w2v_v52.common import schema_for as parent_schema
-        parent_schema(old)
-        # The V5.2 coefficient was ALREADY reduced; inheritance is not a second reduction.
-        for key in ('v52_parent_pcl_weights', 'v52_noise_pcl_scale',
-                    'pcl_noise_weight', 'pcl_platform_weight'):
-            cfg[key] = copy.deepcopy(old[key])
-    else:
-        cfg['v52_parent_pcl_weights'] = dict(noise=float(old.get('pcl_noise_weight', .15)),
-                                            platform=float(old.get('pcl_platform_weight', .045)))
-        cfg['v52_noise_pcl_scale'] = .2
-        cfg['pcl_noise_weight'] = cfg['v52_parent_pcl_weights']['noise'] * .2
-        cfg['pcl_platform_weight'] = cfg['v52_parent_pcl_weights']['platform']
-    for key, default in dict(contrastive_weight=.01, contrastive_temperature=.2,
-                contrastive_ramp_updates=100, contrastive_bank_per_group=32,
-                contrastive_sources_per_group=3).items():
-        value = getattr(args, key)
-        cfg[key] = value if value is not None else old.get(key, default)
+    for key in list(cfg):
+        if key.startswith(('v52_', 'contrastive_')):
+            cfg.pop(key)
+    cfg['training_recipe_base'] = '5.1'
+    cfg['contrastive_weight'] = 0.
+    cfg['v53_parent_pcl_weights'] = dict(noise=float(old.get('pcl_noise_weight', .15)),
+                                        platform=float(old.get('pcl_platform_weight', .045)))
+    cfg['pcl_noise_weight'] = cfg['v53_parent_pcl_weights']['noise']
+    cfg['pcl_platform_weight'] = cfg['v53_parent_pcl_weights']['platform']
     cfg.update(adaptive_fusion_mode=args.fusion_mode, adaptive_fusion_width=args.fusion_width,
                adaptive_fusion_seed=(args.seed + 3000) % 2**32,
                adaptive_fusion_condition='frozen_frontend_masked_mean_std_v1')
-    cfg['contrastive_policy'] = 'A_only_same_source_online_noisy_opposite_class_same_language_v1'
     from w2v_v5.processing import policy
     cfg["v5_input"] = copy.deepcopy(old["v5_input"]) if final_parent else policy()
     if final_parent:
@@ -208,9 +195,7 @@ def compact_configuration(cfg):
             'adaptive_fusion_mode', 'adaptive_fusion_width', 'adaptive_fusion_seed',
             'adaptive_fusion_condition', 'retained_lora_layers', 'lora_layers',
             'classification_ce_weights', 'pcl_noise_weight', 'pcl_platform_weight',
-            'v52_parent_pcl_weights', 'v52_noise_pcl_scale', 'consistency',
-            'contrastive_weight', 'contrastive_temperature', 'contrastive_ramp_updates',
-            'contrastive_bank_per_group', 'contrastive_sources_per_group', 'contrastive_policy',
+            'v53_parent_pcl_weights', 'training_recipe_base', 'consistency', 'contrastive_weight',
             'v5_input', 'v5_context_seconds', 'v5_pcl_scope', 'selection',
             'microbatch', 'frame_budget', 'stream_sources', 'source_draws_per_stream',
             'fusion_lr', 'layer_mix_lr', 'lora_lr', 'head_lr', 'lr_floor',

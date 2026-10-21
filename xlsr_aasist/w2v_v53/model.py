@@ -30,7 +30,7 @@ def parent_anchor(model, values):
 
 
 def optimizer_for(model, cfg):
-    """Preserve V5.2 rates/groups while excluding the static control's frozen gate."""
+    """Preserve V5.1 rates/groups while excluding the static control's frozen gate."""
     model.set_phase(True)
     depth = len(model.encoder.layers)
     adapters = {'early': [], 'middle': [], 'late': []}
@@ -80,6 +80,11 @@ class Detector(ParentDetector):
             padded_frames=len(waves)*max(frames))
         parameter = next(self.frontend.parameters())
         device, dtype = parameter.device, parameter.dtype
+        # Validate worker waveforms before transfer, avoiding one GPU-to-CPU
+        # synchronization per exact-length frontend group.
+        host_waves = [torch.as_tensor(w, dtype=torch.float32) for w in waves]
+        for wave in host_waves:
+            require_finite(wave, 'waveform')
         amp = torch.autocast('cuda', dtype=torch.bfloat16) if device.type == 'cuda' else nullcontext()
         with amp:
             groups, sequences = {}, [None]*len(waves)
@@ -89,8 +94,7 @@ class Detector(ParentDetector):
                 for n,indices in groups.items():
                     if n < 3920:
                         raise ValueError('Waveform must have >=12 Omni frames; extend short audio explicitly')
-                    x = torch.stack([torch.as_tensor(waves[i], device=device, dtype=torch.float32) for i in indices])
-                    require_finite(x, 'waveform')
+                    x = torch.stack([host_waves[i] for i in indices]).to(device)
                     x = F.layer_norm(x, (n,)).to(dtype)
                     y,layout = self.frontend(x, self.layout_factory(x.shape, seq_lens=[n]*len(indices), device=device))
                     for j,i in enumerate(indices):

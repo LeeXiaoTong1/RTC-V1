@@ -64,9 +64,9 @@ def configuration(stage='screen'):
         adaptive_fusion_mode='dynamic', adaptive_fusion_width=8, adaptive_fusion_seed=53001,
         adaptive_fusion_condition='frozen_frontend_masked_mean_std_v1',
         checkpoint_interval=2, workers=0, device='cpu', backend_precision='fp32',
-        classification_ce_weights=dict(online=.6, clean_rtc=.2, noisy=.2),
-        v5_input=policy(), v52_noise_pcl_scale=.2,
-        v52_parent_pcl_weights=dict(noise=.15, platform=.045), pcl_noise_weight=.03, pcl_platform_weight=.045)
+        classification_ce_weights=dict(online=.25, clean_rtc=.25, noisy=.5),
+        v5_input=policy(), training_recipe_base='5.1', contrastive_weight=0.,
+        v53_parent_pcl_weights=dict(noise=.15, platform=.045), pcl_noise_weight=.15, pcl_platform_weight=.045)
 
 
 def initialize_tiny(model, cfg):
@@ -81,7 +81,7 @@ def initialize_tiny(model, cfg):
 def optimization_step(model, optimizer, ticket, cfg, audit=False):
     if cfg.get('_candidate_diagnostics') is not False:
         raise AssertionError('V5.3 re-enabled unused receiver candidate scoring')
-    if cfg['classification_ce_weights'] != dict(online=.6, clean_rtc=.2, noisy=.2):
+    if cfg['classification_ce_weights'] != dict(online=.25, clean_rtc=.25, noisy=.5):
         raise AssertionError('V5.3 CE allocation changed')
     # Exercise Python, NumPy and Torch RNG preservation plus optimizer momentum.
     x = torch.rand(1, 2) + np.random.random() * .1 + random.random() * .1
@@ -90,11 +90,6 @@ def optimization_step(model, optimizer, ticket, cfg, audit=False):
     loss = (model(x) - target).square().mean()
     loss.backward()
     optimizer.step()
-    from w2v_v52.contrastive import bank_for, next_bank
-    source = str(ticket)
-    entry = dict(source=source, language='en', label=ticket[1] % 2,
-        view='official', split='train', feature=model.head.weight.flatten().detach())
-    model._v52_contrastive_bank = next_bank(bank_for(model, cfg), [entry], cfg)
     return dict(loss=float(loss.detach()), classification_loss=float(loss.detach()),
         amp=dict(skipped_update=False))
 
@@ -152,10 +147,7 @@ class StageLifecycleTests(unittest.TestCase):
             self.assertEqual(resumed['cursor'], 16)
             self.assertEqual(resumed['tail_count'], 4)
             self.assert_models_equal(reference['model'], resumed['model'])
-            a, b = reference['contrastive_bank']['entries'], resumed['contrastive_bank']['entries']
-            self.assertEqual([r['source'] for r in a], [r['source'] for r in b])
-            for x, y in zip(a, b):
-                torch.testing.assert_close(x['feature'], y['feature'], rtol=0, atol=0)
+            self.assertNotIn('contrastive_bank', resumed)
             self.assert_models_equal(reference['tail_model'], resumed['tail_model'])
             self.assertTrue(torch.equal(resumed['model']['encoder.prefix.lora_a'],
                 snapshots[0]['encoder.prefix.lora_a']))
@@ -180,10 +172,7 @@ class StageLifecycleTests(unittest.TestCase):
             self.assertEqual(saved['cursor'], 4)
             _, resumed = self.run_tiny(root/'crash')
             self.assert_models_equal(reference['model'], resumed['model'])
-            a, b = reference['contrastive_bank']['entries'], resumed['contrastive_bank']['entries']
-            self.assertEqual([r['source'] for r in a], [r['source'] for r in b])
-            for x, y in zip(a, b):
-                torch.testing.assert_close(x['feature'], y['feature'], rtol=0, atol=0)
+            self.assertNotIn('contrastive_bank', resumed)
             self.assert_models_equal(reference['tail_model'], resumed['tail_model'])
             lines = [json.loads(s) for s in (root/'crash'/'stage'/'steps.jsonl').read_text().splitlines()]
             self.assertEqual([r['update'] for r in lines], list(range(1, 17)))

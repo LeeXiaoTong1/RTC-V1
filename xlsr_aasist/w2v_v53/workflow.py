@@ -17,7 +17,7 @@ from w2v_v5.selection import score, choose_candidate
 from w2v_v5.inference import infer
 from w2v_v5.weights import average_states, invariant_keys
 from .train import run_stage, initialize, make_plan
-from w2v_v52.resources import audit_training
+from w2v_v5.resources import audit_training
 from .model import load_model, parent_anchor
 from .parent import metadata, load as load_parent, is_final_parent, locked_weights
 from w2v_v3184.records import dev_partition
@@ -269,7 +269,7 @@ def final_fit(root, cfg):
         final_cfg["window_resource_audit"] = audit_training(train, [], final_cfg)
         plan = make_plan(train, final_cfg)
         print(f'[V5.3 final budget] {plan.steps} updates/epoch; all canonical sources covered; '
-              'loss mass stays Online60/CleanRTC20/Noisy20', flush=True)
+              'loss mass stays Online25/CleanRTC25/Noisy50', flush=True)
         atomic_json(root / "final_data_audit.json", dict(manifests=audit, budget=coverage))
         persist_stage(stage, final_cfg, train, registry)
     final_cfg, train = read_stage(stage)
@@ -347,9 +347,9 @@ def main():
             atomic_json(root/("continuation_data_audit.json" if is_final_parent(cfg) else "screen_data_audit.json"), audit)
         (ROOT/"exp"/".latest_v53_run").write_text(str(root)+"\n", encoding="utf-8")
         print("V5.3_RUN="+str(root), flush=True)
-        print('[V5.3 objective] inherited V5.2 CE Online60/CleanRTC20/Noisy20; '
+        print('[V5.3 objective] inherited V5.1 CE Online25/CleanRTC25/Noisy50; '
               f'PCL noise={cfg["pcl_noise_weight"]:.8g}, platform={cfg["pcl_platform_weight"]:.8g}; '
-              f'contrast={cfg["contrastive_weight"]:.8g}; fusion={cfg["adaptive_fusion_mode"]}', flush=True)
+              f'contrast=OFF; fusion={cfg["adaptive_fusion_mode"]}', flush=True)
         if is_final_parent(cfg):
             origin = cfg["parent_init"]
             print(f'[V5.3 parent] {origin["checkpoint"]} | {origin["tag"]} | '

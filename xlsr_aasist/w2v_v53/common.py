@@ -1,14 +1,13 @@
 """Version-isolated artifacts; no changes to any historical run."""
 from w2v_v3189.common import *
 
-RECIPE = "v53_input_adaptive_layer_fusion_v1"
+RECIPE = "v53_v51_input_adaptive_layer_fusion_v2"
 
 
 def schema_for(cfg):
-    from w2v_v52.ce import classification_weights
-    from w2v_v52.contrastive import configuration
+    from w2v_v3191.ce import classification_weights
     if cfg.get("version") != "5.3" or cfg.get("recipe") != RECIPE:
-        raise ValueError("Expected a V5.3 run; older runs are initialization only")
+        raise ValueError("Expected V5.3 on the V5.1 recipe; old V5.2-based V5.3 runs cannot resume here")
     if cfg.get("v5_stage") not in ("screen", "final"):
         raise ValueError("Unknown V5.3 data stage")
     if (cfg.get("parent_init", {}).get("kind") == "v5_submitted_final"
@@ -19,14 +18,15 @@ def schema_for(cfg):
     if cfg.get("experiment") != "E0" or cfg.get("robust_arm") != "baseline":
         raise ValueError("V5.3 uses paired CE, without meta adaptation or candidate mining")
     classification_weights(cfg)
-    configuration(cfg)
-    if cfg.get('v52_noise_pcl_scale') != .2:
-        raise ValueError('V5.3 scales the parent noise PCL coefficient by 0.2')
-    original = cfg['v52_parent_pcl_weights']
+    if cfg.get('training_recipe_base') != '5.1' or cfg.get('contrastive_weight') != 0.:
+        raise ValueError('V5.3 retains V5.1 objectives without V5.2 contrastive learning')
+    if any(key.startswith('v52_') for key in cfg):
+        raise ValueError('V5.2 PCL scaling cannot enter the V5.1 recipe')
+    original = cfg['v53_parent_pcl_weights']
     import math
     if any(not math.isfinite(value) or value < 0 for value in original.values()):
         raise ValueError('Parent PCL coefficients must be finite and nonnegative')
-    if (cfg.get('pcl_noise_weight') != original['noise'] * .2
+    if (cfg.get('pcl_noise_weight') != original['noise']
             or cfg.get('pcl_platform_weight') != original['platform']):
         raise ValueError('PCL coefficients disagree with the recorded parent weights')
     if cfg.get('adaptive_fusion_mode') not in ('dynamic', 'static'):
@@ -37,4 +37,4 @@ def schema_for(cfg):
         raise ValueError('Conditioner seed must be uint32')
     if cfg.get('adaptive_fusion_condition') != 'frozen_frontend_masked_mean_std_v1':
         raise ValueError('Unknown acoustic condition; checkpoint geometry cannot change')
-    return "rtc_v53_omni_adaptive_layer_fusion_v1"
+    return "rtc_v53_v51_omni_adaptive_layer_fusion_v2"

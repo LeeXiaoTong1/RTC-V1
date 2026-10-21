@@ -24,9 +24,10 @@ def fixture(root):
                device="cpu", workers=0, seed=510,
                adaptive_fusion_mode='dynamic', adaptive_fusion_width=8, adaptive_fusion_seed=53001,
                adaptive_fusion_condition='frozen_frontend_masked_mean_std_v1',
-               classification_ce_weights=dict(online=.6, clean_rtc=.2, noisy=.2),
-               v52_noise_pcl_scale=.2, v52_parent_pcl_weights=dict(noise=.15, platform=.045),
-               pcl_noise_weight=.03, pcl_platform_weight=.045,
+               classification_ce_weights=dict(online=.25, clean_rtc=.25, noisy=.5),
+               training_recipe_base='5.1', contrastive_weight=0.,
+               v53_parent_pcl_weights=dict(noise=.15, platform=.045),
+               pcl_noise_weight=.15, pcl_platform_weight=.045,
                v5_input=dict(policy="identity", short_seconds=0.))
     recipe = dict(input=cfg["v5_input"])
     atomic_json(run / "recipe_lock.json", recipe)

@@ -168,6 +168,32 @@ class FusionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'beyond'):
             parent_anchor(model, bad)
 
+    def test_reader_rng_optimization_preserves_dropout_outputs_gradients_and_rng(self):
+        from torch.utils.checkpoint import checkpoint as original_checkpoint
+        cfg = dict(configuration(), lora_dropout=.2, fusion_checkpointing=True)
+        _, model = transferred(cfg)
+        model.train()
+        with torch.no_grad():
+            model.fusion.conditioner[-1].weight.normal_(0., .1)
+        reference = copy.deepcopy(model)
+        waves = [torch.randn(4240), torch.randn(5200)]
+        rng = torch.get_rng_state()
+        def legacy_reader(function, *args, **kwargs):
+            kwargs['preserve_rng_state'] = True
+            return original_checkpoint(function, *args, **kwargs)
+        with patch('w2v_v53.fusion.checkpoint', side_effect=legacy_reader):
+            expected = reference(waves)
+            expected.square().mean().backward()
+        expected_rng = torch.get_rng_state()
+        torch.set_rng_state(rng)
+        actual = model(waves)
+        actual.square().mean().backward()
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        self.assertTrue(torch.equal(torch.get_rng_state(), expected_rng))
+        for (name,p), (_,other) in zip(model.named_parameters(), reference.named_parameters()):
+            if p.grad is not None:
+                torch.testing.assert_close(p.grad,other.grad,rtol=0,atol=0,msg=name)
+
 
 if __name__ == '__main__':
     unittest.main()

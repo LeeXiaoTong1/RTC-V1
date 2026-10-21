@@ -1,4 +1,4 @@
-"""Initialize from an exact, verified V5.2/V5 final; never silently use last.pt."""
+"""Initialize from the verified V5.1 final; never silently use a newer run."""
 import copy
 from pathlib import Path
 
@@ -7,7 +7,7 @@ from w2v_v3191 import parent as legacy
 from w2v_v5.processing import validate_policy
 from w2v_v31810.identity import verify_registry
 
-DEFAULT_MARKER = ".latest_v52_run"
+DEFAULT_PARENT = "w2v_v5_20261021_075307_d991"
 FINAL_KIND = "v5_submitted_final"
 
 
@@ -17,12 +17,10 @@ def is_final_parent(cfg):
 
 def parent_delivery(run):
     version = read_json(Path(run) / 'config.json').get('version')
-    if version == '5.2':
-        from w2v_v52 import delivery
-    elif version == '5':
+    if version == '5':
         from w2v_v5 import delivery
     else:
-        raise ValueError('Expected a completed V5.2 or V5/V5.1 parent, or explicit V3.18.9 best')
+        raise ValueError('Expected a completed V5/V5.1 final, or explicit V3.18.9 best; V5.2 is not a V5.3 parent')
     return delivery
 
 
@@ -82,16 +80,13 @@ def metadata(value=None):
     if value:
         run = Path(value).expanduser().resolve()
     else:
-        marker = ROOT / 'exp' / DEFAULT_MARKER
-        if not marker.is_file() or not marker.read_text(encoding='utf-8').strip():
-            raise FileNotFoundError('No recent V5.2 run record. Pass --parent-run /path/to/completed_V5.2_run')
-        target = Path(marker.read_text(encoding='utf-8').strip()).expanduser()
-        run = (target if target.is_absolute() else ROOT / target).resolve()
+        run = (ROOT / 'exp' / DEFAULT_PARENT).resolve()
+        if not run.is_dir():
+            raise FileNotFoundError('V5.1 parent not found: ' + str(run) +
+                                    '; pass --parent-run /path/to/completed_V5.1_run')
     if run.is_file() or run.name == "final":
         raise ValueError("Pass the V5 run directory containing final.pt, not final/last.pt")
     cfg = read_json(run / "config.json")
-    if not value and cfg.get('version') != '5.2':
-        raise ValueError('Default parent marker must point to V5.2; use --parent-run for another parent')
     if cfg.get("version") == "3.18.9":
         return legacy.metadata(str(run))
     # V5.1 uses the V5 on-disk schema. Upload failure does not undo completion.

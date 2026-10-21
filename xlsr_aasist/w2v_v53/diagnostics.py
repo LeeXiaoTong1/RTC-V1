@@ -4,7 +4,7 @@ import torch
 from .common import read_json, atomic_json, fingerprint, capture_rng, restore_rng, seed_all
 from .parent import is_final_parent
 from .train import make_plan
-from w2v_v52.data import Waves, TicketSampler, loader, close, microbatches
+from w2v_v5.data import Waves, TicketSampler, loader, close, microbatches
 
 
 def fixed_train_weights(model, cfg, root, checkpoint_identity):
@@ -31,15 +31,15 @@ def fixed_train_weights(model, cfg, root, checkpoint_identity):
         with torch.inference_mode():
             for units in batches:
                 # Measure classification views only; Train references and Dev
-                # never choose the fixed mixture. Reuse the real V5.2 wave path.
+                # never choose the fixed mixture. Reuse the real V5.1 wave path.
                 views = []
                 for unit in units:
                     row = unit[0]
-                    views.append([dict(row, pcl_refs={}, pcl_pairs={}, pcl_scheduled=(), contrastive_enabled=False)])
+                    views.append([dict(row, pcl_refs={}, pcl_pairs={})])
                     if row.get('role') == 'noisy':
                         ref = row.get('pcl_refs', {}).get('clean')
                         if ref is not None:
-                            views.append([dict(ref, pcl_refs={}, pcl_pairs={}, pcl_scheduled=(), contrastive_enabled=False)])
+                            views.append([dict(ref, pcl_refs={}, pcl_pairs={})])
                 for group in microbatches(views, cfg['microbatch'], cfg['frame_budget']):
                     model.encode([u[0]['wave'] for u in group])
         stats = model.fusion.observations()
