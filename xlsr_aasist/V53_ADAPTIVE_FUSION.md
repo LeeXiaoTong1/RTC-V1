@@ -92,6 +92,45 @@ bash run_w2v_v53.sh --resume "$(cat exp/.latest_v53_run)" \
 bash upload_w2v_v53.sh --run "$(cat exp/.latest_v53_run)"
 ```
 
+## 中断续训与困难样本记录
+
+一次 Ctrl+C 请求在当前更新提交后保存。等 `V5.3_PAUSED=...` 或返回提示符后，再更新本分支并执行上面的 `--resume` 命令；不要重新指定 `--parent-run`，也不要额外增加 `--epochs`。日志中的 `next_step` 以磁盘 checkpoint 为准，可能略晚于终端最后打印的第 461 步。若强制杀进程，恢复到最近一次已保存的更新，未保存部分会重做。
+
+启动器现在加载独立的 `w2v_v53_observe` 只读观察器。原 `w2v_v53` 模型、训练、损失代码以及已有 config、recipe lock 和 checkpoint 不改写，因此当前 V5.3 可以直接续训。观察器自身的代码指纹保存在阶段目录的 `hard_examples_policy.json`，并校验它所依赖的分类输出顺序。历史版本和 V5.2 的训练不受影响。
+
+观察器读取本来已经计算的分类 logits，不增加 Omni/AASIST 前向或反向，不改变数据抽样、dropout、梯度、学习率、优化器或随机状态。每步只额外搬运很小的分类结果到 CPU；日志和汇总仍有少量开销，CUDA 实际耗时尚未测量。
+
+每个已提交更新记录所有分类视图的分组统计，并按 **加权 CE 超出标签平滑理论下限的贡献** 排序，保存最多 8 条“判错或单样本 CE 超出下限至少 0.05”的视图。包括：
+
+- 来源 ID、原音频路径、Train/Dev 来源、语言、真假标签、视图类型和时长；
+- P(fake)、正确类概率、未平滑 CE、平滑 CE、该样本在整步 CE 中的权重及超额贡献；
+- 基础增强、Noisy/RTC 配方及可用的种子、SNR、编解码和活动门控摘要；
+- 对同源模拟配对，同时记录 Clean-RTC/Noisy 的预测，区分只 Noisy 错、只 Clean 错、两者都错、两者都正确；
+- 区分错分、判对但置信度不足、判对但过度自信受到标签平滑惩罚。
+
+这些是训练时已有 dropout 下的观察，不是重新执行一次确定性评估。Online 独立分类来源没有凭空补出同源 Noisy；纯 PCL 参考没有分类输出，不计入分类困难样本。模拟视图的路径指向原始 Offline 文件，实际处理条件另存于配方；不保存或上传音频。
+
+输出位于当前运行的 `final/`（历史 screening 路线则为 `screen/`）：
+
+| 文件 | 内容 |
+|---|---|
+| `hard_examples.jsonl` | 每步完整观察；超过 8 个困难候选时明确记录省略数量及已记录样本覆盖的超额 CE 比例 |
+| `hard_examples_summary.json` | 全部已观察分类视图的组统计、最差更新、最多 100 个来源/视图组及其最差实例，定期和停止时刷新 |
+| `hard_examples_policy.json` | 观察器代码、开始位置、阈值与恢复位置 |
+
+汇总纳入原报告打包；完整 JSONL 若超过原报告大小限制，会列为跳过项，但保留在服务器。来源出现次数与配对结果只针对实际记录的困难候选，不能当成全量来源错误率。
+
+**从本次更新后才开始记录具体样本，不能追溯之前第 121、381 等步的具体音频。** 中断续训会按 checkpoint 游标清除未保存的尾部观察，AMP 重试不重复记为训练步。
+
+另开一个终端可以查看当前最困难的 10 个来源/视图组：
+
+```bash
+cd /home/ubuntu/LXT/RTC-w2v-improved/xlsr_aasist
+python -m w2v_v53_observe.summary --run "$(cat exp/.latest_v53_run)" --top 10
+```
+
+终端的 `[V5.3 hard]` 行直接提示高损失更新的错误数、最主要贡献样本及 Clean/Noisy 配对情况。统计同时核对整步 CE 与每个分类组的损失/正确数；若对应关系不一致，明确报错并隐藏样本身份，避免错误归因。
+
 ## 诊断与对照
 
 每 200 步记录门控权重的跨输入标准差、相对共享权重的变化和参数更新量。第一步前向中权重差异为零是预期结果，参数更新后才会出现输入差异。权重变化不能证明学到了噪声适配，更不能代替实际 Noisy 指标。
@@ -103,6 +142,7 @@ bash upload_w2v_v53.sh --run "$(cat exp/.latest_v53_run)"
 ```bash
 python -m unittest discover -s w2v_v53 -t . -p 'test_*.py'
 python -m unittest discover -s w2v_v5 -t . -p 'test_*.py'
+python -m unittest discover -s w2v_v53_observe -t . -p 'test_*.py'
 ```
 
 覆盖真实 AASIST 与小型 Omni 形状编码器、零初始化迁移、60 层流式融合、启用 dropout 的重计算梯度与随机状态一致性、与 V5.1 完整一步优化的损失/参数/Adam 状态一致性、AMP 失败回滚、暂停续训、最终权重平均、导出和上传重试。完整 3B CUDA 训练与竞赛效果需在服务器验证。

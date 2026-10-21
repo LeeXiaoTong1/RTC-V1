@@ -16,4 +16,4 @@ printf '%s\n' "$LOG" > exp/.latest_v53_log
 printf 'LOG=%s\n' "$LOG"
 # The foreground workflow saves a committed boundary on Ctrl+C. tee must keep
 # the log pipe open while that handler writes the final checkpoint.
-python -u -m w2v_v53.workflow "$@" 2>&1 | tee -i "$LOG"
+python -u -m w2v_v53_observe "$@" 2>&1 | tee -i "$LOG"
