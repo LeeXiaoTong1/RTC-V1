@@ -147,6 +147,8 @@ def training_configuration(old, origin, args):
         repair_teacher_confidence=.9, repair_teacher_advantage=.02,
         repair_min_frames=4, repair_lr=1e-4, repair_gate_lr=5e-5,
         repair_scale_sources_per_group=128, repair_scale_recipes=2,
+        repair_probe_sources_per_group=16, repair_min_group_coverage=.05,
+        repair_audit_revision=2,
         repair_warmup_max=200, repair_warmup_fraction=.1,
         repair_feature_ramp=50, repair_kd_ramp=200,
         pcl_variance_reference_weight=max(cfg['v54_parent_pcl_weights'].values()),
@@ -215,6 +217,7 @@ def compact_configuration(cfg):
              'repair_lr', 'repair_gate_lr', 'repair_warmup_max', 'repair_warmup_fraction',
              'repair_feature_ramp', 'repair_kd_ramp', 'repair_scale_sources_per_group',
              'repair_scale_recipes', 'pcl_variance_reference_weight', 'repair_objective', 'lora_dropout')
+    keys += ('repair_probe_sources_per_group','repair_min_group_coverage','repair_audit_revision')
     parent = cfg.get('parent_init', {})
     return dict(settings={k: cfg[k] for k in keys if k in cfg},
         parent={k: parent[k] for k in ('version', 'kind', 'run', 'checkpoint', 'checkpoint_sha256', 'tag') if k in parent},

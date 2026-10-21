@@ -113,20 +113,48 @@ def final_fit(root, cfg):
     _, parent, _, _ = load_parent(cfg["parent_init"]["run"], cfg["parent_init"])
     trained = state["tail_model"] if lock["weights"]["source"] == "tail" else state["model"]
     alpha = lock["weights"]["parent_weight"]
+    # Export invariants refer to permanent freezes, even in a tiny run ending
+    # during warmup; never infer them from a temporary training stage.
+    model.set_training_stage(True)
     merged = average_states([parent_anchor(model, parent["best_model"]), trained], [alpha, 1-alpha],
                             constant_keys=invariant_keys(model, trained))
     def repair_norms(values):
         return {part: float(torch.stack([v.float().square().sum() for name,v in values.items()
             if name.startswith('repair.'+part)]).sum().sqrt()) for part in ('out.', 'gate.')}
-    atomic_json(root/'export_repair_audit.json', dict(parent_weight=alpha,
+    export_audit = dict(parent_weight=alpha,
         trained=repair_norms(trained), exported=repair_norms(merged),
         includes_repair=True, frame_scale_equal=torch.equal(trained['repair.frame_scale'], merged['repair.frame_scale']),
-        note='Locked parameter averaging includes repair. Parameter norms are not quality metrics; nonlinear output may be attenuated.'))
+        note='Locked averaging includes repair; functional measurements below use the actual trained and reloaded exported weights.')
     tag = "final_" + lock["weights"]["name"]
     payload = dict(schema=schema_for(final_cfg), identity=fingerprint(final_cfg),
                    model=merged, tag=tag, recipe=lock)
     atomic_save(root/"final.pt", payload, cfg.get("free_reserve_bytes", 0))
     atomic_json(root/"final_config.json", final_cfg)
+    if final_cfg.get('repair_audit_revision',0) >= 2:
+        from .diagnostics import probe
+        apply_partial(model,trained)
+        trained_probe = probe(model,final_cfg,stage,'pair_probe_export_source')
+        # Read the real exported file, rather than just reusing the in-memory
+        # averaged dictionary that was intended to be saved.
+        reloaded = torch.load(root/'final.pt',map_location='cpu',weights_only=True)
+        if reloaded['identity'] != fingerprint(final_cfg):
+            raise ValueError('Export identity changed during reload')
+        apply_partial(model,reloaded['model'])
+        exported_probe = probe(model,final_cfg,stage,'pair_probe_exported')
+        by_source = {r['source']:r for r in trained_probe['records']}
+        differences = []
+        for row in exported_probe['records']:
+            old = by_source[row['source']]
+            differences.append(dict(source=row['source'],group=row['group'],
+                trained_correction_ratio=old['correction_ratio'],exported_correction_ratio=row['correction_ratio'],
+                fake_probability_change=row['noisy_fake_probability']-old['noisy_fake_probability'],
+                margin_change=row['noisy_margin']-old['noisy_margin'],
+                trained_correct=old['noisy_correct'],exported_correct=row['noisy_correct']))
+        export_audit.update(functional_probe_pairs=len(differences),functional_changes=differences,
+            strict_reloaded=True,scope='Fixed training pairs; reports averaging behavior, not unseen performance')
+    else:
+        export_audit.update(strict_reloaded=False,functional_probe_status='legacy configuration without audit revision 2')
+    atomic_json(root/'export_repair_audit.json',export_audit)
     atomic_json(root/"completed.json", dict(status="complete", version="5.4", selected=tag,
         checkpoint_sha256=digest(root/"final.pt"), final_config_sha256=digest(root/"final_config.json"),
         recipe_sha256=digest(root/"recipe_lock.json"), evaluation=None,

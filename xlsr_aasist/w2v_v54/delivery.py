@@ -218,7 +218,9 @@ def upload_submission(out, force=False):
 def _report_files(run):
     included, skipped, total = [], [], 0
     priority = {'run_summary.json', 'fusion_diagnostics.jsonl', 'parameter_inventory.json',
-                'pair_preflight.json', 'repair_summary.json', 'hard_examples_summary.json'}
+                'pair_preflight.json', 'repair_summary.json', 'hard_examples_summary.json',
+                'pair_mechanism_initial.json','pair_probe_export_source.json',
+                'pair_probe_exported.json','export_repair_audit.json','training_profile.json','runtime_smoke.json'}
     for path in sorted(run.rglob("*"), key=lambda p: (p.name not in priority, str(p))):
         relative = path.relative_to(run)
         if (not path.is_file() or path.suffix not in (".json", ".jsonl", ".txt", ".log")

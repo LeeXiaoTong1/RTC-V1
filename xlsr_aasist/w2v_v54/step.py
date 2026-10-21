@@ -45,6 +45,8 @@ def _train_step(model, optimizer, units, cfg, alpha=0., beta=1., joint=True, aud
     runtime = dict(cfg, current_update=int(getattr(optimizer, '_v3189_joint_update',
                                                  cfg.get('current_update', 1))))
     runtime['_repair_warm_steps'] = int(getattr(optimizer, '_v54_warm_steps', cfg['repair_warmup_max']))
+    runtime['_repair_total_updates'] = int(getattr(optimizer, '_v54_total_updates',runtime['_repair_warm_steps']+cfg['repair_kd_ramp']))
+    runtime['_repair_gradient_audit'] = audit
     scaler = scaler_for(optimizer, runtime)
     initial_scaler = copy.deepcopy(scaler.state_dict())
     scale = float(scaler.get_scale())
@@ -56,6 +58,11 @@ def _train_step(model, optimizer, units, cfg, alpha=0., beta=1., joint=True, aud
         encoded += a['encoded_views']
         b = side_pass(model, sides['B'], runtime, scaler, backward=True, backward_factor=.5)
         encoded += b['encoded_views']
+        # Validate all loss/source attribution BEFORE Adam changes weights.
+        # A diagnostic failure must not leave an unrecorded parameter update.
+        result = _summary(units, a, b, 1.)
+        from .telemetry import collect
+        collect(a, b, runtime, result)
         scaler.unscale_(optimizer)
         norms = module_norms(optimizer, transaction, [p.grad for _,p in transaction.parameters]) if audit else {}
         parameters = [p for _,p in transaction.parameters if p.grad is not None]
@@ -86,10 +93,8 @@ def _train_step(model, optimizer, units, cfg, alpha=0., beta=1., joint=True, aud
     scaler.step(optimizer)
     scaler.update()
     optimizer.zero_grad(set_to_none=True)
-    result = _summary(units, a, b, 1.)
-    from .telemetry import collect
-    collect(a, b, runtime, result)
     result['repair_stage'] = model.repair_stage
+    result['repair_gradient_audit'] = a.get('repair_gradient_audit')
     result.update(views=a['views']+b['views'], classification_source_views=len(units),
         classification_ce_weights=ce_weights,
         paired_classification_views=a['paired_classification_views']+b['paired_classification_views'],
@@ -115,12 +120,15 @@ def _train_step(model, optimizer, units, cfg, alpha=0., beta=1., joint=True, aud
 
 
 def train_step(model, optimizer, units, cfg, alpha=0., beta=1., joint=True, audit=False):
+    model._count_backend,model._backend_windows = True,0
     fusion = model.fusion
     fusion.reset_observations(enabled=audit)
     before = [p.detach().clone() for p in fusion.conditioner.parameters()] if audit else []
     repair_before = {k: p.detach().clone() for k, p in model.repair.named_parameters()} if audit else {}
     try:
         result = _train_step(model, optimizer, units, cfg, alpha, beta, joint, audit)
+        result['backend_windows'] = model._backend_windows
+        result['alignment_worker_seconds'] = sum(unit[0].get('repair_pair',{}).get('alignment_seconds',0.) for unit in units)
         if audit:
             with torch.no_grad():
                 change = sum((p.detach()-old).float().square().sum()
@@ -133,5 +141,6 @@ def train_step(model, optimizer, units, cfg, alpha=0., beta=1., joint=True, audi
                     for part in ('processor', 'gate')}
         return result
     finally:
+        model._count_backend = False
         # Never retain diagnostic tensors across updates or AMP retries.
         fusion.reset_observations()

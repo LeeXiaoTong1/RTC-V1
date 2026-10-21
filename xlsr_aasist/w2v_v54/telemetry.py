@@ -24,25 +24,45 @@ def collect(a, b, cfg, result):
     captured = a.pop('_ce_captured')+b.pop('_ce_captured')
     plan = a.pop('_ce_plan')+b.pop('_ce_plan')
     result['hard_examples'] = analyze(captured, plan, cfg, result)
+    result['hard_examples'].update(schema='v54_repaired_ce_observation_v1',
+        classifier_path='raw fusion -> repair/original interaction -> AASIST; actual CE forward only')
+    metadata={(item['source']['source_id'],item['view'],item['side'],item['source'].get('view_id')):item
+              for batch in plan for item in batch}
+    for example in result['hard_examples'].get('examples',[]):
+        item=metadata[example['source_id'],example['view'],example['meta_side'],example.get('view_id')]
+        augmentation=item['row'].get('augmentation',{})
+        # The historical bounded logger omitted list-valued noise identities.
+        # Preserve these small provenance lists explicitly for exact replay.
+        for key in ('noise_hashes','noise_original_sources'):
+            if key in augmentation:
+                example.setdefault('augmentation',{})[key]=list(augmentation[key])
     records = a['repair_losses']['records']
     cells = {}
     for record in records:
-        for key in (record['group'], 'origin/'+record['origin']):
+        from .diagnostics import buckets
+        for key in buckets(record):
             cell = cells.setdefault(key, Counter())
             cell.update(pairs=1, valid=int(record['valid']), kd_active=int(record['kd_active']),
                 valid_frames=record['valid_frames'], frames=record['frames'],
                 feature_loss_sum=record['feature_loss'], raw_feature_loss_sum=record['raw_feature_loss'],
                 kd_loss_sum=record['kd_loss'])
-            if not record['delay']['valid']:
-                cell['rejected_'+record['delay']['reason']] += 1
+            if not record['valid']:
+                cell['rejected_'+record.get('rejection_reason',record['delay']['reason'])] += 1
+            cell['kd_student_evaluated'] += int(record.get('kd_student_evaluated',False))
     result['repair_losses'] = dict(feature=.5*a['repair_losses']['feature'],
-        kd=.5*a['repair_losses']['kd'], cells={k: dict(v) for k, v in cells.items()})
+        kd=.5*a['repair_losses']['kd'], cells={k: dict(v) for k, v in cells.items()},
+        coefficients=dict(outer=.5,inner=2.,feature=records[0]['lambda_feature'] if records else 0.,
+                          kd=records[0]['lambda_kd'] if records else 0.),
+        gradient_audit=a.get('repair_gradient_audit'),pairs=records)
 
 
 def summarize(stage, maximum):
     from w2v_v53_observe.summary import summarize as hard_summary, events
     from .common import atomic_json
-    hard_summary(stage, maximum)
+    observed = hard_summary(stage, maximum,save=False)
+    observed.update(schema='v54_repaired_ce_observation_v1',
+        classifier_path='raw fusion -> repair/original interaction -> AASIST; actual CE forward only')
+    atomic_json(stage/'hard_examples_summary.json',observed)
     cells, losses, updates = {}, Counter(), 0
     for event in events(stage/'repair_diagnostics.jsonl', maximum):
         updates += 1
@@ -72,5 +92,8 @@ def summarize(stage, maximum):
         atomic_json(stage/'training_profile.json', dict(updates=len(samples),
             median_update_seconds=median(durations), p90_update_seconds=durations[min(len(durations)-1,int(.9*len(durations)))],
             median_encoded_views=median(e['encoded_views'] for e in samples),
+            median_backend_windows=median(e.get('backend_windows',0) for e in samples),
+            median_alignment_worker_seconds=median(e.get('alignment_worker_seconds',0.) for e in samples),
+            median_cycle_seconds=median(e['timing']['cycle_seconds'] for e in samples),
             peak_allocated_bytes=max(peaks) if peaks else None,
-            scope='First 50 updates after 50 joint settling updates; timer excludes data fetch; cycle_seconds in steps includes it'))
+            scope='First 50 updates after 50 joint settling updates; worker CPU times sum may overlap GPU; update excludes fetch; compare matched arms'))

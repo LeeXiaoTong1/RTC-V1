@@ -88,6 +88,7 @@ def _side_pass(model, units, cfg, scaler, *, backward, capture_logits=False, bac
     captured, captured_sources = [], []
     repair_telemetry, repair_records = [], []
     ce_captured, ce_plan = [], []
+    repair_gradient_audit = None
     for unit in units:
         first = unit[0]
         base = first.get('base_augmentation')
@@ -242,6 +243,10 @@ def _side_pass(model, units, cfg, scaler, *, backward, capture_logits=False, bac
         repair_telemetry.append(torch.stack((lf.detach(), ld.detach())))
         repair_records.extend(pair_records)
         loss = ce + sum(branches.values()) + regularizer + lf + ld
+        if (backward and side == 'A' and cfg.get('_repair_gradient_audit') and repair_gradient_audit is None
+                and any(r['valid'] for r in pair_records)):
+            from .gradient_audit import contributions
+            repair_gradient_audit = contributions(model,dict(ce=ce,feature=lf,kd=ld),sequences,backward_factor)
         require_finite(loss, 'classification and PCL loss')
         if backward:scaler.scale(loss * backward_factor).backward()
         aux_telemetry.extend(aux_items)
@@ -292,6 +297,7 @@ def _side_pass(model, units, cfg, scaler, *, backward, capture_logits=False, bac
     lf, ld = torch.stack(repair_telemetry).sum(0).cpu().tolist()
     result['loss'] += lf+ld
     result['repair_losses'] = dict(feature=lf, kd=ld, records=repair_records)
+    result['repair_gradient_audit'] = repair_gradient_audit
     result['_ce_captured'], result['_ce_plan'] = ce_captured, ce_plan
 
     if capture_logits:

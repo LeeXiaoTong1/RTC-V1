@@ -134,7 +134,9 @@ class DeliveryTests(unittest.TestCase):
             workflow.continuation_lock(run,cfg)
             final_cfg=dict(cfg,v5_recipe_lock_sha256=digest(run/'recipe_lock.json'))
             atomic_json(run/'final'/'config.json',final_cfg)
-            _,_,model,original=detector_fixture()
+            _,units,model,original=detector_fixture()
+            from .test_audit import fixed_pair_file
+            fixed_pair_file(model,final_cfg,units,run/'final'/'fixed_pairs.pt')
             model.repair.out.bias.data.fill_(.2)
             trained=partial_state(model)
             state=dict(status='complete',model=trained,tail_model=trained)
@@ -143,6 +145,11 @@ class DeliveryTests(unittest.TestCase):
             _,weights,_=delivery.selected(run)
             torch.testing.assert_close(weights['repair.out.bias'],torch.full((128,),.1),rtol=0,atol=0)
             self.assertTrue(read_json(run/'export_repair_audit.json')['frame_scale_equal'])
+            audit=read_json(run/'export_repair_audit.json')
+            self.assertTrue(audit['strict_reloaded'])
+            self.assertEqual(audit['functional_probe_pairs'],1)
+            self.assertLess(audit['functional_changes'][0]['exported_correction_ratio'],
+                            audit['functional_changes'][0]['trained_correction_ratio'])
 
 
 if __name__=='__main__':unittest.main()

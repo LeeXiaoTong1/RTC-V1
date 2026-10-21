@@ -115,6 +115,8 @@ class Detector(ParentDetector):
         return self.classify_processed(self.processed_sequences(sequences))
 
     def classify_processed(self, sequences):
+        if getattr(self, '_count_backend', False):
+            self._backend_windows += sum(len(self.head.window_plan(len(x), x.device)[0]) for x in sequences)
         return super().classify_sequences(sequences)
 
     def encode(self, waves):

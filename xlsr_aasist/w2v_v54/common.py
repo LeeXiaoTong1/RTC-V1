@@ -66,8 +66,11 @@ def apply_partial(model, values):
     for name, value in values.items():
         if value.shape != expected[name].shape or value.dtype != expected[name].dtype or not torch.isfinite(value).all():
             raise ValueError('Invalid V5.4 tensor: ' + name)
+    if (values['repair.frame_scale'] <= 0).any():
+        raise ValueError('Frame scale must remain strictly positive')
     with torch.no_grad():
         for name, value in values.items():
             expected[name].copy_(value)
     if hasattr(model, 'pcl_scale'):
         model.pcl_scale.sync_state()
+    model._repair_scale_validated = bool(values['repair.scale_ready'].cpu())

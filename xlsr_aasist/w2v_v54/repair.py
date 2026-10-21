@@ -97,8 +97,8 @@ def aligned_reference(clean, clean_valid, noisy_frames, shift_frames):
     return target.masked_fill(~valid[:, None], 0.), valid
 
 
-def source_feature_loss(prediction, reference, mask, scale, min_frames=4):
-    if torch.any(scale <= 0) or not torch.isfinite(scale).all():
+def source_feature_loss(prediction, reference, mask, scale, min_frames=4, *, validate_scale=True):
+    if validate_scale and (torch.any(scale <= 0) or not torch.isfinite(scale).all()):
         raise ValueError("Positive fixed frame scale required")
     active = mask.sum(1) >= min_frames
     effective = mask & active[:, None]

@@ -100,6 +100,10 @@ class PairDataTests(unittest.TestCase):
             report=json.loads((run/'pair_preflight.json').read_text())
             self.assertEqual(report['pairs'],8)
             self.assertEqual(report['coverage']['origin_dev'],8)
+            from .diagnostics import probe
+            measured=probe(model,cfg,run,'unchanged_probe')
+            self.assertTrue(all(r['reference_drift']==0 for r in measured['records']))
+            self.assertEqual(measured['encoder_views'],16)  # Four saved contexts, not different batches.
 
 
 if __name__=='__main__':unittest.main()

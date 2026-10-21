@@ -4,7 +4,7 @@ from pathlib import Path
 import time
 import torch
 from .common import (schema_for, fingerprint, seed_all, partial_state, apply_partial,
-                     atomic_save, atomic_json, capture_rng, restore_rng, to_cpu, append_json)
+                     atomic_save, atomic_json, capture_rng, restore_rng, to_cpu, append_json,read_json)
 from .data import Waves, TicketSampler, loader, close
 from w2v_v5.sampling import Plan
 from w2v_v5.weights import average_states, invariant_keys
@@ -94,6 +94,8 @@ def run_stage(cfg, run, rows, *, model_factory=load_model, step_fn=train_step,
         return model, state
     sampler = TicketSampler()
     batches = None
+    smoke = read_json(run/'runtime_smoke.json') if (run/'runtime_smoke.json').is_file() else {}
+    smoke_complete = smoke.get('status')=='passed' and smoke.get('config')==fingerprint(cfg)
     try:
         for epoch in range(state["epoch"], cfg["epochs"]):
             if (root / "STOP_REQUESTED").exists():
@@ -111,11 +113,20 @@ def run_stage(cfg, run, rows, *, model_factory=load_model, step_fn=train_step,
             if str(cfg['device']).startswith('cuda'):
                 torch.cuda.reset_peak_memory_stats(torch.device(cfg['device']))
             for step, units in enumerate(batches, start=state["next_step"]):
+                if cfg.get('repair_audit_revision',0)>=2 and not smoke_complete:
+                    from .smoke import check
+                    print('[V5.4 check] testing actual warm/joint paths; temporary updates will be restored',flush=True)
+                    check(model,optimizer,units,cfg,plan.steps,run/'runtime_smoke.json')
+                    smoke_complete=True
+                    began=time.monotonic()
+                    if (root/'STOP_REQUESTED').exists():
+                        state['status']='paused';save(checkpoint,cfg,state,model,optimizer)
+                        return model,state
                 update_started = time.monotonic()
                 schedule(optimizer, cfg, epoch, step, plan.steps)
                 for attempt in range(4):
                     stats = step_fn(model, optimizer, units,
-                                    dict(cfg, _candidate_diagnostics=False), audit=step % 200 == 0)
+                                    dict(cfg, _candidate_diagnostics=False), audit=state['cursor'] % 100 == 0)
                     if not stats["amp"]["skipped_update"]:
                         break
                 else:
@@ -148,6 +159,8 @@ def run_stage(cfg, run, rows, *, model_factory=load_model, step_fn=train_step,
                 append_json(run / 'hard_examples.jsonl', dict(update=state['cursor'], **hard))
                 append_json(run / 'repair_diagnostics.jsonl', dict(update=state['cursor'],
                     stage=stats['repair_stage'], **repair, parameter_update=stats.get('repair_update')))
+                # Keep full per-source provenance once, not twice in two logs.
+                stats['repair_losses']={k:v for k,v in repair.items() if k!='pairs'}
                 if hard.get('validated') and hard.get('examples'):
                     worst = hard['examples'][0]
                     if not worst['correct']:
@@ -187,6 +200,13 @@ def run_stage(cfg, run, rows, *, model_factory=load_model, step_fn=train_step,
                     summarize(run, state['cursor'])
                 if paused:
                     return model, state
+                if cfg.get('repair_audit_revision',0) >= 2 and state['cursor'] in {warmup_steps(cfg,count),count//2,count}:
+                    # A named, bounded diagnostic boundary, not a second
+                    # encoder pass hidden inside ordinary gradient updates.
+                    save(checkpoint,cfg,state,model,optimizer)
+                    from .diagnostics import probe
+                    probe(model,cfg,run,'pair_probe_update_'+str(state['cursor']))
+                    began = time.monotonic()  # Exclude diagnostics from train ETA.
             atomic_json(run / f"epoch_{epoch+1}.json", dict(epoch=epoch+1,
                 loss=totals["loss"]/totals["updates"], ce=totals["ce"]/totals["updates"],
                 updates=int(totals["updates"]),

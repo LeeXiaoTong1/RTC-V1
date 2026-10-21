@@ -23,6 +23,7 @@ def schedule(optimizer, cfg, epoch, step, steps):
     optimizer._v3189_update = index+1
     optimizer._v3189_joint = joint
     optimizer._v54_warm_steps = warm
+    optimizer._v54_total_updates = total
     return True, 1.  # Old driver return value describes the CE recipe, not phase.
 
 
@@ -32,5 +33,6 @@ def auxiliary_coefficients(cfg):
     index = cfg.get('current_update', 1)
     warm = cfg.get('_repair_warm_steps', cfg['repair_warmup_max'])
     f = cfg['repair_feature_weight']*min(1., index/max(1, min(cfg['repair_feature_ramp'], warm or 1)))
-    d = cfg['repair_kd_weight']*min(1., max(0, index-warm)/max(1, cfg['repair_kd_ramp']))
+    ramp = min(cfg['repair_kd_ramp'],max(1,cfg.get('_repair_total_updates',warm+cfg['repair_kd_ramp'])-warm))
+    d = cfg['repair_kd_weight']*min(1., max(0, index-warm)/max(1, ramp))
     return f, d

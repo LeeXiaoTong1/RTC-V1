@@ -21,13 +21,18 @@ class LifecycleTests(unittest.TestCase):
     def test_committed_resume_across_warmup_and_tail_mean_is_exact(self):
         cfg,units,initial,_=fixture('paired')
         cfg.update(sampling_seed=7,v5_stage='final',v5_tail_snapshots=4,v5_tail_start=.5,
-            checkpoint_interval=1,workers=0,repair_warmup_max=2,repair_warmup_fraction=.25)
+            checkpoint_interval=1,workers=0,repair_warmup_max=2,repair_warmup_fraction=.25,
+            repair_audit_revision=2)
         class Plan:
             steps=8
             def batches(self,epoch):return [units]*8
             def coverage(self,epoch):return dict(steps=8)
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory, ExitStack() as stack, redirect_stdout(io.StringIO()):
             root=Path(directory)
+            from .test_audit import fixed_pair_file
+            for name in ('full','split'):
+                stage=root/name/'final';stage.mkdir(parents=True)
+                fixed_pair_file(initial,cfg,units,stage/'fixed_pairs.pt')
             stack.enter_context(patch.object(train,'schema_for',return_value='v54_lifecycle_test'))
             stack.enter_context(patch.object(train,'make_plan',return_value=Plan()))
             stack.enter_context(patch.object(train,'Waves',side_effect=lambda rows,cfg:rows))
@@ -59,6 +64,7 @@ class LifecycleTests(unittest.TestCase):
             events=[json.loads(line) for line in (root/'split'/'final'/'hard_examples.jsonl').read_text().splitlines()]
             self.assertEqual([e['update'] for e in events],list(range(1,9)))
             self.assertTrue(all(e['validated'] for e in events))
+            self.assertTrue((root/'split'/'final'/'pair_probe_update_8.json').is_file())
             with self.assertRaisesRegex(ValueError,'incompatible resume'):
                 train.run_stage(dict(cfg,sampling_seed=8),root/'split'/'final',[],model_factory=factory,initializer=initializer)
 
