@@ -98,12 +98,24 @@ git pull --ff-only origin v5.5-v5.1-hard-positive
 也可以使用增量包：包内部以 `xlsr_aasist/` 为根，在上述仓库目录下解压。原有 V5.1 模型、数据和运行目录必须存在；缺失或改变会由启动检查指出。
 
 ```bash
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate /home/ubuntu/LXT/v318-runtime/envs/sdd-v318
 cd /home/ubuntu/LXT/RTC-w2v-improved/xlsr_aasist
 bash run_w2v_v55.sh \
   --parent-run /home/ubuntu/LXT/RTC-w2v-improved/xlsr_aasist/exp/w2v_v5_20261021_075307_d991 \
   --epochs 1 \
   --submit-best --upload-submission --upload-temp
 ```
+
+本项目原训练服务器有两个同名的 `sdd-v318` 环境，必须使用上述完整路径。`conda activate sdd-v318` 可能进入系统盘的 `/home/ubuntu/.conda/envs/sdd-v318`，其 PyTorch/CUDA 构建与原驱动不兼容。终端前缀都显示 `(sdd-v318)`，不能据此判断环境正确。其他服务器应使用其已验证可运行 V5.1 的环境完整路径。
+
+启动前可核对：
+
+```bash
+python -c "import sys, torch; print('Python:', sys.executable); print('PyTorch:', torch.__version__); print('CUDA build:', torch.version.cuda); print('CUDA available:', torch.cuda.is_available()); print('BF16:', torch.cuda.is_available() and torch.cuda.is_bf16_supported())"
+```
+
+原服务器的已固定配置为 Python 位于 `/home/ubuntu/LXT/v318-runtime/envs/sdd-v318/`、PyTorch `2.6.0+cu118`、CUDA build `11.8`；`CUDA available` 和 `BF16` 均应为 `True`。若这里失败，先检查实际环境，不要直接重装依赖或升级驱动。此检查在创建训练运行、读取父 checkpoint 和更新模型之前执行；此处退出可修正环境后重新运行启动命令，无需 `--resume`。
 
 输出的新目录为 `exp/w2v_v55_时间_随机后缀`。默认起点就是上述 V5.1 运行，也可以显式指定另一个通过完整性核验的 V5.1 已完成运行。
 

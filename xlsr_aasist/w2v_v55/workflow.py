@@ -113,8 +113,19 @@ def main():
     ensure_idle()
     with run_lock(ROOT/'exp'/'.aasist-launch.lock'):
         ensure_idle()
-        if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
-            raise RuntimeError('V5.5 training requires the pinned Linux BF16 CUDA environment')
+        cuda_available = torch.cuda.is_available()
+        bf16_supported = cuda_available and torch.cuda.is_bf16_supported()
+        if not cuda_available or not bf16_supported:
+            reason = 'CUDA initialization failed or no GPU is available' if not cuda_available else 'the active GPU/runtime does not support BF16'
+            raise RuntimeError(
+                f'V5.5 requires the pinned Linux BF16 CUDA environment: {reason}.\n'
+                f'Python: {sys.executable}\n'
+                f'PyTorch: {torch.__version__}; CUDA build: {torch.version.cuda}\n'
+                'For the original project server, activate the full environment prefix:\n'
+                '  conda activate /home/ubuntu/LXT/v318-runtime/envs/sdd-v318\n'
+                'The same-named ~/.conda/envs/sdd-v318 is a different environment. '
+                'On another server, use the full prefix of its verified V5.1 environment.'
+            )
         if args.resume:
             root = Path(args.resume).expanduser().resolve()
             cfg, _ = read_stage(root)
